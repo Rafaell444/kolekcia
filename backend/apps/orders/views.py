@@ -1,0 +1,249 @@
+import random
+from decimal import Decimal
+from django.db import transaction
+from django.db.models import F
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
+
+from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder
+from .serializers import (
+    CartSerializer,
+    AddToCartSerializer,
+    OrderSerializer,
+    CheckoutSerializer,
+    CustomOrderSerializer,
+)
+from apps.products.models import ProductVariant
+
+
+class CheckoutThrottle(ScopedRateThrottle):
+    scope = "checkout"
+
+
+class CartView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        cart, _ = Cart.objects.prefetch_related(
+            "items__variant__product__images",
+            "items__variant__size",
+            "items__variant__finish",
+            "items__variant__frame",
+        ).get_or_create(user=request.user)
+        return Response(CartSerializer(cart).data)
+
+    def delete(self, request):
+        Cart.objects.filter(user=request.user).update(promo_code=None)
+        CartItem.objects.filter(cart__user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CartItemView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = AddToCartSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        variant_id = serializer.validated_data["variant_id"]
+        quantity = serializer.validated_data["quantity"]
+
+        try:
+            variant = ProductVariant.objects.select_related("product").get(pk=variant_id)
+        except ProductVariant.DoesNotExist:
+            return Response({"detail": "Variant not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if variant.stock < quantity:
+            return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        item, created = CartItem.objects.get_or_create(cart=cart, variant=variant, defaults={"quantity": quantity})
+        if not created:
+            item.quantity = F("quantity") + quantity
+            item.save(update_fields=["quantity"])
+
+        cart.refresh_from_db()
+        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, item_id):
+        try:
+            item = CartItem.objects.get(pk=item_id, cart__user=request.user)
+        except CartItem.DoesNotExist:
+            return Response({"detail": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        quantity = request.data.get("quantity")
+        if quantity is not None:
+            if int(quantity) <= 0:
+                item.delete()
+            else:
+                item.quantity = int(quantity)
+                item.save(update_fields=["quantity"])
+
+        cart = Cart.objects.prefetch_related("items__variant__product__images").get(user=request.user)
+        return Response(CartSerializer(cart).data)
+
+    def delete(self, request, item_id):
+        CartItem.objects.filter(pk=item_id, cart__user=request.user).delete()
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        return Response(CartSerializer(cart).data)
+
+
+class PromoApplyView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [type("PromoThrottle", (ScopedRateThrottle,), {"scope": "promo_apply"})]
+
+    def post(self, request):
+        from apps.promo.models import PromoCode
+        code = request.data.get("code", "").strip().upper()
+        if not code:
+            return Response({"detail": "Promo code is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            promo = PromoCode.objects.get(code=code, is_active=True)
+        except PromoCode.DoesNotExist:
+            return Response({"detail": "Invalid or expired promo code."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        error = promo.validate(request.user, cart.subtotal)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+
+        cart.promo_code = promo
+        cart.save(update_fields=["promo_code"])
+        return Response(CartSerializer(cart).data)
+
+    def delete(self, request):
+        Cart.objects.filter(user=request.user).update(promo_code=None)
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        return Response(CartSerializer(cart).data)
+
+
+class CheckoutView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [CheckoutThrottle]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        cart = Cart.objects.prefetch_related(
+            "items__variant__product__images",
+            "items__variant__size",
+            "items__variant__finish",
+            "items__variant__frame",
+            "items__variant__product__artist",
+            "items__variant__product__vendor",
+        ).filter(user=request.user).first()
+
+        if not cart or not cart.items.exists():
+            return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Atomically lock and deduct stock
+        items_to_process = list(cart.items.select_related("variant"))
+        variant_ids = [item.variant_id for item in items_to_process]
+        locked_variants = {
+            v.pk: v for v in ProductVariant.objects.select_for_update().filter(pk__in=variant_ids)
+        }
+
+        for item in items_to_process:
+            variant = locked_variants[item.variant_id]
+            if variant.stock < item.quantity:
+                return Response(
+                    {"detail": f"'{variant.product.title}' has insufficient stock."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        for item in items_to_process:
+            ProductVariant.objects.filter(pk=item.variant_id).update(stock=F("stock") - item.quantity)
+
+        subtotal = cart.subtotal
+        discount = Decimal("0")
+        promo = cart.promo_code
+        if promo:
+            from apps.promo.models import PromoCode
+            discount = promo.calculate_discount(subtotal)
+
+        total = subtotal - discount
+
+        order = Order.objects.create(
+            user=request.user,
+            order_number=f"KOL-{2024}-{random.randint(100000, 999999)}",
+            shipping_name=data["shipping_name"],
+            shipping_line1=data["shipping_line1"],
+            shipping_line2=data.get("shipping_line2", ""),
+            shipping_city=data["shipping_city"],
+            shipping_state=data["shipping_state"],
+            shipping_zip=data["shipping_zip"],
+            shipping_country=data["shipping_country"],
+            shipping_email=data["shipping_email"],
+            shipping_phone=data.get("shipping_phone", ""),
+            promo_code=promo,
+            subtotal=subtotal,
+            discount=discount,
+            total=total,
+            status="pending",
+        )
+
+        for item in items_to_process:
+            img = item.variant.product.images.first()
+            OrderItem.objects.create(
+                order=order,
+                vendor=item.variant.product.vendor,
+                product_title=item.variant.product.title,
+                product_image=img.url if img else "",
+                artist_name=item.variant.product.artist.name if item.variant.product.artist else "",
+                size_label=item.variant.size.label,
+                finish_label=item.variant.finish.label,
+                frame_label=item.variant.frame.label,
+                price=item.variant.price,
+                quantity=item.quantity,
+            )
+
+        OrderStatusHistory.objects.create(order=order, status="pending", changed_by=request.user)
+
+        if promo:
+            from apps.promo.models import PromoCodeUsage
+            PromoCodeUsage.objects.create(promo=promo, user=request.user, order=order)
+
+        cart.items.all().delete()
+        cart.promo_code = None
+        cart.save()
+
+        # Award XP for order placed
+        try:
+            from apps.gamification.services import award_xp
+            award_xp(request.user, "order_placed")
+            award_xp(request.user, "first_purchase")
+        except Exception:
+            pass
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class OrderListView(generics.ListAPIView):
+    serializer_class = OrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Order.objects.filter(user=self.request.user).prefetch_related("items", "status_history")
+
+
+class OrderDetailView(generics.RetrieveAPIView):
+    serializer_class = OrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Order.objects.filter(user=self.request.user).prefetch_related("items", "status_history")
+
+
+class CustomOrderCreateView(generics.CreateAPIView):
+    serializer_class = CustomOrderSerializer
+    permission_classes = []
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(user=user)

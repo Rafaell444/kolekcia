@@ -1,0 +1,195 @@
+from django.conf import settings
+from django.core.mail import send_mail
+from rest_framework import generics, status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.exceptions import TokenError
+
+from .models import User, Address, PaymentMethod, PasswordResetToken
+from .serializers import (
+    RegisterSerializer,
+    LoginSerializer,
+    UserSerializer,
+    AddressSerializer,
+    PaymentMethodSerializer,
+    ForgotPasswordSerializer,
+    ResetPasswordSerializer,
+    ChangePasswordSerializer,
+)
+
+
+class AuthThrottle(ScopedRateThrottle):
+    scope = "auth"
+
+
+class RegisterView(generics.CreateAPIView):
+    serializer_class = RegisterSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+
+        # Award 500 XP welcome bonus
+        try:
+            from apps.gamification.models import XPRule
+            from apps.gamification.services import award_xp
+            XPRule.objects.get_or_create(
+                action_key="registration_bonus",
+                defaults={
+                    "xp_amount": 500,
+                    "is_one_time": True,
+                    "description": "New member welcome bonus",
+                },
+            )
+            award_xp(user, "registration_bonus")
+        except Exception:
+            pass  # never block registration if gamification fails
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "user": UserSerializer(user).data,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "user": UserSerializer(user).data,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            }
+        )
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except TokenError:
+                pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MeView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+
+class AddressListCreateView(generics.ListCreateAPIView):
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+
+
+class AddressDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+
+
+class PaymentMethodListCreateView(generics.ListCreateAPIView):
+    serializer_class = PaymentMethodSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return PaymentMethod.objects.filter(user=self.request.user)
+
+
+class PaymentMethodDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = PaymentMethodSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return PaymentMethod.objects.filter(user=self.request.user)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        if not user.check_password(serializer.validated_data["current_password"]):
+            return Response({"current_password": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(serializer.validated_data["new_password"])
+        user.save()
+        return Response({"detail": "Password changed successfully."})
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        if User.objects.filter(email=email).exists():
+            user = User.objects.get(email=email)
+            token_obj = PasswordResetToken.objects.create(user=user)
+            reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token_obj.token}"
+            send_mail(
+                subject="Reset your Kolekcia password",
+                message=f"Click the link to reset your password: {reset_url}",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=True,
+            )
+
+        return Response({"detail": "If that email exists, a reset link has been sent."})
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            token_obj = PasswordResetToken.objects.select_related("user").get(
+                token=serializer.validated_data["token"], used=False
+            )
+        except PasswordResetToken.DoesNotExist:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        token_obj.user.set_password(serializer.validated_data["password"])
+        token_obj.user.save()
+        token_obj.used = True
+        token_obj.save()
+        return Response({"detail": "Password reset successful."})

@@ -1,0 +1,327 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+/* ============================================================
+   DISPLATE DESIGN SYSTEM — Design Tokens
+   Extracted from: https://displate.com
+   Theme: Deep charcoal dark-mode-first metal poster marketplace
+   ============================================================ */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* ── Fonts — Next.js injects CSS variables via next/font/google ── */
+  --font-sans:    var(--font-barlow), 'Barlow', sans-serif;
+  --font-heading: var(--font-bebas-neue), 'Bebas Neue', sans-serif;
+  --font-condensed: var(--font-barlow-condensed), 'Barlow Condensed', sans-serif;
+  --font-mono:    var(--font-geist-mono), 'Geist Mono Fallback', monospace;
+
+  /* ── Semantic color mappings (Tailwind classes) ── */
+  --color-background:         var(--background);
+  --color-foreground:         var(--foreground);
+  --color-card:               var(--card);
+  --color-card-foreground:    var(--card-foreground);
+  --color-popover:            var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary:            var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary:          var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:              var(--muted);
+  --color-muted-foreground:   var(--muted-foreground);
+  --color-accent:             var(--accent);
+  --color-accent-foreground:  var(--accent-foreground);
+  --color-destructive:        var(--destructive);
+  --color-border:             var(--border);
+  --color-input:              var(--input);
+  --color-ring:               var(--ring);
+  --color-sidebar-ring:               var(--sidebar-ring);
+  --color-sidebar-border:             var(--sidebar-border);
+  --color-sidebar-accent-foreground:  var(--sidebar-accent-foreground);
+  --color-sidebar-accent:             var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary:            var(--sidebar-primary);
+  --color-sidebar-foreground:         var(--sidebar-foreground);
+  --color-sidebar:                    var(--sidebar);
+
+  /* ── Displate Brand Tokens (utility classes: bg-dp-*, text-dp-*, border-dp-*) ── */
+  --color-dp-bg-base:         var(--dp-bg-base);
+  --color-dp-bg-surface:      var(--dp-bg-surface);
+  --color-dp-bg-elevated:     var(--dp-bg-elevated);
+  --color-dp-bg-divider:      var(--dp-bg-divider);
+  --color-dp-text-primary:    var(--dp-text-primary);
+  --color-dp-text-secondary:  var(--dp-text-secondary);
+  --color-dp-text-tertiary:   var(--dp-text-tertiary);
+  --color-dp-accent-gold:     var(--dp-accent-gold);
+  --color-dp-accent-cta:      var(--dp-accent-cta);
+  --color-dp-accent-cta-hover:var(--dp-accent-cta-hover);
+  --color-dp-success:         var(--dp-success);
+  --color-dp-border:          var(--dp-border);
+  --color-dp-border-hover:    var(--dp-border-hover);
+
+  /* ── Border Radius (Displate uses minimal rounding) ── */
+  --radius-sm:  2px;
+  --radius-md:  4px;
+  --radius-lg:  6px;
+  --radius-xl:  8px;
+  --radius-2xl: 12px;
+  --radius-3xl: 16px;
+  --radius-4xl: 20px;
+  --radius:     4px;
+
+  /* ── Shadows (adapted per theme in @layer base) ── */
+  --shadow-card:   0 1px 4px rgba(0, 0, 0, 0.08);
+  --shadow-sm:     0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md:     0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-lg:     0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-hover:  0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* ============================================================
+   ROOT — Light-mode default
+   ============================================================ */
+:root {
+  color-scheme: light;
+
+  /* ── Brand Colors (light) ── */
+  --dp-bg-base:          #f4f4f5;
+  --dp-bg-surface:       #ffffff;
+  --dp-bg-elevated:      #f0f0f2;
+  --dp-bg-divider:       #e5e5e7;
+  --dp-text-primary:     #111113;
+  --dp-text-secondary:   #636366;
+  --dp-text-tertiary:    #aeaeb2;
+  --dp-accent-gold:      #b86e00;
+  --dp-accent-cta:       #e63946;
+  --dp-accent-cta-hover: #c1121f;
+  --dp-success:          #198040;
+  --dp-border:           #e5e5e7;
+  --dp-border-hover:     #aeaeb2;
+
+  /* ── shadcn / Tailwind semantic tokens ── */
+  --background:                #f4f4f5;
+  --foreground:                #111113;
+  --card:                      #ffffff;
+  --card-foreground:           #111113;
+  --popover:                   #ffffff;
+  --popover-foreground:        #111113;
+  --primary:                   #e63946;
+  --primary-foreground:        #ffffff;
+  --secondary:                 #f4f4f5;
+  --secondary-foreground:      #111113;
+  --muted:                     #f4f4f5;
+  --muted-foreground:          #636366;
+  --accent:                    #b86e00;
+  --accent-foreground:         #111113;
+  --destructive:               #e63946;
+  --border:                    #e5e5e7;
+  --input:                     #e5e5e7;
+  --ring:                      #e63946;
+
+  /* ── Sidebar ── */
+  --sidebar:                   #ffffff;
+  --sidebar-foreground:        #111113;
+  --sidebar-primary:           #e63946;
+  --sidebar-primary-foreground:#ffffff;
+  --sidebar-accent:            #f4f4f5;
+  --sidebar-accent-foreground: #111113;
+  --sidebar-border:            #e5e5e7;
+  --sidebar-ring:              #e63946;
+}
+
+/* ============================================================
+   DARK MODE — applied when <html class="dark">
+   ============================================================ */
+.dark {
+  color-scheme: dark;
+
+  /* ── Brand Colors (dark) ── */
+  --dp-bg-base:          #111113;
+  --dp-bg-surface:       #1c1c1e;
+  --dp-bg-elevated:      #2c2c2e;
+  --dp-bg-divider:       #3a3a3c;
+  --dp-text-primary:     #f4f4f5;
+  --dp-text-secondary:   #aeaeb2;
+  --dp-text-tertiary:    #636366;
+  --dp-accent-gold:      #f0a30a;
+  --dp-accent-cta:       #e63946;
+  --dp-accent-cta-hover: #ff4d5a;
+  --dp-success:          #30d158;
+  --dp-border:           #3a3a3c;
+  --dp-border-hover:     #636366;
+
+  /* ── shadcn / Tailwind semantic tokens (dark) ── */
+  --background:                #111113;
+  --foreground:                #f4f4f5;
+  --card:                      #1c1c1e;
+  --card-foreground:           #f4f4f5;
+  --popover:                   #1c1c1e;
+  --popover-foreground:        #f4f4f5;
+  --primary:                   #e63946;
+  --primary-foreground:        #ffffff;
+  --secondary:                 #2c2c2e;
+  --secondary-foreground:      #f4f4f5;
+  --muted:                     #2c2c2e;
+  --muted-foreground:          #aeaeb2;
+  --accent:                    #f0a30a;
+  --accent-foreground:         #111113;
+  --destructive:               #e63946;
+  --border:                    #3a3a3c;
+  --input:                     #3a3a3c;
+  --ring:                      #e63946;
+
+  /* ── Sidebar (dark) ── */
+  --sidebar:                   #1c1c1e;
+  --sidebar-foreground:        #f4f4f5;
+  --sidebar-primary:           #e63946;
+  --sidebar-primary-foreground:#ffffff;
+  --sidebar-accent:            #2c2c2e;
+  --sidebar-accent-foreground: #f4f4f5;
+  --sidebar-border:            #3a3a3c;
+  --sidebar-ring:              #e63946;
+
+  /* ── Shadows (heavier for dark) ── */
+  --shadow-card:   0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-sm:     0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md:     0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg:     0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-hover:  0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* ============================================================
+   BASE LAYER
+   ============================================================ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply bg-background font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 16px;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    line-height: 1.6;
+  }
+
+  /* ── Heading defaults — Bebas Neue via font-heading ── */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    letter-spacing: 0.04em;
+    line-height: 1.1;
+    color: var(--dp-text-primary);
+  }
+
+  /* ── Scrollbar styling (dark theme) ── */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--dp-bg-base);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--dp-bg-elevated);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--dp-border-hover);
+  }
+}
+
+/* ============================================================
+   UTILITY CLASSES (Displate-specific helpers)
+   ============================================================ */
+@layer utilities {
+  /* Product card aspect ratio */
+  .aspect-poster {
+    aspect-ratio: 1 / 1.4;
+  }
+
+  /* Section max-width container */
+  .dp-container {
+    max-width: 1440px;
+    margin-inline: auto;
+    padding-inline: 48px;
+  }
+
+  @media (max-width: 768px) {
+    .dp-container {
+      padding-inline: 16px;
+    }
+  }
+
+  /* Typography helpers */
+  .font-display {
+    font-family: var(--font-heading);
+    letter-spacing: 0.04em;
+    line-height: 1.05;
+  }
+
+  .font-condensed {
+    font-family: 'Barlow Condensed', var(--font-sans);
+    letter-spacing: 0.01em;
+  }
+
+  /* Limited / Sale badge */
+  .badge-limited {
+    background-color: var(--dp-accent-gold);
+    color: #111113;
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 2px;
+  }
+
+  .badge-sale {
+    background-color: var(--dp-accent-cta);
+    color: #ffffff;
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 2px;
+  }
+
+  /* Section separator */
+  .dp-divider {
+    border-top: 1px solid var(--dp-border);
+  }
+
+  /* Hover card lift */
+  .dp-card-hover {
+    transition: transform 200ms ease, box-shadow 200ms ease;
+  }
+  .dp-card-hover:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: var(--shadow-hover);
+  }
+
+  /* Brands infinite scroll */
+  .brands-scroll {
+    animation: brands-marquee 40s linear infinite;
+    width: max-content;
+  }
+  .brands-scroll:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes brands-marquee {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+}
+
+html[data-scroll-behavior="smooth"] {
+  scroll-behavior: smooth;
+}

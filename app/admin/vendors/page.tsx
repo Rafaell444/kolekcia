@@ -1,0 +1,107 @@
+"use client"
+
+import React, { useEffect, useState } from "react"
+import { adminFetch } from "@/lib/admin-auth"
+import { Store, DollarSign, Package, Users, TrendingUp } from "lucide-react"
+
+type Vendor = {
+  id: number; name: string; slug: string; logo_url: string
+  owner_email: string; owner_name: string; payment_email: string
+  description: string; created_at: string
+}
+
+type VendorStats = {
+  total_revenue: string; total_orders: number; total_products: number; unique_customers: number
+}
+
+function VendorCard({ vendor }: { vendor: Vendor }) {
+  const [stats, setStats] = useState<VendorStats | null>(null)
+
+  useEffect(() => {
+    adminFetch<VendorStats>(`/vendors/me/dashboard/?vendor=${vendor.slug}`)
+      .then(setStats).catch(() => {})
+  }, [vendor.slug])
+
+  return (
+    <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
+      <div className="p-5 border-b border-dp-border flex items-center gap-3">
+        <div className="w-10 h-10 rounded-sm bg-dp-accent-cta/10 border border-dp-accent-cta/30 flex items-center justify-center shrink-0">
+          <Store size={18} className="text-dp-accent-cta" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-display text-lg text-dp-text-primary truncate">{vendor.name}</p>
+          <p className="text-[11px] text-dp-text-tertiary">@{vendor.slug} · {vendor.owner_email}</p>
+        </div>
+        <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-sm border border-dp-accent-cta/30 text-dp-accent-cta bg-dp-accent-cta/5">
+          Vendor
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 divide-x divide-y divide-dp-border">
+        {[
+          { label: "Revenue", value: stats ? `$${parseFloat(stats.total_revenue).toFixed(2)}` : "—", Icon: DollarSign },
+          { label: "Orders",  value: stats?.total_orders?.toLocaleString() ?? "—", Icon: TrendingUp },
+          { label: "Products",value: stats?.total_products?.toLocaleString() ?? "—", Icon: Package },
+          { label: "Customers",value: stats?.unique_customers?.toLocaleString() ?? "—", Icon: Users },
+        ].map(({ label, value, Icon }) => (
+          <div key={label} className="p-4 flex flex-col gap-1">
+            <Icon size={13} className="text-dp-text-tertiary" aria-hidden />
+            <p className="font-display text-2xl text-dp-text-primary leading-none">{value}</p>
+            <p className="text-[10px] uppercase tracking-widest text-dp-text-tertiary">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="px-5 py-3 flex items-center justify-between text-[11px] text-dp-text-tertiary bg-dp-bg-elevated">
+        <span>Payment: <strong className="text-dp-text-secondary">{vendor.payment_email || "not set"}</strong></span>
+        <span>Since {new Date(vendor.created_at).toLocaleDateString()}</span>
+      </div>
+    </div>
+  )
+}
+
+export default function AdminVendorsPage(): React.ReactElement {
+  const [vendors, setVendors] = useState<Vendor[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    adminFetch<Vendor[]>("/vendors/me/")
+      .then((d) => setVendors(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  return (
+    <div className="p-8 flex flex-col gap-6">
+      <div>
+        <h1 className="font-display text-4xl text-dp-text-primary">Vendors</h1>
+        <p className="text-[13px] text-dp-text-tertiary mt-1">Manage vendor accounts and view their individual performance.</p>
+      </div>
+
+      {loading ? (
+        <div className="space-y-4 animate-pulse">
+          {[1,2].map((i) => <div key={i} className="h-48 bg-dp-bg-elevated rounded-sm" />)}
+        </div>
+      ) : vendors.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-dp-text-tertiary">
+          <Store size={40} className="opacity-30" />
+          <p>No vendors yet.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {vendors.map((v) => <VendorCard key={v.id} vendor={v} />)}
+        </div>
+      )}
+
+      <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5 text-[13px] text-dp-text-secondary">
+        <p className="font-bold text-dp-text-primary mb-2">How to add a new vendor</p>
+        <ol className="list-decimal list-inside space-y-1 text-dp-text-tertiary">
+          <li>Create a new user account from the <strong className="text-dp-text-secondary">Django admin</strong> at <code className="text-dp-accent-cta">/django-admin/</code></li>
+          <li>Set their role to <code className="text-dp-accent-cta">vendor</code></li>
+          <li>Create a <code className="text-dp-accent-cta">Vendor</code> record linked to that user</li>
+          <li>They can then log in at <code className="text-dp-accent-cta">/admin/login</code> to access their vendor panel</li>
+        </ol>
+      </div>
+    </div>
+  )
+}
