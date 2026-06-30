@@ -6,11 +6,13 @@ import Image from "next/image"
 import Link from "next/link"
 import { Clock, Users, Trophy, Flame, CheckCircle2 } from "lucide-react"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import { useLocale } from "@/contexts/locale-context"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type ApiAuction = {
   id: number
+  slug: string
   title: string
   artist_name: string
   image_url: string
@@ -79,12 +81,13 @@ function CountdownChip({ endsAt, ended }: { endsAt: string; ended: boolean }) {
 // ─── Auction Card ────────────────────────────────────────────────────────────
 
 function AuctionCard({ a }: { a: ApiAuction }) {
+  const { formatPrice } = useLocale()
   const img = a.effective_image || a.image_url || "/placeholder.svg"
   const price = parseFloat(a.current_bid)
 
   return (
     <Link
-      href={`/auctions/${a.id}`}
+      href={`/auctions/${a.slug || a.id}`}
       className="group relative flex flex-col bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden transition-shadow hover:shadow-lg hover:border-dp-border-hover"
     >
       {/* Image */}
@@ -126,7 +129,7 @@ function AuctionCard({ a }: { a: ApiAuction }) {
               {a.is_ended ? "Final Bid" : "Current Bid"}
             </p>
             <p className="font-display text-2xl text-dp-accent-gold leading-none">
-              ${isNaN(price) ? "—" : price.toFixed(2)}
+                {isNaN(price) ? "—" : formatPrice(price)}
             </p>
           </div>
           <div className="text-right">

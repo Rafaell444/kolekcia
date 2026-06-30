@@ -10,6 +10,12 @@ from .models import Auction, AuctionBid
 from .serializers import AuctionSerializer, PlaceBidSerializer, AuctionBidSerializer
 
 
+def resolve_auction(lookup: str) -> Auction:
+    if str(lookup).isdigit():
+        return Auction.objects.get(pk=int(lookup))
+    return Auction.objects.get(slug=lookup)
+
+
 class BidThrottle(ScopedRateThrottle):
     scope = "bid"
 
@@ -25,9 +31,10 @@ class AuctionListView(generics.ListAPIView):
 class AuctionDetailView(generics.RetrieveAPIView):
     serializer_class = AuctionSerializer
     permission_classes = [AllowAny]
+    lookup_url_kwarg = "lookup"
 
-    def get_queryset(self):
-        return Auction.objects.prefetch_related("bids__user").select_related("product")
+    def get_object(self):
+        return resolve_auction(self.kwargs["lookup"])
 
 
 class PlaceBidView(APIView):
@@ -35,14 +42,14 @@ class PlaceBidView(APIView):
     throttle_classes = [BidThrottle]
 
     @transaction.atomic
-    def post(self, request, pk):
+    def post(self, request, lookup):
         serializer = PlaceBidSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         amount = serializer.validated_data["amount"]
 
         try:
             # Row-level lock prevents simultaneous bid race conditions
-            auction = Auction.objects.select_for_update().get(pk=pk)
+            auction = Auction.objects.select_for_update().get(pk=resolve_auction(lookup).pk)
         except Auction.DoesNotExist:
             return Response({"detail": "Auction not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -79,9 +86,9 @@ class AuctionLeaderboardView(APIView):
     """Bid history leaderboard for a single auction."""
     permission_classes = [AllowAny]
 
-    def get(self, request, pk):
+    def get(self, request, lookup):
         try:
-            auction = Auction.objects.get(pk=pk)
+            auction = resolve_auction(lookup)
         except Auction.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 

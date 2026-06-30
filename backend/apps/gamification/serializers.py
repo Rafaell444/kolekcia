@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import GamificationProfile, XPLog, Badge, UserBadge
+from .models import GamificationProfile, XPLog, Badge, UserBadge, XPRule
 
 
 class XPLogSerializer(serializers.ModelSerializer):
@@ -33,3 +33,9 @@ class GamificationProfileSerializer(serializers.ModelSerializer):
     def get_recent_xp(self, obj):
         logs = XPLog.objects.filter(user=obj.user).order_by("-created_at")[:10]
         return XPLogSerializer(logs, many=True).data
+
+
+class XPRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = XPRule
+        fields = ("id", "action_key", "xp_amount", "is_one_time")

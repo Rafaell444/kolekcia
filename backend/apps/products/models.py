@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.text import slugify
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MinValueValidator, MaxValueValidator
 from apps.users.models import User
@@ -79,6 +80,7 @@ class PosterFrame(models.Model):
 
 class Product(models.Model):
     title = models.CharField(max_length=255)
+    slug = models.SlugField(unique=True, max_length=280, blank=True)
     artist = models.ForeignKey(Artist, on_delete=models.SET_NULL, null=True, related_name="products")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name="products")
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
@@ -99,6 +101,17 @@ class Product(models.Model):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.title) or "product"
+            candidate = base
+            n = 1
+            while Product.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+                candidate = f"{base}-{n}"
+                n += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
 
 
 class ProductImage(models.Model):

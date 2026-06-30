@@ -32,7 +32,7 @@ export default function AdminArtistsPage(): React.ReactElement {
     return () => { cancelled = true }
   }, [])
 
-  async function toggleVerified(id: string) {
+  async function toggleVerified(id: number) {
     const res = await adminFetch<AdminArtist>(`/admin/artists/${id}/`, { method: "PATCH", body: JSON.stringify({ verified: !artists.find((a) => a.id === id)?.verified }) }).catch(() => null)
     if (res) setArtists((prev) => prev.map((a) => a.id === id ? { ...a, verified: res.verified } : a))
   }

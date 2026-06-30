@@ -18,6 +18,10 @@ class ConversationSerializer(serializers.ModelSerializer):
     vendor_id = serializers.IntegerField(source="vendor.id", read_only=True, allow_null=True)
     vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True)
     vendor_slug = serializers.CharField(source="vendor.slug", read_only=True, allow_null=True)
+    product_id = serializers.IntegerField(source="product.id", read_only=True, allow_null=True)
+    product_slug = serializers.CharField(source="product.slug", read_only=True, allow_null=True)
+    product_title = serializers.CharField(source="product.title", read_only=True, allow_null=True)
+    product_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
@@ -25,6 +29,13 @@ class ConversationSerializer(serializers.ModelSerializer):
             "id", "subject",
             "customer_name", "customer_email", "customer_avatar",
             "vendor_id", "vendor_name", "vendor_slug",
+            "product_id", "product_slug", "product_title", "product_image_url",
             "unread_count", "messages", "created_at", "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_product_image_url(self, obj):
+        if not obj.product:
+            return None
+        image = obj.product.images.first()
+        return image.url if image else None

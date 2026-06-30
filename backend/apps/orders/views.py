@@ -220,6 +220,11 @@ class CheckoutView(APIView):
             award_xp(request.user, "first_purchase")
         except Exception:
             pass
+        try:
+            from apps.referrals.services import process_referral_conversion
+            process_referral_conversion(request.user)
+        except Exception:
+            pass
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 

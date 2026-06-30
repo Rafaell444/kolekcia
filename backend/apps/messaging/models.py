@@ -8,6 +8,9 @@ class Conversation(models.Model):
         "vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversations"
     )
     subject = models.CharField(max_length=500)
+    product = models.ForeignKey(
+        "products.Product", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversations"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

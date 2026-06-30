@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect, useRef, useCallback, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
+import Link from "next/link"
 import SiteShell from "@/components/layout/SiteShell"
-import { authFetch, parseList } from "@/lib/api"
+import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import { productHref } from "@/lib/product-url"
 import { Send, MessageSquare, ChevronLeft, Loader2 } from "lucide-react"
 
 type Message = { id: string; from_role: string; text: string; sent_at: string; read: boolean }
@@ -12,6 +14,10 @@ type Conversation = {
   subject: string
   vendor_name: string | null
   vendor_slug: string | null
+  product_id: number | null
+  product_slug: string | null
+  product_title: string | null
+  product_image_url: string | null
   unread_count: number
   created_at: string
   messages: Message[]
@@ -98,6 +104,24 @@ function ChatWindow({
           )}
         </div>
       </div>
+      {conv.product_id && conv.product_title && (
+        <div className="px-5 py-3 border-b border-dp-border bg-dp-bg-elevated/60">
+          <Link
+            href={productHref({ id: conv.product_id, slug: conv.product_slug ?? undefined })}
+            className="flex items-center gap-3 hover:opacity-90 transition-opacity"
+          >
+            {conv.product_image_url ? (
+              <img src={conv.product_image_url} alt={conv.product_title} className="w-10 h-12 rounded-sm object-cover border border-dp-border" />
+            ) : (
+              <div className="w-10 h-12 rounded-sm border border-dp-border bg-dp-bg-base" />
+            )}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-dp-text-tertiary">Product context</p>
+              <p className="text-[12px] font-semibold text-dp-text-primary">{conv.product_title}</p>
+            </div>
+          </Link>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-3 bg-dp-bg-base">
@@ -160,7 +184,7 @@ function InboxInner() {
   // Fetch conversation list
   const loadList = useCallback(async () => {
     try {
-      const raw = await authFetch<Conversation[] | { results: Conversation[] }>("/messaging/conversations/")
+      const raw = await authFetch<Conversation[] | PaginatedResponse<Conversation>>("/messaging/conversations/")
       const data = parseList(raw)
       setConvs(data)
       return data
@@ -270,6 +294,9 @@ function InboxInner() {
                     </div>
                     {conv.vendor_name && (
                       <p className="text-[11px] text-dp-text-tertiary truncate">{conv.vendor_name}</p>
+                    )}
+                    {conv.product_title && (
+                      <p className="text-[11px] text-dp-text-tertiary truncate">Product: {conv.product_title}</p>
                     )}
                     {(conv.unread_count ?? 0) > 0 && (
                       <span className="inline-block mt-1 px-1.5 rounded-full bg-dp-accent-cta text-white text-[9px] font-bold">

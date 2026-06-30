@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { apiFetch, authFetch } from "@/lib/api"
 import { useAuth } from "@/contexts/auth-context"
+import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ type ApiBid = {
 
 type ApiAuction = {
   id: number
+  slug: string
   title: string
   artist_name: string
   image_url: string
@@ -206,6 +208,7 @@ type BidConfirmProps = {
 }
 
 function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmProps) {
+  const { formatPrice } = useLocale()
   const [cards, setCards] = useState<PaymentMethod[]>([])
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedCard, setSelectedCard] = useState<number | null>(null)
@@ -297,7 +300,7 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
     setError("")
     setPlacing(true)
     try {
-      const updated = await authFetch<ApiAuction>(`/auctions/${auction.id}/bid/`, {
+      const updated = await authFetch<ApiAuction>(`/auctions/${auction.slug || auction.id}/bid/`, {
         method: "POST",
         body: JSON.stringify({ amount: amount }),
       })
@@ -347,7 +350,7 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
             </div>
             <div className="text-right shrink-0">
               <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Your Bid</p>
-              <p className="font-display text-2xl text-dp-accent-gold">${amount.toFixed(2)}</p>
+              <p className="font-display text-2xl text-dp-accent-gold">{formatPrice(amount)}</p>
             </div>
           </div>
 
@@ -569,7 +572,7 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
               className="flex-1 flex items-center justify-center gap-2 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors"
             >
               {placing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
-              {placing ? "Placing…" : `Confirm $${amount.toFixed(2)} Bid`}
+              {placing ? "Placing…" : `Confirm ${formatPrice(amount)} Bid`}
             </button>
           </div>
         </div>
@@ -581,6 +584,7 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
 // ─── Bid history row ──────────────────────────────────────────────────────────
 
 function BidRow({ bid, isTop, isNew }: { bid: ApiBid; isTop: boolean; isNew: boolean }) {
+  const { formatPrice } = useLocale()
   const price = parseFloat(bid.amount)
   const ago = (() => {
     const diff = Date.now() - new Date(bid.placed_at).getTime()
@@ -603,7 +607,7 @@ function BidRow({ bid, isTop, isNew }: { bid: ApiBid; isTop: boolean; isNew: boo
       </div>
       <div className="flex items-center gap-4">
         <span className={`text-[14px] font-bold ${isTop ? "text-dp-accent-gold" : "text-dp-text-primary"}`}>
-          ${isNaN(price) ? "—" : price.toFixed(2)}
+          {isNaN(price) ? "—" : formatPrice(price)}
         </span>
         <span className="text-[11px] text-dp-text-tertiary w-14 text-right">{ago}</span>
       </div>
@@ -615,9 +619,10 @@ function BidRow({ bid, isTop, isNew }: { bid: ApiBid; isTop: boolean; isNew: boo
 
 export default function AuctionDetailPage(): React.ReactElement {
   const params = useParams()
-  const id = params?.id as string
+  const lookup = params?.id as string
 
   const { user } = useAuth()
+  const { formatPrice } = useLocale()
   const [auction, setAuction] = useState<ApiAuction | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -637,7 +642,7 @@ export default function AuctionDetailPage(): React.ReactElement {
   const fetchAuction = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const data = await apiFetch<ApiAuction>(`/auctions/${id}/`)
+      const data = await apiFetch<ApiAuction>(`/auctions/${lookup}/`)
       setAuction((prev) => {
         if (prev && data.bid_count > prevBidCountRef.current) {
           // Highlight the newest bids
@@ -658,7 +663,7 @@ export default function AuctionDetailPage(): React.ReactElement {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [id])
+  }, [lookup])
 
   // Initial load
   useEffect(() => { fetchAuction() }, [fetchAuction])
@@ -687,11 +692,11 @@ export default function AuctionDetailPage(): React.ReactElement {
     const val = parseFloat(bidInput)
     const current = parseFloat(auction.current_bid)
     if (isNaN(val) || val <= current) {
-      setBidError(`Bid must be higher than the current bid of $${current.toFixed(2)}.`)
+      setBidError(`Bid must be higher than the current bid of ${formatPrice(current)}.`)
       return
     }
     if (val < current + 1) {
-      setBidError(`Minimum increment is $1.00. Enter at least $${(current + 1).toFixed(2)}.`)
+      setBidError(`Minimum increment is ${formatPrice(1)}. Enter at least ${formatPrice(current + 1)}.`)
       return
     }
     setBidError("")
@@ -818,7 +823,7 @@ export default function AuctionDetailPage(): React.ReactElement {
             <div className="flex flex-wrap gap-6 border-y border-dp-border py-4">
               <div>
                 <p className="text-[10px] text-dp-text-tertiary uppercase tracking-widest">Starting Bid</p>
-                <p className="font-semibold text-dp-text-secondary">${parseFloat(auction.starting_bid).toFixed(2)}</p>
+                <p className="font-semibold text-dp-text-secondary">{formatPrice(parseFloat(auction.starting_bid))}</p>
               </div>
               <div>
                 <p className="text-[10px] text-dp-text-tertiary uppercase tracking-widest">Total Bids</p>
@@ -841,7 +846,7 @@ export default function AuctionDetailPage(): React.ReactElement {
                   {auction.is_ended ? "Final Bid" : "Current Bid"}
                 </p>
                 <p className="font-display text-6xl text-dp-accent-gold leading-none">
-                  ${currentBid.toFixed(2)}
+                  {formatPrice(currentBid)}
                 </p>
               </div>
               {!auction.is_ended && (
@@ -882,7 +887,7 @@ export default function AuctionDetailPage(): React.ReactElement {
                       onClick={() => handleQuickBid(inc)}
                       className="px-4 py-2 bg-dp-bg-elevated border border-dp-border text-dp-text-primary text-[13px] font-semibold rounded-sm hover:border-dp-accent-cta hover:text-dp-accent-cta transition-colors"
                     >
-                      ${(currentBid + inc).toFixed(2)}
+                      {formatPrice(currentBid + inc)}
                       <span className="ml-1 text-[10px] text-dp-text-tertiary">+${inc}</span>
                     </button>
                   ))}

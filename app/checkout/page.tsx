@@ -8,6 +8,7 @@ import { ChevronRight, CreditCard, CheckCircle, Lock, Truck, ArrowLeft } from "l
 import { useCart } from "@/contexts/cart-context"
 import { authFetch } from "@/lib/api"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
+import { useLocale } from "@/contexts/locale-context"
 
 type Step = "shipping" | "payment" | "review" | "confirmed"
 
@@ -263,6 +264,7 @@ function PaymentForm({ onNext, onBack }: { onNext: () => void; onBack: () => voi
 // ─── Review step ──────────────────────────────────────────
 function ReviewStep({ onConfirm, onBack, shippingData }: { onConfirm: (orderNum: string) => void; onBack: () => void; shippingData: Record<string, string> }) {
   const { cart, refresh } = useCart()
+  const { formatPrice } = useLocale()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const subtotal = cart ? parseFloat(cart.subtotal) : 0
@@ -278,6 +280,8 @@ function ReviewStep({ onConfirm, onBack, shippingData }: { onConfirm: (orderNum:
         method: "POST",
         body: JSON.stringify(shippingData),
       })
+      // Defensive clear: keep cart empty even if stale cache/race appears.
+      await authFetch("/orders/cart/", { method: "DELETE" }).catch(() => {})
       await refresh()
       onConfirm(order.order_number)
     } catch (err: unknown) {
@@ -303,22 +307,22 @@ function ReviewStep({ onConfirm, onBack, shippingData }: { onConfirm: (orderNum:
               <p className="text-[14px] font-semibold text-dp-text-primary truncate mt-0.5">{item.product_title}</p>
               <p className="text-[12px] text-dp-text-tertiary">{item.variant.size.label} · Qty {item.quantity}</p>
             </div>
-            <span className="text-[15px] font-bold text-dp-text-primary shrink-0">${parseFloat(item.line_total).toFixed(2)}</span>
+            <span className="text-[15px] font-bold text-dp-text-primary shrink-0">{formatPrice(parseFloat(item.line_total))}</span>
           </div>
         ))}
 
         <div className="px-4 py-3 flex flex-col gap-1.5 bg-dp-bg-elevated border-t border-dp-border">
           <div className="flex justify-between text-[13px]">
             <span className="text-dp-text-secondary">Subtotal</span>
-            <span className="text-dp-text-primary font-semibold">${subtotal.toFixed(2)}</span>
+            <span className="text-dp-text-primary font-semibold">{formatPrice(subtotal)}</span>
           </div>
           <div className="flex justify-between text-[13px]">
             <span className="text-dp-text-secondary">Shipping {shipping === 0 && <span className="text-dp-success text-[11px]">(Free)</span>}</span>
-            <span className="text-dp-text-primary font-semibold">${shipping.toFixed(2)}</span>
+            <span className="text-dp-text-primary font-semibold">{shipping === 0 ? "Free" : formatPrice(shipping)}</span>
           </div>
           <div className="flex justify-between text-[15px] font-bold pt-1 border-t border-dp-border mt-1">
             <span className="text-dp-text-primary">Total</span>
-            <span className="font-display text-2xl text-dp-text-primary">${total.toFixed(2)}</span>
+            <span className="font-display text-2xl text-dp-text-primary">{formatPrice(total)}</span>
           </div>
         </div>
       </div>
@@ -375,6 +379,7 @@ function Confirmed({ orderNumber }: { orderNumber: string }) {
 // ─── Order aside ──────────────────────────────────────────
 function OrderAside() {
   const { cart } = useCart()
+  const { formatPrice } = useLocale()
   const subtotal = cart ? parseFloat(cart.subtotal) : 0
   const shipping = subtotal >= 49 ? 0 : 7.99
   const total = subtotal + shipping
@@ -395,12 +400,12 @@ function OrderAside() {
                 <p className="text-[12px] font-semibold text-dp-text-primary truncate">{item.product_title}</p>
                 <p className="text-[11px] text-dp-text-tertiary">{item.variant.size.label} · Qty {item.quantity}</p>
               </div>
-              <span className="text-[13px] font-bold text-dp-text-primary shrink-0">${parseFloat(item.line_total).toFixed(2)}</span>
+              <span className="text-[13px] font-bold text-dp-text-primary shrink-0">{formatPrice(parseFloat(item.line_total))}</span>
             </div>
           ))}
           <div className="border-t border-dp-border pt-3 flex justify-between">
             <span className="text-[13px] font-bold text-dp-text-primary">Total</span>
-            <span className="font-display text-xl text-dp-text-primary">${total.toFixed(2)}</span>
+            <span className="font-display text-xl text-dp-text-primary">{formatPrice(total)}</span>
           </div>
         </div>
       </div>

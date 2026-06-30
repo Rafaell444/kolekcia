@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Q, Max
+from django.db.models.functions import TruncMonth, TruncDate
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework import generics, status
@@ -110,8 +111,6 @@ class AdminAnalyticsView(APIView):
 
     def get(self, request):
         from apps.orders.models import Order
-        from django.db.models.functions import TruncMonth
-
         data = (
             Order.objects.filter(status__in=["processing", "shipped", "delivered"])
             .annotate(month=TruncMonth("created_at"))
@@ -130,6 +129,146 @@ class AdminAnalyticsView(APIView):
         ])
 
 
+class AdminSuperAnalyticsView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.orders.models import Order
+        from apps.auctions.models import Auction, AuctionBid
+        from apps.users.models import User
+
+        now = timezone.now()
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        last_30_days_start = today - timedelta(days=29)
+        completed_statuses = ["processing", "shipped", "delivered"]
+
+        orders_qs = Order.objects.filter(status__in=completed_statuses)
+
+        total_revenue = float(orders_qs.aggregate(total=Sum("total"))["total"] or 0)
+        total_orders = orders_qs.count()
+        total_users = User.objects.count()
+        total_bids = AuctionBid.objects.count()
+        total_auctions = Auction.objects.count()
+        active_auctions = Auction.objects.filter(ends_at__gt=now).count()
+
+        today_orders_qs = orders_qs.filter(created_at__date=today)
+        yesterday_orders_qs = orders_qs.filter(created_at__date=yesterday)
+
+        today_revenue = float(today_orders_qs.aggregate(total=Sum("total"))["total"] or 0)
+        yesterday_revenue = float(yesterday_orders_qs.aggregate(total=Sum("total"))["total"] or 0)
+        today_orders = today_orders_qs.count()
+        yesterday_orders = yesterday_orders_qs.count()
+
+        today_bids = AuctionBid.objects.filter(placed_at__date=today).count()
+        yesterday_bids = AuctionBid.objects.filter(placed_at__date=yesterday).count()
+
+        def pct_change(current, previous):
+            if previous == 0:
+                return 100.0 if current > 0 else 0.0
+            return round(((current - previous) / previous) * 100.0, 2)
+
+        daily_orders = (
+            orders_qs.filter(created_at__date__gte=last_30_days_start)
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(revenue=Sum("total"), orders=Count("id"))
+            .order_by("day")
+        )
+        daily_bids = (
+            AuctionBid.objects.filter(placed_at__date__gte=last_30_days_start)
+            .annotate(day=TruncDate("placed_at"))
+            .values("day")
+            .annotate(bids=Count("id"), max_bid=Max("amount"))
+            .order_by("day")
+        )
+
+        bids_map = {
+            b["day"]: {"bids": b["bids"], "max_bid": float(b["max_bid"] or 0)}
+            for b in daily_bids
+        }
+
+        by_day = []
+        for i in range(30):
+            day = last_30_days_start + timedelta(days=i)
+            order_row = next((o for o in daily_orders if o["day"] == day), None)
+            bid_row = bids_map.get(day, {"bids": 0, "max_bid": 0.0})
+            by_day.append(
+                {
+                    "day": day.strftime("%Y-%m-%d"),
+                    "orders": int(order_row["orders"]) if order_row else 0,
+                    "revenue": float(order_row["revenue"] or 0) if order_row else 0.0,
+                    "bids": int(bid_row["bids"]),
+                    "max_bid": float(bid_row["max_bid"]),
+                }
+            )
+
+        auction_bidder_rows = []
+        auctions = (
+            Auction.objects.select_related("product")
+            .prefetch_related("bids__user")
+            .order_by("-created_at")[:50]
+        )
+        for auction in auctions:
+            bids = list(auction.bids.all().order_by("-amount", "-placed_at"))
+            if not bids:
+                continue
+            unique_bidder_ids = set()
+            bidder_list = []
+            for bid in bids:
+                unique_bidder_ids.add(str(bid.user_id))
+                bidder_list.append(
+                    {
+                        "bid_id": bid.id,
+                        "bidder_name": bid.user.name or bid.user.email,
+                        "bidder_email": bid.user.email,
+                        "amount": float(bid.amount),
+                        "placed_at": bid.placed_at.isoformat(),
+                    }
+                )
+            auction_bidder_rows.append(
+                {
+                    "auction_id": auction.id,
+                    "title": auction.title,
+                    "product_id": auction.product_id,
+                    "product_title": auction.product.title if auction.product else auction.title,
+                    "ends_at": auction.ends_at.isoformat(),
+                    "current_bid": float(bids[0].amount),
+                    "total_bids": len(bids),
+                    "unique_bidders": len(unique_bidder_ids),
+                    "bidders": bidder_list,
+                }
+            )
+
+        auction_bidder_rows.sort(key=lambda x: (x["total_bids"], x["current_bid"]), reverse=True)
+
+        return Response(
+            {
+                "totals": {
+                    "revenue": total_revenue,
+                    "orders": total_orders,
+                    "users": total_users,
+                    "bids": total_bids,
+                    "auctions": total_auctions,
+                    "active_auctions": active_auctions,
+                },
+                "today": {
+                    "date": today.strftime("%Y-%m-%d"),
+                    "revenue": today_revenue,
+                    "orders": today_orders,
+                    "bids": today_bids,
+                },
+                "rates": {
+                    "revenue_change_pct_vs_yesterday": pct_change(today_revenue, yesterday_revenue),
+                    "orders_change_pct_vs_yesterday": pct_change(today_orders, yesterday_orders),
+                    "bids_change_pct_vs_yesterday": pct_change(today_bids, yesterday_bids),
+                },
+                "by_day": by_day,
+                "auction_bidder_breakdown": auction_bidder_rows,
+            }
+        )
+
+
 # ── Orders ────────────────────────────────────────────────────────────────────
 
 class AdminOrderListView(AdminNoPaginationMixin, generics.ListAPIView):
@@ -146,6 +285,15 @@ class AdminOrderListView(AdminNoPaginationMixin, generics.ListAPIView):
 
 class AdminOrderUpdateView(APIView):
     permission_classes = [IsAdminUser]
+
+    def get(self, request, pk):
+        from apps.orders.models import Order
+        from apps.orders.serializers import OrderSerializer
+        try:
+            order = Order.objects.prefetch_related("items", "status_history").get(pk=pk)
+        except Order.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(OrderSerializer(order).data)
 
     def patch(self, request, pk):
         from apps.orders.models import Order, OrderStatusHistory
@@ -536,3 +684,79 @@ class AdminAuditLogView(AdminNoPaginationMixin, generics.ListAPIView):
     queryset = AuditLog.objects.select_related("admin_user").all()
     serializer_class = AuditLogSerializer
     permission_classes = [IsAdminUser]
+
+
+class AdminBlogPostSerializer(serializers.ModelSerializer):
+    class Meta:
+        from apps.blog.models import BlogPost
+        model = BlogPost
+        fields = (
+            "id",
+            "title",
+            "slug",
+            "excerpt",
+            "content",
+            "cover_image_url",
+            "is_published",
+            "published_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "slug", "created_at", "updated_at")
+
+
+class AdminBlogPostListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.blog.models import BlogPost
+        posts = BlogPost.objects.all().order_by("-created_at")
+        return Response(AdminBlogPostSerializer(posts, many=True).data)
+
+    def post(self, request):
+        payload = request.data.copy()
+        if payload.get("is_published") and not payload.get("published_at"):
+            payload["published_at"] = timezone.now()
+        ser = AdminBlogPostSerializer(data=payload)
+        ser.is_valid(raise_exception=True)
+        post = ser.save()
+        log_action(request.user, "create", "blog_post", post.id, {"title": post.title})
+        return Response(AdminBlogPostSerializer(post).data, status=status.HTTP_201_CREATED)
+
+
+class AdminBlogPostDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, pk):
+        from apps.blog.models import BlogPost
+        try:
+            post = BlogPost.objects.get(pk=pk)
+        except BlogPost.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(AdminBlogPostSerializer(post).data)
+
+    def patch(self, request, pk):
+        from apps.blog.models import BlogPost
+        try:
+            post = BlogPost.objects.get(pk=pk)
+        except BlogPost.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        payload = request.data.copy()
+        if payload.get("is_published") and not post.published_at and not payload.get("published_at"):
+            payload["published_at"] = timezone.now()
+        ser = AdminBlogPostSerializer(post, data=payload, partial=True)
+        ser.is_valid(raise_exception=True)
+        updated = ser.save()
+        log_action(request.user, "update", "blog_post", updated.id, {"title": updated.title})
+        return Response(AdminBlogPostSerializer(updated).data)
+
+    def delete(self, request, pk):
+        from apps.blog.models import BlogPost
+        try:
+            post = BlogPost.objects.get(pk=pk)
+        except BlogPost.DoesNotExist:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        title = post.title
+        post.delete()
+        log_action(request.user, "delete", "blog_post", pk, {"title": title})
+        return Response(status=status.HTTP_204_NO_CONTENT)

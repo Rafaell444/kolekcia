@@ -16,7 +16,7 @@ class ConversationListView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Conversation.objects.prefetch_related("messages").select_related("vendor")
+        qs = Conversation.objects.prefetch_related("messages", "product__images").select_related("vendor", "product")
         if self.request.user.is_staff:
             return qs.all()
         if _is_vendor(self.request.user):
@@ -25,14 +25,31 @@ class ConversationListView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         vendor_id = self.request.data.get("vendor_id")
+        product_id = self.request.data.get("product_id")
         vendor = None
+        product = None
         if vendor_id:
             try:
                 from apps.vendors.models import Vendor
                 vendor = Vendor.objects.get(pk=vendor_id)
             except Exception:
                 pass
-        conv = serializer.save(customer=self.request.user, vendor=vendor)
+        if product_id:
+            try:
+                from apps.products.models import Product
+                product = Product.objects.select_related("vendor", "artist").get(pk=product_id)
+                if not vendor and product.vendor_id:
+                    vendor = product.vendor
+                elif not vendor and product.artist and product.artist.vendor_id:
+                    vendor = product.artist.vendor
+            except Exception:
+                product = None
+        subject = self.request.data.get("subject", "").strip()
+        if product:
+            subject = f'Regarding "{product.title}"'
+        elif not subject:
+            subject = "New conversation"
+        conv = serializer.save(customer=self.request.user, vendor=vendor, product=product, subject=subject)
         text = self.request.data.get("initial_message", "")
         if text:
             Message.objects.create(conversation=conv, from_role="customer", text=text)
@@ -43,7 +60,7 @@ class ConversationDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Conversation.objects.prefetch_related("messages").select_related("vendor")
+        qs = Conversation.objects.prefetch_related("messages", "product__images").select_related("vendor", "product")
         if self.request.user.is_staff:
             return qs.all()
         if _is_vendor(self.request.user):

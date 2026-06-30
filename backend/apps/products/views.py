@@ -79,6 +79,12 @@ class ProductDetailView(generics.RetrieveAPIView):
     )
     serializer_class = ProductDetailSerializer
     permission_classes = [AllowAny]
+    lookup_field = "slug"
+
+    def get_object(self):
+        lookup = (self.kwargs.get("lookup") or "").strip()
+        queryset = self.get_queryset()
+        return generics.get_object_or_404(queryset, slug=lookup)
 
 
 class ReviewListCreateView(generics.ListCreateAPIView):

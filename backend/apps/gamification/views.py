@@ -3,8 +3,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import GamificationProfile, Badge, XPLog
-from .serializers import GamificationProfileSerializer, BadgeSerializer, XPLogSerializer
+from .models import GamificationProfile, Badge, XPLog, XPRule
+from .serializers import GamificationProfileSerializer, BadgeSerializer, XPLogSerializer, XPRuleSerializer
 
 
 class GamificationProfileView(APIView):
@@ -46,3 +46,12 @@ class LeaderboardView(APIView):
             for i, p in enumerate(profiles)
         ]
         return Response(data)
+
+
+class XPRuleListView(generics.ListAPIView):
+    serializer_class = XPRuleSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        return XPRule.objects.all().order_by("-xp_amount", "action_key")

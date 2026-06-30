@@ -21,7 +21,7 @@ export default function AdminCategoriesPage(): React.ReactElement {
     return () => { cancelled = true }
   }, [])
 
-  async function deleteCategory(id: string) {
+  async function deleteCategory(id: number) {
     await adminFetch(`/admin/categories/${id}/`, { method: "DELETE" }).catch(() => {})
     setCategories((prev) => prev.filter((c) => c.id !== id))
   }

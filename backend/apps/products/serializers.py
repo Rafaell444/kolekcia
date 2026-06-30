@@ -58,6 +58,7 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 
 
 class ProductListSerializer(serializers.ModelSerializer):
+    slug = serializers.CharField(read_only=True)
     artist_name = serializers.CharField(source="artist.name", read_only=True)
     category_slug = serializers.CharField(source="category.slug", read_only=True)
     image_url = serializers.SerializerMethodField()
@@ -66,7 +67,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = (
-            "id", "title", "artist_name", "category_slug", "image_url",
+            "id", "slug", "title", "artist_name", "category_slug", "image_url",
             "base_price", "original_price", "rating", "review_count",
             "is_limited", "is_sale", "is_new", "is_exclusive", "tags",
             "default_variant_id",
@@ -82,8 +83,13 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 class ProductDetailSerializer(serializers.ModelSerializer):
+    slug = serializers.CharField(read_only=True)
     artist = ArtistSerializer()
+    artist_name = serializers.CharField(source="artist.name", read_only=True)
     category = CategorySerializer()
+    category_slug = serializers.CharField(source="category.slug", read_only=True, allow_null=True)
+    category_name = serializers.CharField(source="category.name", read_only=True, allow_null=True)
+    vendor_id = serializers.SerializerMethodField()
     images = ProductImageSerializer(many=True)
     variants = ProductVariantSerializer(many=True)
     sizes = serializers.SerializerMethodField()
@@ -93,11 +99,19 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = (
-            "id", "title", "artist", "category", "images", "variants",
+            "id", "slug", "title", "artist", "artist_name", "category", "category_slug", "category_name",
+            "vendor_id", "images", "variants",
             "base_price", "original_price", "rating", "review_count",
             "is_limited", "is_sale", "is_new", "is_exclusive", "tags",
             "sizes", "finishes", "frames", "created_at",
         )
+
+    def get_vendor_id(self, obj):
+        if obj.vendor_id:
+            return obj.vendor_id
+        if obj.artist and obj.artist.vendor_id:
+            return obj.artist.vendor_id
+        return None
 
     def get_sizes(self, obj):
         return PosterSizeSerializer(PosterSize.objects.all(), many=True).data

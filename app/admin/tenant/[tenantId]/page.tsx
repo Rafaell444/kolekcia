@@ -7,7 +7,7 @@ import {
   DollarSign, ShoppingCart, Package, CreditCard,
   ArrowUpRight, TrendingUp, Clock, CheckCircle, Truck,
 } from "lucide-react"
-import { authFetch } from "@/lib/admin-auth"
+import { adminFetch } from "@/lib/admin-auth"
 
 type TenantOrder = { id: string; order_number: string; status: string; total: string; created_at: string }
 type TenantProduct = { id: string; title: string; base_price: string }
@@ -25,7 +25,7 @@ function StatCard({ label, value, sub, Icon, accent }: {
   return (
     <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5 flex flex-col gap-3">
       <div className="w-9 h-9 rounded-sm flex items-center justify-center" style={{ background: `${accent}18` }} aria-hidden>
-        <Icon size={18} style={{ color: accent }} />
+        <Icon size={18} className="" />
       </div>
       <div>
         <p className="font-display text-3xl text-dp-text-primary leading-none">{value}</p>

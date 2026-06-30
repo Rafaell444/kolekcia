@@ -5,6 +5,8 @@ import { AuthProvider } from '@/contexts/auth-context'
 import { GamificationProvider } from '@/contexts/gamification-context'
 import { CartProvider } from '@/contexts/cart-context'
 import { WishlistProvider } from '@/contexts/wishlist-context'
+import { LocaleProvider } from '@/contexts/locale-context'
+import ReferralTracker from '@/components/referrals/ReferralTracker'
 import './globals.css'
 
 /**
@@ -110,15 +112,18 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          <AuthProvider>
-            <CartProvider>
-              <WishlistProvider>
-                <GamificationProvider>
-                  {children}
-                </GamificationProvider>
-              </WishlistProvider>
-            </CartProvider>
-          </AuthProvider>
+          <LocaleProvider>
+            <AuthProvider>
+              <CartProvider>
+                <WishlistProvider>
+                  <GamificationProvider>
+                    <ReferralTracker />
+                    {children}
+                  </GamificationProvider>
+                </WishlistProvider>
+              </CartProvider>
+            </AuthProvider>
+          </LocaleProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -4,9 +4,11 @@ import React, { useEffect, useRef } from "react"
 import Link from "next/link"
 import { X, ShoppingCart, Minus, Plus, Trash2, ArrowRight, Package } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
+import { useLocale } from "@/contexts/locale-context"
 
 export default function FastCart() {
   const { cart, isOpen, closeCart, removeItem, updateQuantity, loading } = useCart()
+  const { formatPrice } = useLocale()
   const overlayRef = useRef<HTMLDivElement>(null)
 
   // Close on Escape key
@@ -174,7 +176,7 @@ export default function FastCart() {
 
                       <div className="flex items-center gap-2">
                         <p className="text-[13px] font-bold text-dp-text-primary">
-                          ${parseFloat(item.line_total).toFixed(2)}
+                          {formatPrice(parseFloat(item.line_total))}
                         </p>
                         <button
                           onClick={() => void removeItem(item.id)}
@@ -210,7 +212,7 @@ export default function FastCart() {
                 Subtotal ({items.reduce((s, i) => s + i.quantity, 0)} items)
               </p>
               <p className="text-[18px] font-black text-dp-text-primary font-display">
-                ${subtotal.toFixed(2)}
+                {formatPrice(subtotal)}
               </p>
             </div>
             <p className="text-[11px] text-dp-text-tertiary -mt-1">
@@ -223,7 +225,7 @@ export default function FastCart() {
               onClick={closeCart}
               className="flex items-center justify-center gap-2 w-full py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors"
             >
-              Checkout — ${subtotal.toFixed(2)} <ArrowRight size={15} />
+              Checkout — {formatPrice(subtotal)} <ArrowRight size={15} />
             </Link>
             <Link
               href="/cart"

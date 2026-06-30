@@ -5,6 +5,7 @@ import SiteShell from "@/components/layout/SiteShell"
 import Link from "next/link"
 import { Package, ArrowRight } from "lucide-react"
 import { authFetch } from "@/lib/api"
+import { useLocale } from "@/contexts/locale-context"
 
 type OrderItem = { id: number; product_title: string; quantity: number }
 type Order = {
@@ -26,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function OrdersPage(): React.ReactElement {
+  const { formatPrice } = useLocale()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -74,7 +76,7 @@ export default function OrdersPage(): React.ReactElement {
                   )}
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
-                  <span className="font-bold text-[16px] text-dp-text-primary">${parseFloat(order.total).toFixed(2)}</span>
+                  <span className="font-bold text-[16px] text-dp-text-primary">{formatPrice(parseFloat(order.total))}</span>
                   <Link href={`/account/orders/${order.id}`} className="flex items-center gap-1 text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">
                     Details <ArrowRight size={12} />
                   </Link>

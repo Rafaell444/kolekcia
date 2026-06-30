@@ -27,6 +27,7 @@ class AuctionSerializer(serializers.ModelSerializer):
         model = Auction
         fields = (
             "id",
+            "slug",
             "title",
             "artist_name",
             "image_url",

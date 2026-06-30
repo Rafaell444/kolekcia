@@ -8,11 +8,13 @@ import { ShoppingCart, ArrowRight, Trash2, Tag, X } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
 import { useAuth } from "@/contexts/auth-context"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
+import { useLocale } from "@/contexts/locale-context"
 
 export default function CartPage(): React.ReactElement {
   useRequireAuth()
   const { user } = useAuth()
   const { cart, loading, removeItem, updateQuantity, applyPromo, removePromo } = useCart()
+  const { formatPrice } = useLocale()
   const [promoInput, setPromoInput] = useState("")
   const [promoError, setPromoError] = useState("")
   const [promoLoading, setPromoLoading] = useState(false)
@@ -95,7 +97,7 @@ export default function CartPage(): React.ReactElement {
                           aria-label="Increase quantity"
                         >+</button>
                       </div>
-                      <span className="text-[15px] font-bold text-dp-text-primary">${parseFloat(item.line_total).toFixed(2)}</span>
+                      <span className="text-[15px] font-bold text-dp-text-primary">{formatPrice(parseFloat(item.line_total))}</span>
                       <button
                         onClick={() => removeItem(item.id)}
                         className="ml-auto text-dp-text-tertiary hover:text-dp-accent-cta transition-colors"
@@ -145,13 +147,13 @@ export default function CartPage(): React.ReactElement {
               {promoError && <p className="text-[11px] text-dp-accent-cta">{promoError}</p>}
 
               <div className="flex justify-between text-[13px] text-dp-text-secondary">
-                <span>Subtotal</span><span>${subtotal.toFixed(2)}</span>
+                <span>Subtotal</span><span>{formatPrice(subtotal)}</span>
               </div>
               <div className="flex justify-between text-[13px] text-dp-text-secondary">
-                <span>Shipping</span><span>{shipping === 0 ? "Free" : `$${shipping.toFixed(2)}`}</span>
+                <span>Shipping</span><span>{shipping === 0 ? "Free" : formatPrice(shipping)}</span>
               </div>
               <div className="border-t border-dp-border pt-4 flex justify-between font-bold text-[16px] text-dp-text-primary">
-                <span>Total</span><span>${total.toFixed(2)}</span>
+                <span>Total</span><span>{formatPrice(total)}</span>
               </div>
               <Link
                 href="/checkout"

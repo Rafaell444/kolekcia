@@ -46,6 +46,8 @@ LOCAL_APPS = [
     "apps.gamification",
     "apps.promo",
     "apps.cms",
+    "apps.blog",
+    "apps.referrals",
     "apps.messaging",
     "apps.newsletter",
     "apps.contact",

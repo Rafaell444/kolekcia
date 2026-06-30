@@ -6,11 +6,13 @@ import SiteShell from "@/components/layout/SiteShell"
 import ProductCard from "@/components/catalog/ProductCard"
 import { SlidersHorizontal, X, ChevronDown, ChevronUp, LayoutGrid, List } from "lucide-react"
 import { apiFetch } from "@/lib/api"
+import { useLocale } from "@/contexts/locale-context"
 
 type ApiCategory = { id: string; name: string; slug: string; count: number }
 
 type ApiProduct = {
   id: number
+  slug?: string
   title: string
   artist_name: string
   category_slug: string
@@ -233,8 +235,13 @@ const SORT_MAP: Record<string, string> = {
 function CatalogPageInner(): React.ReactElement {
   const searchParams = useSearchParams()
   const urlSearch = searchParams.get("search") ?? ""
+  const urlCategory = searchParams.get("category") ?? ""
+  const { formatPrice } = useLocale()
 
-  const [filters, setFilters]   = useState<Filters>(DEFAULT_FILTERS)
+  const [filters, setFilters]   = useState<Filters>(() => ({
+    ...DEFAULT_FILTERS,
+    categories: urlCategory ? [urlCategory] : [],
+  }))
   const [sort, setSort]         = useState("trending")
   const [view, setView]         = useState<"grid" | "list">("grid")
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -252,6 +259,14 @@ function CatalogPageInner(): React.ReactElement {
     apiFetch<ApiCategory[]>("/products/categories/").then((d) => { if (!cancelled) setCategories(d) }).catch(() => {})
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    setFilters((prev) => {
+      const nextCategories = urlCategory ? [urlCategory] : []
+      if (prev.categories.join(",") === nextCategories.join(",")) return prev
+      return { ...prev, categories: nextCategories }
+    })
+  }, [urlCategory])
 
   const buildQueryString = useCallback(() => {
     const params = new URLSearchParams()
@@ -413,11 +428,13 @@ function CatalogPageInner(): React.ReactElement {
                 {products.map((p) => (
                   <ProductCard key={p.id} product={{
                     id: String(p.id), title: p.title, artistName: p.artist_name,
+                    slug: p.slug,
+                    category: p.category_slug,
                     imageUrl: p.image_url, price: parseFloat(p.base_price),
                     originalPrice: p.original_price ? parseFloat(p.original_price) : null,
                     rating: parseFloat(p.rating), reviews: p.review_count,
                     isLimited: p.is_limited, isSale: p.is_sale, isNew: p.is_new,
-                    isExclusive: p.is_exclusive, category: p.category_slug, tags: p.tags,
+                    isExclusive: p.is_exclusive, tags: p.tags,
                     defaultVariantId: p.default_variant_id,
                   }} />
                 ))}
@@ -436,9 +453,9 @@ function CatalogPageInner(): React.ReactElement {
                         <p className="text-[12px] text-dp-text-secondary mt-1">{p.tags.join(" · ")}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-base font-bold text-dp-text-primary">${parseFloat(p.base_price).toFixed(2)}</span>
+                        <span className="text-base font-bold text-dp-text-primary">{formatPrice(parseFloat(p.base_price))}</span>
                         {p.original_price && (
-                          <span className="text-[12px] text-dp-text-tertiary line-through">${parseFloat(p.original_price).toFixed(2)}</span>
+                          <span className="text-[12px] text-dp-text-tertiary line-through">{formatPrice(parseFloat(p.original_price))}</span>
                         )}
                         {p.is_limited && <span className="badge-limited">Limited</span>}
                       </div>

@@ -1,14 +1,14 @@
 from django.core.management.base import BaseCommand
 from apps.products.models import Category, Artist, Product, ProductImage, ProductVariant, PosterSize, PosterFinish, PosterFrame
-from apps.users.models import User
-from apps.cms.models import HeroSlide, FAQ, Banner
+from apps.cms.models import HeroSlide, FAQ
 from apps.gamification.models import Badge, XPRule
 
 
 class Command(BaseCommand):
-    help = "Seed database with initial data from mock-data"
+    help = "Seed database with initial data (figures + wallpanels only)"
 
     def handle(self, *args, **kwargs):
+        self._reset_catalog()
         self._seed_poster_options()
         self._seed_categories()
         self._seed_artists()
@@ -16,6 +16,17 @@ class Command(BaseCommand):
         self._seed_cms()
         self._seed_gamification()
         self.stdout.write(self.style.SUCCESS("Database seeded successfully."))
+
+    def _reset_catalog(self):
+        from apps.products.models import Review, WishlistItem
+        WishlistItem.objects.all().delete()
+        Review.objects.all().delete()
+        ProductVariant.objects.all().delete()
+        ProductImage.objects.all().delete()
+        Product.objects.all().delete()
+        Artist.objects.all().delete()
+        Category.objects.all().delete()
+        self.stdout.write("  Catalog reset.")
 
     def _seed_poster_options(self):
         sizes = [
@@ -51,48 +62,77 @@ class Command(BaseCommand):
 
     def _seed_categories(self):
         cats = [
-            ("anime", "Anime", "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200&h=200&fit=crop", 45000),
-            ("gaming", "Gaming", "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=200&h=200&fit=crop", 38000),
-            ("space", "Space", "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=200&h=200&fit=crop", 22000),
-            ("nature", "Nature", "https://images.unsplash.com/photo-1448375240586-882707db888b?w=200&h=200&fit=crop", 61000),
-            ("abstract", "Abstract", "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=200&h=200&fit=crop", 18000),
-            ("movies", "Movies", "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=200&h=200&fit=crop", 29000),
-            ("music", "Music", "https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=200&h=200&fit=crop", 17000),
-            ("fantasy", "Fantasy", "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=200&h=200&fit=crop", 33000),
+            (
+                "figures",
+                "Figures",
+                "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=400&h=400&fit=crop",
+                0,
+            ),
+            (
+                "wallpanels",
+                "Wallpanels",
+                "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=400&fit=crop",
+                0,
+            ),
         ]
         for slug, name, image_url, count in cats:
-            Category.objects.get_or_create(slug=slug, defaults={"name": name, "image_url": image_url, "count": count})
+            Category.objects.create(slug=slug, name=name, image_url=image_url, count=count)
         self.stdout.write("  Categories seeded.")
 
     def _seed_artists(self):
         artists_data = [
-            ("Kaoru Nishida", "kaoru_nishida", "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&h=100&fit=crop", 142, 18400, 32, "Diamond", True),
-            ("Alex Tanaka", "alex_tanaka", "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=100&fit=crop", 89, 9200, 18, "Gold", True),
-            ("Selene Varga", "selene_varga", "https://images.unsplash.com/photo-1494790108755-2616b612b57b?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=400&h=100&fit=crop", 203, 31000, 45, "Diamond", True),
-            ("Marcus Steele", "marcus_steele", "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1551632436-cbf8dd35adfa?w=400&h=100&fit=crop", 57, 4800, 11, "Silver", False),
-            ("Hana Kurosawa", "hana_kurosawa", "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=400&h=100&fit=crop", 178, 24600, 39, "Platinum", True),
-            ("Ryo Tanabe", "ryo_tanabe", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=400&h=100&fit=crop", 96, 12100, 22, "Gold", True),
-            ("Elara Moon", "elara_moon", "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1448375240586-882707db888b?w=400&h=100&fit=crop", 64, 6200, 14, "Silver", False),
-            ("Kai Nomura", "kai_nomura", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&h=80&fit=crop&crop=face", "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=400&h=100&fit=crop", 112, 15800, 27, "Gold", True),
+            (
+                "Ryo Tanabe",
+                "ryo_tanabe",
+                "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face",
+                "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1200&h=400&fit=crop",
+                "Osaka sculptor specializing in premium 3D metal collectible figures — from anime icons to original characters.",
+                96,
+                12100,
+                22,
+                "Gold",
+                True,
+            ),
+            (
+                "Alex Tanaka",
+                "alex_tanaka",
+                "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200&h=200&fit=crop&crop=face",
+                "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=400&fit=crop",
+                "Berlin-based artist crafting ultra-HD 3D relief metal wallpanels with proprietary UV-cure layering.",
+                89,
+                9200,
+                18,
+                "Gold",
+                True,
+            ),
         ]
-        for name, handle, avatar, cover, designs, followers, level, badge, verified in artists_data:
-            Artist.objects.get_or_create(handle=handle, defaults={
-                "name": name, "avatar_url": avatar, "cover_url": cover,
-                "designs": designs, "followers": followers, "level": level,
-                "badge": badge, "verified": verified,
-            })
+        for name, handle, avatar, cover, bio, designs, followers, level, badge, verified in artists_data:
+            Artist.objects.create(
+                name=name,
+                handle=handle,
+                avatar_url=avatar,
+                cover_url=cover,
+                bio=bio,
+                designs=designs,
+                followers=followers,
+                level=level,
+                badge=badge,
+                verified=verified,
+            )
         self.stdout.write("  Artists seeded.")
 
     def _seed_products(self):
         products_data = [
-            ("Neon Dragon", "kaoru_nishida", "anime", 29.99, 39.99, False, True, False, False, 4.8, 1243, ["Anime", "Dragon", "Neon"], "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&h=560&fit=crop"),
-            ("Midnight Circuit", "alex_tanaka", "gaming", 34.99, None, True, False, False, False, 4.6, 876, ["Gaming", "Circuit", "Cyberpunk"], "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=560&fit=crop"),
-            ("Void Between Stars", "selene_varga", "space", 34.99, None, False, False, True, False, 4.9, 2108, ["Space", "Stars", "Galaxy"], "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=400&h=560&fit=crop"),
-            ("Iron Tiger", "marcus_steele", "nature", 27.99, 34.99, False, True, False, False, 4.5, 654, ["Nature", "Tiger", "Wildlife"], "https://images.unsplash.com/photo-1551632436-cbf8dd35adfa?w=400&h=560&fit=crop"),
-            ("Aurora Drift", "hana_kurosawa", "space", 49.99, None, False, False, False, True, 4.9, 3201, ["Space", "Aurora", "Northern Lights"], "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=400&h=560&fit=crop"),
-            ("Cyber Samurai", "ryo_tanabe", "anime", 39.99, None, True, False, True, False, 4.7, 987, ["Anime", "Samurai", "Cyberpunk"], "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=400&h=560&fit=crop"),
-            ("Crystal Forest", "elara_moon", "nature", 24.99, 29.99, False, True, False, False, 4.4, 432, ["Nature", "Forest", "Fantasy"], "https://images.unsplash.com/photo-1448375240586-882707db888b?w=400&h=560&fit=crop"),
-            ("Digital Phantom", "kai_nomura", "gaming", 44.99, None, False, False, False, True, 4.8, 1567, ["Gaming", "Digital", "Ghost"], "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=400&h=560&fit=crop"),
+            # Figures — Ryo Tanabe
+            ("Cyber Samurai", "ryo_tanabe", "figures", 39.99, None, True, False, False, False, 4.7, 987, ["Figure", "Samurai", "Cyberpunk"], "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop"),
+            ("Neon Ronin", "ryo_tanabe", "figures", 34.99, 44.99, False, True, True, False, 4.8, 654, ["Figure", "Ronin", "Neon"], "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop"),
+            ("Ghost Protocol", "ryo_tanabe", "figures", 44.99, None, False, False, False, True, 4.9, 432, ["Figure", "Ghost", "Limited"], "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop"),
+            ("Oni Guardian", "ryo_tanabe", "figures", 49.99, None, True, False, True, True, 5.0, 321, ["Figure", "Oni", "Exclusive"], "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop"),
+            # Wallpanels — Alex Tanaka
+            ("Midnight Circuit", "alex_tanaka", "wallpanels", 34.99, None, True, False, False, False, 4.6, 876, ["Wallpanel", "Circuit", "Cyberpunk"], "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop"),
+            ("Aurora Drift", "alex_tanaka", "wallpanels", 49.99, None, False, False, False, True, 4.9, 2108, ["Wallpanel", "Aurora", "Exclusive"], "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop"),
+            ("Void Horizon", "alex_tanaka", "wallpanels", 39.99, 49.99, False, True, True, False, 4.7, 765, ["Wallpanel", "Space", "Sale"], "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop"),
+            ("Crystal Forest", "alex_tanaka", "wallpanels", 29.99, 34.99, False, True, False, False, 4.5, 543, ["Wallpanel", "Forest", "Nature"], "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&h=840&fit=crop"),
         ]
 
         default_size = PosterSize.objects.get(id="m")
@@ -100,34 +140,50 @@ class Command(BaseCommand):
         default_frame = PosterFrame.objects.get(id="none")
 
         for (title, handle, cat_slug, price, orig_price, is_limited, is_sale, is_new, is_exclusive, rating, review_count, tags, img_url) in products_data:
-            if Product.objects.filter(title=title).exists():
-                continue
             artist = Artist.objects.get(handle=handle)
             category = Category.objects.get(slug=cat_slug)
             product = Product.objects.create(
-                title=title, artist=artist, category=category,
-                base_price=price, original_price=orig_price,
-                is_limited=is_limited, is_sale=is_sale, is_new=is_new, is_exclusive=is_exclusive,
-                rating=rating, review_count=review_count, tags=tags,
+                title=title,
+                artist=artist,
+                category=category,
+                base_price=price,
+                original_price=orig_price,
+                is_limited=is_limited,
+                is_sale=is_sale,
+                is_new=is_new,
+                is_exclusive=is_exclusive,
+                rating=rating,
+                review_count=review_count,
+                tags=tags,
             )
             ProductImage.objects.create(product=product, url=img_url, order=0)
             ProductVariant.objects.create(product=product, size=default_size, finish=default_finish, frame=default_frame, stock=100)
+
+        for cat in Category.objects.all():
+            cat.count = cat.products.count()
+            cat.save(update_fields=["count"])
 
         self.stdout.write("  Products seeded.")
 
     def _seed_cms(self):
         slides = [
-            ("image", "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1440&h=720&fit=crop", None, "ART THAT\nGETS YOU", "2.5 million designs from 150K+ independent artists", "Shop Now", "/catalog", "#e63946", 0),
-            ("image", "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1440&h=720&fit=crop", None, "EXPLORE\nTHE COSMOS", "Stunning space art prints from the world's top digital artists", "Browse Space", "/catalog?category=space", "#e8a427", 1),
-            ("image", "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=1440&h=720&fit=crop", None, "GAME\nON", "Official licensed gaming posters and fan-made originals", "Shop Gaming", "/catalog?category=gaming", "#00b4d8", 2),
-            ("video", None, "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1440&h=720&fit=crop", "LIMITED\nDROPS", "Exclusive prints. New releases every Friday at noon.", "View Limited Editions", "/catalog?limited=true", "#e8a427", 3),
+            ("image", "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1440&h=720&fit=crop", None, "COLLECTIBLE\nFIGURES", "Precision metal figures sculpted for display shelves and collector cabinets", "Shop Figures", "/catalog?category=figures", "#e63946", 0),
+            ("image", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1440&h=720&fit=crop", None, "METAL\nWALLPANELS", "3D relief panels that turn any wall into a living art installation", "Shop Wallpanels", "/catalog?category=wallpanels", "#e8a427", 1),
+            ("image", "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1440&h=720&fit=crop", None, "LIMITED\nDROPS", "Exclusive pieces from our two in-house studios. New releases every Friday.", "View Limited Editions", "/catalog?limited=true", "#00b4d8", 2),
         ]
         for (slide_type, image_url, video_poster_url, headline, subline, cta, cta_href, accent, order) in slides:
             if not HeroSlide.objects.filter(headline=headline).exists():
                 HeroSlide.objects.create(
-                    type=slide_type, image_url=image_url or "", video_poster_url=video_poster_url or "",
-                    headline=headline, subline=subline, cta=cta, cta_href=cta_href,
-                    accent=accent, order=order, is_active=True,
+                    type=slide_type,
+                    image_url=image_url or "",
+                    video_poster_url=video_poster_url or "",
+                    headline=headline,
+                    subline=subline,
+                    cta=cta,
+                    cta_href=cta_href,
+                    accent=accent,
+                    order=order,
+                    is_active=True,
                 )
 
         faqs = [

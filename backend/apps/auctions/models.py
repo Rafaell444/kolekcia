@@ -1,10 +1,12 @@
 from django.db import models
+from django.utils.text import slugify
 from apps.users.models import User
 from apps.products.models import Product
 
 
 class Auction(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="auctions", null=True, blank=True)
+    slug = models.SlugField(max_length=280, unique=True, blank=True)
     title = models.CharField(max_length=255)
     artist_name = models.CharField(max_length=255, blank=True)
     image_url = models.URLField(blank=True)
@@ -31,6 +33,17 @@ class Auction(models.Model):
     def top_bidder(self):
         latest = self.bids.order_by("-amount").first()
         return latest.user.name or latest.user.email if latest else "—"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.title) or "auction"
+            candidate = base
+            n = 1
+            while Auction.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+                candidate = f"{base}-{n}"
+                n += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title

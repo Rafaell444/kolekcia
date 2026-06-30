@@ -90,6 +90,7 @@ export default function AdminDashboard(): React.ReactElement {
           {[
             { href: "/admin/products", label: "Manage Products", Icon: Package },
             { href: "/admin/orders", label: "View Orders", Icon: ShoppingCart },
+            { href: "/admin/blog", label: "Manage Blog", Icon: TrendingUp },
             { href: "/admin/users", label: isVendor ? "Customers" : "All Users", Icon: Users },
             { href: "/admin/analytics", label: "Analytics", Icon: TrendingUp },
           ].map(({ href, label, Icon }) => (

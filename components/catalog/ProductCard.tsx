@@ -7,7 +7,10 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/cart-context"
 import { useWishlist } from "@/contexts/wishlist-context"
+import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
+import { savePendingCartIntent } from "@/lib/pending-cart"
+import { productHref } from "@/lib/product-url"
 
 export type ProductCardProps = {
   product: {
@@ -25,14 +28,17 @@ export type ProductCardProps = {
     isExclusive?: boolean
     tags?: string[]
     category?: string
+    slug?: string
     defaultVariantId?: number | null
   }
 }
 
 export default function ProductCard({ product: p }: ProductCardProps) {
+  const href = productHref({ id: p.id, slug: p.slug, categorySlug: p.category })
   const router = useRouter()
   const { addItem } = useCart()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()
+  const { formatPrice } = useLocale()
   const [adding, setAdding]           = useState(false)
   const [addedToCart, setAddedToCart] = useState(false)
   const [wishWorking, setWishWorking] = useState(false)
@@ -49,12 +55,19 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     e.stopPropagation()
 
     if (!getAccessToken()) {
-      router.push(`/login?next=/catalog/${p.id}`)
+      if (p.defaultVariantId) {
+        savePendingCartIntent({
+          variantId: p.defaultVariantId,
+          quantity: 1,
+          returnTo: href,
+        })
+      }
+      router.push(`/login?next=${encodeURIComponent(href)}`)
       return
     }
 
     if (!p.defaultVariantId) {
-      router.push(`/catalog/${p.id}`)
+      router.push(href)
       return
     }
 
@@ -75,7 +88,7 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     e.stopPropagation()
 
     if (!getAccessToken()) {
-      router.push(`/login?next=/catalog/${p.id}`)
+      router.push(`/login?next=${encodeURIComponent(href)}`)
       return
     }
 
@@ -89,9 +102,9 @@ export default function ProductCard({ product: p }: ProductCardProps) {
 
   return (
     <Link
-      href={`/catalog/${p.id}`}
+      href={href}
       className="group relative flex flex-col bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-dp-accent-cta"
-      aria-label={`${p.title} by ${p.artistName} — $${p.price.toFixed(2)}`}
+      aria-label={`${p.title} by ${p.artistName} — ${formatPrice(p.price)}`}
     >
       {/* ── Image ── */}
       <div className="relative aspect-poster overflow-hidden bg-dp-bg-elevated">
@@ -164,11 +177,11 @@ export default function ProductCard({ product: p }: ProductCardProps) {
       {/* ── Price ── */}
       <div className="flex items-center gap-2 px-3 pb-3 mt-auto">
         <span className="text-[15px] font-bold text-dp-text-primary">
-          ${p.price.toFixed(2)}
+          {formatPrice(p.price)}
         </span>
         {p.originalPrice && p.originalPrice > p.price && (
           <span className="text-[12px] text-dp-text-tertiary line-through">
-            ${p.originalPrice.toFixed(2)}
+            {formatPrice(p.originalPrice)}
           </span>
         )}
       </div>

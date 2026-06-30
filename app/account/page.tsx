@@ -7,19 +7,24 @@ import Link from "next/link"
 import {
   Package, Heart, Star, Settings, LogOut, ChevronRight,
   Truck, CheckCircle2, Clock, XCircle, RotateCcw,
-  Award, Zap, ShoppingBag, User, MapPin, Bell, Shield,
+  Award, Zap, ShoppingBag, User, MapPin, Bell,
   Lock, Plus, Pencil, Trash2, Home, Building2,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useGamification } from "@/contexts/gamification-context"
 import { useRouter } from "next/navigation"
 import { authFetch, apiFetch } from "@/lib/api"
+import { useLocale } from "@/contexts/locale-context"
+import { productHref } from "@/lib/product-url"
 
 type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count: number; tracking_code: string }
 type Badge = { id: string; name: string; icon: string; rarity: string; description: string }
 type EarnedBadge = { badge: Badge; earned_at: string }
-type WishlistItem = { id: string; product_id: number; title: string; base_price: string; image_url: string; artist_name: string }
+type WishlistItem = { id: string; product_id: number; product_slug?: string; title: string; base_price: string; image_url: string; artist_name: string }
 type Address = { id: number; label: string; line1: string; line2: string; city: string; state: string; zip_code: string; country: string; is_default: boolean }
+type XPLog = { id: number; action: string; xp_amount: number; created_at: string }
+type XPRule = { id: number; action_key: string; xp_amount: number; is_one_time: boolean }
+type ReferralStats = { code: string; total_invites: number; converted_invites: number }
 
 const ACCOUNT_TABS = [
   { id: "overview",      label: "Overview",       Icon: User },
@@ -28,7 +33,6 @@ const ACCOUNT_TABS = [
   { id: "badges",        label: "Badges & XP",    Icon: Award },
   { id: "settings",      label: "Settings",       Icon: Settings },
   { id: "addresses",     label: "Addresses",      Icon: MapPin },
-  { id: "security",      label: "Security",       Icon: Shield },
   { id: "notifications", label: "Notifications",  Icon: Bell },
 ]
 
@@ -56,13 +60,20 @@ const LEVEL_ROADMAP = [
 
 function OverviewTab() {
   const { profile } = useGamification()
+  const { formatPrice } = useLocale()
   const [orders, setOrders] = useState<Order[]>([])
   const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([])
+  const [referral, setReferral] = useState<ReferralStats | null>(null)
+  const [xpLog, setXpLog] = useState<XPLog[]>([])
+  const [xpRules, setXpRules] = useState<XPRule[]>([])
 
   useEffect(() => {
     let cancelled = false
     authFetch<{ results: Order[] }>("/orders/").then((d) => { if (!cancelled) setOrders(d.results.slice(0, 3)) }).catch(() => {})
     authFetch<EarnedBadge[]>("/gamification/my-badges/").then((d) => { if (!cancelled) setEarnedBadges(d.slice(0, 6)) }).catch(() => {})
+    authFetch<ReferralStats>("/referrals/me/").then((d) => { if (!cancelled) setReferral(d) }).catch(() => {})
+    authFetch<XPLog[]>("/gamification/xp-log/").then((d) => { if (!cancelled) setXpLog((Array.isArray(d) ? d : []).slice(0, 4)) }).catch(() => {})
+    apiFetch<XPRule[]>("/gamification/xp-rules/").then((d) => { if (!cancelled) setXpRules((Array.isArray(d) ? d : []).slice(0, 4)) }).catch(() => {})
     return () => { cancelled = true }
   }, [])
 
@@ -106,6 +117,31 @@ function OverviewTab() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-4">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">XP History</h3>
+          <div className="space-y-1.5">
+            {xpLog.length > 0 ? xpLog.map((entry) => (
+              <div key={entry.id} className="flex items-center justify-between text-[11px]">
+                <span className="text-dp-text-secondary truncate pr-3">{entry.action.replaceAll("_", " ")}</span>
+                <span className="font-bold text-dp-accent-cta shrink-0">+{entry.xp_amount}</span>
+              </div>
+            )) : <p className="text-[11px] text-dp-text-tertiary">No XP activity yet.</p>}
+          </div>
+        </div>
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-4">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">How To Earn XP</h3>
+          <div className="space-y-1.5">
+            {xpRules.length > 0 ? xpRules.map((rule) => (
+              <div key={rule.id} className="flex items-center justify-between text-[11px]">
+                <span className="text-dp-text-secondary truncate pr-3">{rule.action_key.replaceAll("_", " ")}</span>
+                <span className="font-bold text-dp-success shrink-0">{rule.xp_amount}</span>
+              </div>
+            )) : <p className="text-[11px] text-dp-text-tertiary">XP rules unavailable.</p>}
+          </div>
+        </div>
+      </div>
+
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-2xl text-dp-text-primary">Recent Orders</h2>
@@ -124,7 +160,7 @@ function OverviewTab() {
                     <p className="text-[11px] text-dp-text-tertiary">{order.items_count} item{order.items_count !== 1 ? "s" : ""} · {new Date(order.created_at).toLocaleDateString()}</p>
                   </div>
                   <div className={`flex items-center gap-1.5 text-[12px] font-semibold ${cfg.color}`}>{cfg.icon} {cfg.label}</div>
-                  <span className="font-bold text-dp-text-primary text-[14px]">${parseFloat(order.total).toFixed(2)}</span>
+                  <span className="font-bold text-dp-text-primary text-[14px]">{formatPrice(parseFloat(order.total))}</span>
                 </div>
               )
             })}
@@ -145,11 +181,29 @@ function OverviewTab() {
           </div>
         </div>
       )}
+
+      {referral && (
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
+          <h2 className="font-display text-2xl text-dp-text-primary mb-3">Referral Program</h2>
+          <p className="text-[12px] text-dp-text-secondary mb-3">
+            Share your link. When a friend buys for the first time, both of you earn XP.
+          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <code className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary break-all">
+              {typeof window !== "undefined" ? `${window.location.origin}/?ref=${referral.code}` : `/?ref=${referral.code}`}
+            </code>
+          </div>
+          <p className="text-[12px] text-dp-text-tertiary mt-3">
+            Invites: {referral.total_invites} · Conversions: {referral.converted_invites}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
 
 function OrdersTab() {
+  const { formatPrice } = useLocale()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -186,14 +240,14 @@ function OrdersTab() {
               </div>
               <div className="flex items-center gap-4">
                 <div className={`flex items-center gap-1.5 text-[12px] font-semibold ${cfg.color}`}>{cfg.icon} {cfg.label}</div>
-                <span className="font-display text-xl text-dp-text-primary">${parseFloat(order.total).toFixed(2)}</span>
+                <span className="font-display text-xl text-dp-text-primary">{formatPrice(parseFloat(order.total))}</span>
               </div>
             </div>
             {order.tracking_code && (
               <p className="text-[11px] text-dp-text-tertiary">Tracking: <span className="font-mono text-dp-text-secondary">{order.tracking_code}</span></p>
             )}
             <div className="flex gap-2 mt-3">
-              <button className="px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">View Details</button>
+              <Link href={`/account/orders/${order.id}`} className="px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">View Details</Link>
               {order.status === "delivered" && (
                 <button className="flex items-center gap-1 px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
                   <RotateCcw size={11} /> Return
@@ -208,6 +262,7 @@ function OrdersTab() {
 }
 
 function WishlistTab() {
+  const { formatPrice } = useLocale()
   const [items, setItems] = useState<WishlistItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -228,14 +283,14 @@ function WishlistTab() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
           {items.map((p) => (
-            <Link key={p.id} href={`/catalog/${p.product_id}`} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover">
+            <Link key={p.id} href={productHref({ id: p.product_id, slug: p.product_slug })} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover">
               <div className="aspect-poster relative bg-dp-bg-elevated">
                 {p.image_url && <Image src={p.image_url} alt={p.title} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 640px) 50vw, 25vw" />}
               </div>
               <div className="p-3">
                 <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
                 <p className="text-[13px] font-semibold text-dp-text-primary truncate">{p.title}</p>
-                <p className="text-[14px] font-bold text-dp-text-primary mt-1">${parseFloat(p.base_price).toFixed(2)}</p>
+                <p className="text-[14px] font-bold text-dp-text-primary mt-1">{formatPrice(parseFloat(p.base_price))}</p>
               </div>
             </Link>
           ))}
@@ -255,6 +310,8 @@ function BadgesTab() {
   const { profile } = useGamification()
   const [badges, setBadges] = useState<Badge[]>([])
   const [earned, setEarned] = useState<string[]>([])
+  const [xpLog, setXpLog] = useState<XPLog[]>([])
+  const [xpRules, setXpRules] = useState<XPRule[]>([])
   const [loading, setLoading] = useState(true)
   const [showRoadmap, setShowRoadmap] = useState(false)
 
@@ -263,7 +320,16 @@ function BadgesTab() {
     Promise.all([
       apiFetch<Badge[]>("/gamification/badges/").catch(() => []),
       authFetch<EarnedBadge[]>("/gamification/my-badges/").then((d) => d.map((b) => b.badge.id)).catch(() => []),
-    ]).then(([b, e]) => { if (!cancelled) { setBadges(b); setEarned(e) } }).finally(() => { if (!cancelled) setLoading(false) })
+      authFetch<XPLog[]>("/gamification/xp-log/").catch(() => []),
+      apiFetch<XPRule[]>("/gamification/xp-rules/").catch(() => []),
+    ]).then(([b, e, logs, rules]) => {
+      if (!cancelled) {
+        setBadges(b)
+        setEarned(e)
+        setXpLog(Array.isArray(logs) ? logs.slice(0, 10) : [])
+        setXpRules(Array.isArray(rules) ? rules.slice(0, 10) : [])
+      }
+    }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
 
@@ -310,6 +376,33 @@ function BadgesTab() {
             )}
           </div>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
+          <h3 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-4">XP History</h3>
+          <div className="space-y-2">
+            {xpLog.map((entry) => (
+              <div key={entry.id} className="flex items-center justify-between text-[12px]">
+                <span className="text-dp-text-secondary">{entry.action.replaceAll("_", " ")}</span>
+                <span className="font-bold text-dp-accent-cta">+{entry.xp_amount} XP</span>
+              </div>
+            ))}
+            {xpLog.length === 0 && <p className="text-[12px] text-dp-text-tertiary">No XP activity yet.</p>}
+          </div>
+        </div>
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
+          <h3 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-4">How To Earn XP</h3>
+          <div className="space-y-2">
+            {xpRules.map((rule) => (
+              <div key={rule.id} className="flex items-center justify-between text-[12px]">
+                <span className="text-dp-text-secondary">{rule.action_key.replaceAll("_", " ")}</span>
+                <span className="font-bold text-dp-success">{rule.xp_amount} XP</span>
+              </div>
+            ))}
+            {xpRules.length === 0 && <p className="text-[12px] text-dp-text-tertiary">XP rules unavailable.</p>}
+          </div>
+        </div>
       </div>
 
       {/* Level XP Roadmap */}
@@ -689,7 +782,6 @@ export default function AccountPage(): React.ReactElement {
     badges:        <BadgesTab />,
     settings:      <SettingsTab />,
     addresses:     <AddressesTab />,
-    security:      <ComingSoon title="Security" />,
     notifications: <ComingSoon title="Notifications" />,
   }
 

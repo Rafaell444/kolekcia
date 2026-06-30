@@ -1,15 +1,19 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, Suspense } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
+import { useCart } from "@/contexts/cart-context"
+import { clearPendingCartIntent, getPendingCartIntent } from "@/lib/pending-cart"
 
-export default function LoginPage(): React.ReactElement {
+function LoginPageInner(): React.ReactElement {
   const { login } = useAuth()
+  const { addItem } = useCart()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail]       = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
@@ -24,7 +28,22 @@ export default function LoginPage(): React.ReactElement {
     setLoading(true)
     try {
       await login(email, password, rememberMe)
-      router.push("/account")
+
+      const pending = getPendingCartIntent()
+      const next = searchParams.get("next")
+      const returnTo = pending?.returnTo ?? next ?? "/account"
+
+      if (pending) {
+        try {
+          await addItem(pending.variantId, pending.quantity)
+        } catch {
+          // still redirect back to product page
+        } finally {
+          clearPendingCartIntent()
+        }
+      }
+
+      router.push(returnTo.startsWith("/") ? returnTo : "/account")
     } catch (err: unknown) {
       const apiErr = err as { data?: { detail?: string } }
       setError(apiErr?.data?.detail ?? "Login failed. Please try again.")
@@ -112,7 +131,7 @@ export default function LoginPage(): React.ReactElement {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="w-4 h-4 rounded-sm accent-[var(--dp-accent-cta)]"
               />
-              <span className="text-[12px] text-dp-text-secondary">Remember me for 30 days</span>
+              <span className="text-[12px] text-dp-text-secondary">Remember me</span>
             </label>
 
             {/* Submit */}
@@ -163,5 +182,17 @@ export default function LoginPage(): React.ReactElement {
         </div>
       </div>
     </SiteShell>
+  )
+}
+
+export default function LoginPage(): React.ReactElement {
+  return (
+    <Suspense fallback={
+      <SiteShell>
+        <div className="dp-container py-24 text-center text-dp-text-tertiary">Loading…</div>
+      </SiteShell>
+    }>
+      <LoginPageInner />
+    </Suspense>
   )
 }

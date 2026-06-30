@@ -199,9 +199,9 @@ export default function RegisterPage(): React.ReactElement {
             {/* Terms */}
             <p className="text-[11px] text-dp-text-tertiary leading-relaxed">
               By creating an account you agree to our{" "}
-              <Link href="/" className="underline hover:text-dp-text-primary transition-colors">Terms of Service</Link>
+              <Link href="/terms" className="underline hover:text-dp-text-primary transition-colors">Terms of Service</Link>
               {" "}and{" "}
-              <Link href="/" className="underline hover:text-dp-text-primary transition-colors">Privacy Policy</Link>.
+              <Link href="/privacy" className="underline hover:text-dp-text-primary transition-colors">Privacy Policy</Link>.
             </p>
 
             {/* Submit */}

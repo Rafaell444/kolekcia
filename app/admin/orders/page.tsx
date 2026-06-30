@@ -1,8 +1,9 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
+import Link from "next/link"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { Truck, CheckCircle, Clock, Package, XCircle, Search } from "lucide-react"
+import { Truck, CheckCircle, Clock, Package, XCircle, Search, Eye } from "lucide-react"
 
 type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled"
 type AdminOrder = {
@@ -93,6 +94,7 @@ export default function AdminOrdersPage(): React.ReactElement {
                 <th className="text-left px-4 py-3">Status</th>
                 <th className="text-left px-4 py-3">Total</th>
                 <th className="text-left px-4 py-3">Date</th>
+                <th className="text-left px-4 py-3">Actions</th>
                 {!isVendor && <th className="text-left px-4 py-3">Update</th>}
               </tr>
             </thead>
@@ -113,6 +115,14 @@ export default function AdminOrdersPage(): React.ReactElement {
                     </td>
                     <td className="px-4 py-3 font-bold">${parseFloat(o.total).toFixed(2)}</td>
                     <td className="px-4 py-3 text-dp-text-tertiary">{new Date(o.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/admin/orders/${o.id}`}
+                        className="inline-flex items-center gap-1 text-[12px] font-semibold text-dp-accent-cta hover:underline"
+                      >
+                        <Eye size={12} /> View details
+                      </Link>
+                    </td>
                     {!isVendor && (
                       <td className="px-4 py-3">
                         <select value={o.status} disabled={updating === o.id}

@@ -50,6 +50,7 @@ const SUPERADMIN_NAV = [
     section: "Content",
     links: [
       { href: "/admin/hero",       label: "Hero Slides",   Icon: ImageIcon },
+      { href: "/admin/blog",       label: "Blog",          Icon: MessageSquare },
       { href: "/admin/categories", label: "Categories",    Icon: Package },
       { href: "/admin/banners",    label: "Promo Banners", Icon: Bell },
     ],

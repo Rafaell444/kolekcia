@@ -305,6 +305,21 @@
   .dp-card-hover:hover {
     transform: translateY(-2px) scale(1.02);
     box-shadow: var(--shadow-hover);
+    cursor: pointer;
+  }
+
+  button,
+  [role="button"],
+  a[href],
+  label[for],
+  select,
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
   }
 
   /* Brands infinite scroll */

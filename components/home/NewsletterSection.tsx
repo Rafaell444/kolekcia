@@ -81,7 +81,8 @@ export default function NewsletterSection(): React.ReactElement {
                   </button>
                 </form>
                 <p className="text-[10px] text-dp-text-tertiary leading-relaxed mt-3">
-                  By clicking &quot;Sign up&quot;, you agree to receiving emails and to processing of your personal data in accordance with the Privacy policy.
+                  By clicking &quot;Sign up&quot;, you agree to receiving emails and to processing of your personal data in accordance with the{" "}
+                  <a href="/privacy" className="underline hover:text-dp-text-primary">Privacy policy</a>.
                 </p>
               </>
             )}

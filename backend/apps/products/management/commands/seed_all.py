@@ -15,6 +15,7 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         self.stdout.write(self.style.MIGRATE_HEADING("=== Kolekcia Full Seed ==="))
         self._seed_poster_options()
+        self._reset_catalog()
         self._seed_categories()
         self._seed_users()
         self._seed_vendors()
@@ -61,21 +62,29 @@ class Command(BaseCommand):
 
         self.stdout.write("  ✓ Poster options")
 
+    def _reset_catalog(self):
+        from apps.products.models import Review, WishlistItem, Product, ProductImage, ProductVariant, Artist, Category
+        from apps.auctions.models import Auction
+
+        WishlistItem.objects.all().delete()
+        Review.objects.all().delete()
+        Auction.objects.all().delete()
+        ProductVariant.objects.all().delete()
+        ProductImage.objects.all().delete()
+        Product.objects.all().delete()
+        Artist.objects.all().delete()
+        Category.objects.all().delete()
+        self.stdout.write("  ✓ Catalog reset")
+
     # ────────────────────────────────────────────────
     def _seed_categories(self):
         from apps.products.models import Category
         cats = [
-            ("anime",    "Anime",    "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&h=400&fit=crop", 45000),
-            ("gaming",   "Gaming",   "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=400&h=400&fit=crop", 38000),
-            ("space",    "Space",    "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400&h=400&fit=crop", 22000),
-            ("nature",   "Nature",   "https://images.unsplash.com/photo-1448375240586-882707db888b?w=400&h=400&fit=crop", 61000),
-            ("abstract", "Abstract", "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=400&h=400&fit=crop", 18000),
-            ("movies",   "Movies",   "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&h=400&fit=crop", 29000),
-            ("music",    "Music",    "https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=400&h=400&fit=crop", 17000),
-            ("fantasy",  "Fantasy",  "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&h=400&fit=crop", 33000),
+            ("figures",    "Figures",    "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=400&h=400&fit=crop", 0),
+            ("wallpanels", "Wallpanels", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=400&fit=crop", 0),
         ]
         for slug, name, img, count in cats:
-            Category.objects.get_or_create(slug=slug, defaults={"name": name, "image_url": img, "count": count})
+            Category.objects.create(slug=slug, name=name, image_url=img, count=count)
         self.stdout.write("  ✓ Categories")
 
     # ────────────────────────────────────────────────
@@ -167,15 +176,20 @@ class Command(BaseCommand):
         from apps.vendors.models import Vendor
 
         artists_data = [
-            # (name, handle, avatar, cover, bio, designs, followers, level, badge, verified, user_email, vendor_slug)
-            ("Kaoru Nishida",   "kaoru_nishida",   "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop&crop=face",   "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&h=400&fit=crop",  "Tokyo-born digital artist blending traditional ukiyo-e techniques with neon cyberpunk aesthetics. 12 years creating for galleries from Shibuya to New York.",    142, 18400, 32, "Diamond",  True,  None,                None),
-            ("Alex Tanaka",     "alex_tanaka",     "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200&h=200&fit=crop&crop=face",   "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=400&fit=crop",  "Berlin-based generative artist using code, glitch, and retro-gaming culture to build vivid worlds. Featured in Wired DE and Designboom.",                       89,  9200,  18, "Gold",     True,  "panel@kolekcia.com", "panel-studio"),
-            ("Selene Varga",    "selene_varga",    "https://images.unsplash.com/photo-1494790108755-2616b612b57b?w=200&h=200&fit=crop&crop=face",   "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1200&h=400&fit=crop", "Astrophysicist turned artist. Every piece begins as real NASA data before being transformed into emotional visual narratives about our place in the cosmos.",  203, 31000, 45, "Diamond",  True,  None,                None),
-            ("Marcus Steele",   "marcus_steele",   "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=200&h=200&fit=crop&crop=face",   "https://images.unsplash.com/photo-1551632436-cbf8dd35adfa?w=1200&h=400&fit=crop",  "Wildlife photographer and digital painter. Captures raw animal power and transforms it into bold, large-format metal art.",                                     57,  4800,  11, "Silver",   False, None,                None),
-            ("Hana Kurosawa",   "hana_kurosawa",   "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&h=200&fit=crop&crop=face",     "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1200&h=400&fit=crop", "Award-winning concept artist for AAA game studios. Her personal work explores memory, light, and the invisible space between moments.",                          178, 24600, 39, "Platinum", True,  None,                None),
-            ("Ryo Tanabe",      "ryo_tanabe",      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face",   "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1200&h=400&fit=crop",  "Osaka concept artist and figurine sculptor. His 2D pieces feel three-dimensional; his 3D pieces feel alive.",                                                   96,  12100, 22, "Gold",     True,  "figure@kolekcia.com","figure-studio"),
-            ("Elara Moon",      "elara_moon",      "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop&crop=face",   "https://images.unsplash.com/photo-1448375240586-882707db888b?w=1200&h=400&fit=crop", "Nature and fantasy intersect in Elara's work. Trained as a botanist, she draws intricate ecosystems populated by mythological creatures.",                       64,  6200,  14, "Silver",   False, None,                None),
-            ("Kai Nomura",      "kai_nomura",      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop&crop=face",   "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=1200&h=400&fit=crop", "Former pro gamer turned digital illustrator. Kai's hyper-detailed gaming pieces sell out within hours of release.",                                             112, 15800, 27, "Gold",     True,  None,                None),
+            (
+                "Ryo Tanabe", "ryo_tanabe",
+                "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face",
+                "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1200&h=400&fit=crop",
+                "Osaka sculptor specializing in premium 3D metal collectible figures — from anime icons to original characters.",
+                96, 12100, 22, "Gold", True, "figure@kolekcia.com", "figure-studio",
+            ),
+            (
+                "Alex Tanaka", "alex_tanaka",
+                "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200&h=200&fit=crop&crop=face",
+                "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=400&fit=crop",
+                "Berlin-based artist crafting ultra-HD 3D relief metal wallpanels with proprietary UV-cure layering.",
+                89, 9200, 18, "Gold", True, "panel@kolekcia.com", "panel-studio",
+            ),
         ]
 
         for (name, handle, avatar, cover, bio, designs, followers, level, badge, verified, user_email, vendor_slug) in artists_data:
@@ -194,7 +208,7 @@ class Command(BaseCommand):
                     defaults["vendor"] = Vendor.objects.get(slug=vendor_slug)
                 except Exception:
                     pass
-            Artist.objects.get_or_create(handle=handle, defaults=defaults)
+            Artist.objects.create(handle=handle, **defaults)
 
         self.stdout.write("  ✓ Artists")
 
@@ -207,137 +221,34 @@ class Command(BaseCommand):
 
         # (title, artist_handle, cat_slug, base_price, orig_price, limited, sale, new_, exclusive, rating, reviews, tags, image_url, extra_images)
         products_data = [
-            # ── ANIME ───────────────────────────────────────────────────────────────
-            ("Neon Dragon",          "kaoru_nishida", "anime",    29.99, None,  False, False, True,  False, 4.8, 1243, ["Anime","Dragon","Neon","Cyberpunk"],
-             "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop",
-             ["https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop"]),
-
-            ("Sakura Ronin",         "kaoru_nishida", "anime",    34.99, 44.99, False, True,  False, False, 4.7,  876, ["Anime","Samurai","Sakura","Japan"],
-             "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop",
-             []),
-
-            ("Cyber Samurai",        "ryo_tanabe",    "anime",    39.99, None,  True,  False, False, False, 4.7,  987, ["Anime","Samurai","Cyberpunk","Neon"],
+            # Figures — Ryo Tanabe
+            ("Cyber Samurai",   "ryo_tanabe",  "figures",    39.99, None,  True,  False, False, False, 4.7,  987, ["Figure","Samurai","Cyberpunk"],
              "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop",
-             ["https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&h=840&fit=crop"]),
-
-            ("Ghost Protocol",       "ryo_tanabe",    "anime",    44.99, None,  False, False, False, True,  4.9, 2108, ["Anime","Ghost","Dystopia","Limited"],
-             "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop",
-             []),
-
-            ("Oni Throne",           "kaoru_nishida", "anime",    49.99, None,  True,  False, True,  True,  5.0,  432, ["Anime","Oni","Limited","Exclusive"],
-             "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop",
-             []),
-
-            # ── GAMING ──────────────────────────────────────────────────────────────
-            ("Midnight Circuit",     "alex_tanaka",   "gaming",   34.99, None,  True,  False, False, False, 4.6,  876, ["Gaming","Circuit","Cyberpunk","Neon"],
+             ["https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop"]),
+            ("Neon Ronin",      "ryo_tanabe",  "figures",    34.99, 44.99, False, True,  True,  False, 4.8,  654, ["Figure","Ronin","Neon"],
+             "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop", []),
+            ("Ghost Protocol",  "ryo_tanabe",  "figures",    44.99, None,  False, False, False, True,  4.9,  432, ["Figure","Ghost","Limited"],
+             "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop", []),
+            ("Oni Guardian",    "ryo_tanabe",  "figures",    49.99, None,  True,  False, True,  True,  5.0,  321, ["Figure","Oni","Exclusive"],
+             "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", []),
+            ("Dragon Knight",   "ryo_tanabe",  "figures",    54.99, None,  True,  False, False, True,  4.9,  278, ["Figure","Dragon","Knight"],
+             "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop", []),
+            ("Pixel Phantom",   "ryo_tanabe",  "figures",    29.99, 39.99, False, True,  False, False, 4.5,  543, ["Figure","Pixel","Retro"],
+             "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&h=840&fit=crop", []),
+            # Wallpanels — Alex Tanaka
+            ("Midnight Circuit", "alex_tanaka", "wallpanels", 34.99, None,  True,  False, False, False, 4.6,  876, ["Wallpanel","Circuit","Cyberpunk"],
              "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop",
              ["https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop"]),
-
-            ("Digital Phantom",      "kai_nomura",    "gaming",   44.99, None,  False, False, False, True,  4.8, 1567, ["Gaming","Digital","Ghost","Exclusive"],
-             "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&h=840&fit=crop",
-             []),
-
-            ("Pixel Overlord",       "kai_nomura",    "gaming",   29.99, 39.99, False, True,  False, False, 4.5,  654, ["Gaming","Pixel","Retro","8Bit"],
-             "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop",
-             []),
-
-            ("Neon Arena",           "alex_tanaka",   "gaming",   39.99, None,  False, False, True,  False, 4.6,  543, ["Gaming","Arena","Neon","Esports"],
-             "https://images.unsplash.com/photo-1551632436-cbf8dd35adfa?w=600&h=840&fit=crop",
-             []),
-
-            ("Dungeon Boss",         "kai_nomura",    "gaming",   54.99, None,  True,  False, False, True,  4.9,  321, ["Gaming","Dungeon","Fantasy","Boss"],
-             "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop",
-             []),
-
-            # ── SPACE ───────────────────────────────────────────────────────────────
-            ("Void Between Stars",   "selene_varga",  "space",    34.99, None,  False, False, True,  False, 4.9, 2108, ["Space","Stars","Galaxy","NASA"],
-             "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop",
-             ["https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600&h=840&fit=crop"]),
-
-            ("Aurora Drift",         "hana_kurosawa", "space",    49.99, None,  False, False, False, True,  4.9, 3201, ["Space","Aurora","Northern Lights","Exclusive"],
-             "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop",
-             []),
-
-            ("Nebula Core",          "selene_varga",  "space",    39.99, 49.99, False, True,  False, False, 4.7,  987, ["Space","Nebula","Cosmos","Sale"],
-             "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600&h=840&fit=crop",
-             []),
-
-            ("Event Horizon",        "selene_varga",  "space",    59.99, None,  True,  False, False, True,  5.0,  211, ["Space","Black Hole","Physics","Limited"],
-             "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop",
-             []),
-
-            # ── NATURE ──────────────────────────────────────────────────────────────
-            ("Iron Tiger",           "marcus_steele", "nature",   27.99, 34.99, False, True,  False, False, 4.5,  654, ["Nature","Tiger","Wildlife","Animal"],
-             "https://images.unsplash.com/photo-1551632436-cbf8dd35adfa?w=600&h=840&fit=crop",
-             []),
-
-            ("Crystal Forest",       "elara_moon",    "nature",   24.99, 29.99, False, True,  False, False, 4.4,  432, ["Nature","Forest","Fantasy","Trees"],
-             "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&h=840&fit=crop",
-             []),
-
-            ("Obsidian Wolf",        "marcus_steele", "nature",   32.99, None,  False, False, True,  False, 4.6,  765, ["Nature","Wolf","Dark","Monochrome"],
-             "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop",
-             []),
-
-            ("Ancient Bloom",        "elara_moon",    "nature",   44.99, None,  True,  False, False, False, 4.8,  345, ["Nature","Flowers","Botanical","Limited"],
-             "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&h=840&fit=crop",
-             []),
-
-            # ── ABSTRACT ────────────────────────────────────────────────────────────
-            ("Chromatic Fracture",   "alex_tanaka",   "abstract", 39.99, None,  False, False, True,  False, 4.7,  876, ["Abstract","Color","Fracture","Geometric"],
-             "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&h=840&fit=crop",
-             []),
-
-            ("Liquid Geometry",      "hana_kurosawa", "abstract", 34.99, 44.99, False, True,  False, False, 4.5,  543, ["Abstract","Geometric","Liquid","3D"],
-             "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop",
-             []),
-
-            ("Void Prism",           "selene_varga",  "abstract", 54.99, None,  True,  False, False, True,  4.9,  234, ["Abstract","Prism","Space","Exclusive"],
-             "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&h=840&fit=crop",
-             []),
-
-            # ── MOVIES ──────────────────────────────────────────────────────────────
-            ("Noir City",            "kai_nomura",    "movies",   29.99, None,  False, False, True,  False, 4.6,  765, ["Movies","Noir","City","Retro"],
-             "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600&h=840&fit=crop",
-             []),
-
-            ("Director's Cut",       "alex_tanaka",   "movies",   44.99, 54.99, False, True,  False, False, 4.5,  432, ["Movies","Film","Cinema","Vintage"],
-             "https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=600&h=840&fit=crop",
-             []),
-
-            ("Silver Screen",        "hana_kurosawa", "movies",   34.99, None,  True,  False, False, False, 4.8,  678, ["Movies","Cinema","Limited","Golden Age"],
-             "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600&h=840&fit=crop",
-             []),
-
-            # ── MUSIC ───────────────────────────────────────────────────────────────
-            ("Bass Drop",            "kai_nomura",    "music",    24.99, 29.99, False, True,  False, False, 4.4,  321, ["Music","Bass","Electronic","Club"],
-             "https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=600&h=840&fit=crop",
-             []),
-
-            ("Vinyl Soul",           "elara_moon",    "music",    34.99, None,  False, False, True,  False, 4.7,  543, ["Music","Vinyl","Jazz","Retro"],
-             "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&h=840&fit=crop",
-             []),
-
-            ("Electric Aria",        "hana_kurosawa", "music",    49.99, None,  True,  False, False, True,  5.0,  189, ["Music","Opera","Electric","Limited"],
-             "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&h=840&fit=crop",
-             []),
-
-            # ── FANTASY ─────────────────────────────────────────────────────────────
-            ("Dragon Realm",         "elara_moon",    "fantasy",  39.99, 49.99, False, True,  False, False, 4.6,  876, ["Fantasy","Dragon","Magic","Castle"],
-             "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop",
-             []),
-
-            ("Arcane Portal",        "kaoru_nishida", "fantasy",  44.99, None,  False, False, True,  False, 4.8,  654, ["Fantasy","Magic","Portal","Arcane"],
-             "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop",
-             []),
-
-            ("Last Prophecy",        "marcus_steele", "fantasy",  59.99, None,  True,  False, False, True,  4.9,  432, ["Fantasy","Epic","War","Limited"],
-             "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop",
-             []),
-
-            ("The Wanderer",         "selene_varga",  "fantasy",  34.99, None,  False, False, False, False, 4.5,  321, ["Fantasy","Journey","Landscape","Mystical"],
-             "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop",
-             []),
+            ("Aurora Drift",     "alex_tanaka", "wallpanels", 49.99, None,  False, False, False, True,  4.9, 2108, ["Wallpanel","Aurora","Exclusive"],
+             "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop", []),
+            ("Void Horizon",     "alex_tanaka", "wallpanels", 39.99, 49.99, False, True,  True,  False, 4.7,  765, ["Wallpanel","Space","Sale"],
+             "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop", []),
+            ("Crystal Forest",   "alex_tanaka", "wallpanels", 29.99, 34.99, False, True,  False, False, 4.5,  543, ["Wallpanel","Forest","Nature"],
+             "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&h=840&fit=crop", []),
+            ("Liquid Geometry",  "alex_tanaka", "wallpanels", 44.99, None,  False, False, True,  False, 4.7,  432, ["Wallpanel","Abstract","Geometric"],
+             "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&h=840&fit=crop", []),
+            ("Event Horizon",    "alex_tanaka", "wallpanels", 59.99, None,  True,  False, False, True,  5.0,  211, ["Wallpanel","Cosmos","Limited"],
+             "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600&h=840&fit=crop", []),
         ]
 
         default_size   = __import__("apps.products.models", fromlist=["PosterSize"]).PosterSize.objects.get(id="m")
@@ -351,13 +262,8 @@ class Command(BaseCommand):
         for (title, handle, cat_slug, price, orig_price, is_limited, is_sale,
              is_new, is_exclusive, rating, review_count, tags, img_url, extra_imgs) in products_data:
 
-            if Product.objects.filter(title=title).exists():
-                continue
-            try:
-                artist   = Artist.objects.get(handle=handle)
-                category = Category.objects.get(slug=cat_slug)
-            except (Artist.DoesNotExist, Category.DoesNotExist):
-                continue
+            artist   = Artist.objects.get(handle=handle)
+            category = Category.objects.get(slug=cat_slug)
 
             product = Product.objects.create(
                 title=title, artist=artist, category=category,
@@ -388,6 +294,10 @@ class Command(BaseCommand):
                         defaults={"stock": 75},
                     )
             created += 1
+
+        for cat in Category.objects.all():
+            cat.count = cat.products.count()
+            cat.save(update_fields=["count"])
 
         self.stdout.write(f"  ✓ Products ({created} created)")
 
@@ -440,19 +350,14 @@ class Command(BaseCommand):
         now = timezone.now()
 
         auctions_data = [
-            # (title, artist_name, image_url, starting_bid, ends_offset_hours, is_live)
-            ("Neon Dragon — Signed Original",          "Kaoru Nishida",  "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop", 149.99,  48,  True),
-            ("Aurora Drift — Artist Proof",            "Hana Kurosawa",  "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop", 299.99,  72,  True),
-            ("Void Between Stars — 1/1 Print",        "Selene Varga",   "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop", 199.99,  24,  True),
-            ("Cyber Samurai — Limited Foil",           "Ryo Tanabe",     "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop", 249.99,  96,  True),
-            ("Digital Phantom — Master Edition",      "Kai Nomura",     "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&h=840&fit=crop", 399.99, 120,  True),
-            ("Last Prophecy — Embossed Metal",        "Marcus Steele",  "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop", 179.99,  36,  True),
-            ("Event Horizon — Collector Series",      "Selene Varga",   "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600&h=840&fit=crop", 349.99, 168, True),
-            ("Midnight Circuit — Glow Edition",       "Alex Tanaka",    "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 129.99,  60,  True),
-            ("Ancient Bloom — Pressed Series",        "Elara Moon",     "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&h=840&fit=crop",  99.99,  18, False),
-            ("Oni Throne — Gold Foil 1/50",           "Kaoru Nishida",  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 499.99, 240,  True),
-            ("Arcane Portal — Rainbow Chromatic",     "Kaoru Nishida",  "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop", 159.99,  84,  True),
-            ("Dragon Realm — Watercolour Hybrid",     "Elara Moon",     "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop", 219.99, 144,  True),
+            ("Cyber Samurai — Signed Edition",      "Ryo Tanabe",  "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop", 249.99,  48,  True),
+            ("Oni Guardian — Artist Proof",         "Ryo Tanabe",  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 499.99,  96,  True),
+            ("Ghost Protocol — Chrome Variant",     "Ryo Tanabe",  "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop", 399.99,  72,  True),
+            ("Aurora Drift — Master Panel",         "Alex Tanaka", "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop", 299.99,  72,  True),
+            ("Midnight Circuit — Glow Edition",     "Alex Tanaka", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 129.99,  60,  True),
+            ("Event Horizon — Collector Series",    "Alex Tanaka", "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600&h=840&fit=crop", 349.99, 168, True),
+            ("Void Horizon — Embossed Metal",       "Alex Tanaka", "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop", 179.99,  36,  True),
+            ("Dragon Knight — Foil 1/50",           "Ryo Tanabe",  "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop", 459.99, 120, True),
         ]
 
         created = 0
@@ -551,16 +456,14 @@ class Command(BaseCommand):
         from apps.cms.models import HeroSlide, FAQ
 
         slides = [
-            ("image", "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1440&h=720&fit=crop", None,
-             "ART THAT\nGETS YOU", "2.5 million designs from 150K+ independent artists", "Shop Now", "/catalog", "#e63946", 0),
-            ("image", "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1440&h=720&fit=crop", None,
-             "EXPLORE\nTHE COSMOS", "Stunning space art from the world's top digital artists", "Browse Space", "/catalog?category=space", "#e8a427", 1),
-            ("image", "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=1440&h=720&fit=crop", None,
-             "GAME\nON", "Official licensed gaming posters and fan-made originals", "Shop Gaming", "/catalog?category=gaming", "#00b4d8", 2),
-            ("image", "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1440&h=720&fit=crop", None,
-             "LIMITED\nDROPS", "Exclusive prints. New releases every Friday at noon.", "View Limited Editions", "/catalog?filter=limited", "#e8a427", 3),
             ("image", "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1440&h=720&fit=crop", None,
-             "LIVE\nAUCTIONS", "Bid on signed originals and one-of-a-kind artist proofs.", "View Auctions", "/auctions", "#e63946", 4),
+             "COLLECTIBLE\nFIGURES", "Precision metal figures from Figure Studio", "Shop Figures", "/catalog?category=figures", "#e63946", 0),
+            ("image", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1440&h=720&fit=crop", None,
+             "METAL\nWALLPANELS", "3D relief panels from Panel Studio", "Shop Wallpanels", "/catalog?category=wallpanels", "#e8a427", 1),
+            ("image", "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1440&h=720&fit=crop", None,
+             "LIMITED\nDROPS", "Exclusive pieces from our two in-house studios", "View Limited Editions", "/catalog?limited=true", "#00b4d8", 2),
+            ("image", "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1440&h=720&fit=crop", None,
+             "LIVE\nAUCTIONS", "Bid on signed originals and one-of-a-kind artist proofs", "View Auctions", "/auctions", "#e63946", 3),
         ]
         for (stype, img, vposter, headline, subline, cta, cta_href, accent, order) in slides:
             if not HeroSlide.objects.filter(headline=headline).exists():

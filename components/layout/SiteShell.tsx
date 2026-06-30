@@ -15,11 +15,14 @@ import { useAuth } from "@/contexts/auth-context"
 import { useCart } from "@/contexts/cart-context"
 import { useGamification } from "@/contexts/gamification-context"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import { productHref } from "@/lib/product-url"
 import TrustBar from "@/components/home/TrustBar"
+import LocaleSwitcher, { LocaleSwitcherInline } from "@/components/layout/LocaleSwitcher"
+import { useLocale } from "@/contexts/locale-context"
 
 type NavCategory = { id: string; name: string; slug: string }
 type NavArtist   = { id: number; name: string; handle: string; avatar_url: string }
-type NavProduct  = { id: number; title: string; artist_name: string; base_price: string; image_url: string }
+type NavProduct  = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
 
 // ── Promo banner ──────────────────────────────────────────
 const PROMO_MESSAGES = [
@@ -53,6 +56,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
 
 // ── Mega menu panels ──────────────────────────────────────
 function ShopMegaMenu({ onClose }: { onClose: () => void }) {
+  const { formatPrice } = useLocale()
   const [categories, setCategories] = useState<NavCategory[]>([])
   const [artists, setArtists] = useState<NavArtist[]>([])
   const [featured, setFeatured] = useState<NavProduct[]>([])
@@ -154,7 +158,7 @@ function ShopMegaMenu({ onClose }: { onClose: () => void }) {
             {featured.map((p) => (
               <Link
                 key={p.id}
-                href={`/catalog/${p.id}`}
+                href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })}
                 onClick={onClose}
                 className="flex items-center gap-3 group"
               >
@@ -164,7 +168,7 @@ function ShopMegaMenu({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0">
                   <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
                   <p className="text-[13px] font-bold text-dp-text-primary group-hover:text-dp-accent-cta transition-colors truncate">{p.title}</p>
-                  <p className="text-[12px] font-bold text-dp-text-primary mt-0.5">${parseFloat(p.base_price).toFixed(2)}</p>
+                  <p className="text-[12px] font-bold text-dp-text-primary mt-0.5">{formatPrice(parseFloat(p.base_price))}</p>
                 </div>
               </Link>
             ))}
@@ -226,10 +230,11 @@ function XpBar() {
 }
 
 // ── Live search bar ───────────────────────────────────────
-type SearchProduct = { id: number; title: string; artist_name: string; base_price: string; image_url: string }
+type SearchProduct = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
 
 function SearchBar() {
   const router = useRouter()
+  const { formatPrice } = useLocale()
   const [open, setOpen]     = useState(false)
   const [query, setQuery]   = useState("")
   const [results, setResults] = useState<SearchProduct[]>([])
@@ -270,10 +275,10 @@ function SearchBar() {
     setTimeout(() => inputRef.current?.focus(), 50)
   }
 
-  function handleSelect(id: number) {
+  function handleSelect(product: SearchProduct) {
     setOpen(false)
     setQuery("")
-    router.push(`/catalog/${id}`)
+    router.push(productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug }))
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -332,7 +337,7 @@ function SearchBar() {
                 {results.map((r) => (
                   <li key={r.id}>
                     <button
-                      onClick={() => handleSelect(r.id)}
+                      onClick={() => handleSelect(r)}
                       className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-dp-bg-elevated transition-colors text-left"
                     >
                       <div className="w-9 h-12 shrink-0 rounded-sm overflow-hidden bg-dp-bg-elevated border border-dp-border">
@@ -345,7 +350,7 @@ function SearchBar() {
                         <p className="text-[11px] text-dp-text-tertiary truncate">{r.artist_name}</p>
                       </div>
                       <p className="text-[13px] font-bold text-dp-text-primary shrink-0">
-                        ${parseFloat(r.base_price).toFixed(2)}
+                        {formatPrice(parseFloat(r.base_price))}
                       </p>
                     </button>
                   </li>
@@ -594,6 +599,7 @@ function SiteHeader() {
           <MegaNavItem label="Shop" menuKey="shop" href="/catalog" activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} isActive={pathname.startsWith("/catalog")} />
           <MegaNavItem label="Artists"  menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/artists"  isActive={pathname.startsWith("/artists")} />
           <MegaNavItem label="Auctions" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/auctions" isActive={pathname.startsWith("/auctions")} />
+          <MegaNavItem label="Blog" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/blog" isActive={pathname.startsWith("/blog")} />
           <MegaNavItem label="Custom"   menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/custom"   isActive={pathname.startsWith("/custom")} />
           <MegaNavItem label="About"      menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/about"    isActive={pathname.startsWith("/about")} />
           <MegaNavItem label="Contact Us" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/contact"  isActive={pathname.startsWith("/contact")} />
@@ -601,6 +607,7 @@ function SiteHeader() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          <LocaleSwitcher />
           <XpBar />
           <SearchBar />
           <Link
@@ -660,11 +667,17 @@ function SiteHeader() {
 
             <Link href="/artists"  onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Artists</Link>
             <Link href="/auctions" onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Auctions</Link>
+            <Link href="/blog" onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Blog</Link>
             <Link href="/custom"   onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Custom</Link>
             <Link href="/about"    onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">About Us</Link>
             <Link href="/contact"  onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Contact Us</Link>
 
-            <div className="pt-2 border-t border-dp-border mt-2">
+            {/* Language & Currency */}
+            <div className="pt-3 border-t border-dp-border mt-2">
+              <LocaleSwitcherInline />
+            </div>
+
+            <div className="pt-2 border-t border-dp-border mt-1">
               <Link href="/admin" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 py-2 text-[12px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">
                 <Settings size={13} /> Admin Panel
               </Link>
@@ -704,11 +717,11 @@ function SiteFooter() {
             <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Shop</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "New Arrivals",     href: "/catalog?filter=new" },
-                { label: "Trending",         href: "/catalog?sort=popular" },
-                { label: "Limited Editions", href: "/catalog?filter=limited" },
-                { label: "Sale",             href: "/catalog?filter=sale" },
-                { label: "All Designs",      href: "/catalog" },
+                { label: "All Products", href: "/catalog" },
+                { label: "Wallpanels",   href: "/catalog?category=wallpanels" },
+                { label: "Figures",      href: "/catalog?category=figures" },
+                { label: "Custom",       href: "/custom" },
+                { label: "Auction",      href: "/auctions" },
               ].map(({ label, href }) => (
                 <li key={label}>
                   <Link href={href} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
@@ -724,7 +737,8 @@ function SiteFooter() {
               {[
                 { label: "About Us",    href: "/about" },
                 { label: "Contact Us",  href: "/contact" },
-                { label: "Careers",     href: "/about#careers" },
+                { label: "Artists",     href: "/artists" },
+                { label: "Blog",        href: "/blog" },
                 { label: "My Orders",   href: "/account/orders" },
                 { label: "Sign In",     href: "/login" },
               ].map(({ label, href }) => (
@@ -741,8 +755,8 @@ function SiteFooter() {
             <ul className="flex flex-col gap-2">
               {[
                 { label: "Help Center",   href: "/contact#faq" },
-                { label: "Shipping Info", href: "/contact#shipping" },
-                { label: "Returns",       href: "/contact#returns" },
+                { label: "Shipping",      href: "/shipping" },
+                { label: "Returns",       href: "/returns" },
                 { label: "Contact Us",    href: "/contact" },
               ].map(({ label, href }) => (
                 <li key={label}>
@@ -754,17 +768,27 @@ function SiteFooter() {
         </div>
 
         {/* Bottom bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-dp-border">
-          <p className="text-[11px] text-dp-text-tertiary">
-            &copy; {new Date().getFullYear()} Kolekcia. All rights reserved.
-          </p>
-          <div className="flex items-center gap-4">
-            {["Privacy", "Terms", "Cookies"].map((l) => (
-              <Link key={l} href="/" className="text-[11px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">{l}</Link>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-dp-border">
+          <div className="flex flex-col gap-1">
+            <p className="text-[11px] text-dp-text-tertiary">
+              &copy; {new Date().getFullYear()} Kolekcia. All rights reserved.
+            </p>
+            <p className="text-[11px] text-dp-text-tertiary">
+              Developed by{" "}
+              <a href="https://mozaikko.com" target="_blank" rel="noopener noreferrer" className="font-semibold text-dp-text-secondary hover:text-dp-accent-cta transition-colors">
+                MOZAIKKO
+              </a>
+            </p>
+          </div>
+          <div className="flex items-center gap-4 flex-wrap justify-center">
+            {[
+              { label: "Privacy", href: "/privacy" },
+              { label: "Terms", href: "/terms" },
+              { label: "Cookies", href: "/cookies" },
+            ].map(({ label, href }) => (
+              <Link key={label} href={href} className="text-[11px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">{label}</Link>
             ))}
-            <Link href="/admin" className="text-[11px] text-dp-text-tertiary hover:text-dp-accent-cta transition-colors flex items-center gap-1">
-              <Settings size={10} /> Admin
-            </Link>
+            <LocaleSwitcher />
           </div>
         </div>
       </div>

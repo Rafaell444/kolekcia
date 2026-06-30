@@ -3,6 +3,7 @@ from .views import (
     AdminLoginView,
     AdminDashboardView,
     AdminAnalyticsView,
+    AdminSuperAnalyticsView,
     AdminOrderListView,
     AdminOrderUpdateView,
     AdminProductListView,
@@ -30,12 +31,15 @@ from .views import (
     AdminBadgeListView,
     AdminXPRuleListView,
     AdminAuditLogView,
+    AdminBlogPostListView,
+    AdminBlogPostDetailView,
 )
 
 urlpatterns = [
     path("auth/login/", AdminLoginView.as_view(), name="admin-login"),
     path("dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
     path("analytics/", AdminAnalyticsView.as_view(), name="admin-analytics"),
+    path("analytics/super/", AdminSuperAnalyticsView.as_view(), name="admin-super-analytics"),
     path("orders/", AdminOrderListView.as_view(), name="admin-orders"),
     path("orders/<uuid:pk>/", AdminOrderUpdateView.as_view(), name="admin-order-update"),
     path("products/", AdminProductListView.as_view(), name="admin-products"),
@@ -62,5 +66,7 @@ urlpatterns = [
     path("settings/", AdminSettingsView.as_view(), name="admin-settings"),
     path("gamification/badges/", AdminBadgeListView.as_view(), name="admin-badges"),
     path("gamification/xp-rules/", AdminXPRuleListView.as_view(), name="admin-xp-rules"),
+    path("blog/", AdminBlogPostListView.as_view(), name="admin-blog"),
+    path("blog/<int:pk>/", AdminBlogPostDetailView.as_view(), name="admin-blog-detail"),
     path("audit-log/", AdminAuditLogView.as_view(), name="admin-audit-log"),
 ]
