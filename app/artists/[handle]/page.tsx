@@ -277,10 +277,11 @@ export default function ArtistPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-dp-bg-base via-dp-bg-base/30 to-transparent" />
 
         {/* Artist info at bottom of cover */}
-        <div className="absolute bottom-0 left-0 right-0 dp-container pb-8">
-          <div className="flex items-end gap-5">
+        <div className="absolute bottom-0 left-0 right-0 dp-container pb-6 sm:pb-8">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-5">
+            <div className="flex items-end gap-4 min-w-0 flex-1">
             {/* Avatar */}
-            <div className="shrink-0 w-20 h-20 rounded-full border-2 border-dp-border overflow-hidden bg-dp-bg-elevated shadow-xl">
+            <div className="shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-dp-border overflow-hidden bg-dp-bg-elevated shadow-xl">
               {artist?.avatar_url ? (
                 <img src={artist.avatar_url} alt={artist?.name} className="w-full h-full object-cover" />
               ) : (
@@ -321,12 +322,12 @@ export default function ArtistPage() {
                 <div className="h-8 w-48 bg-dp-bg-elevated animate-pulse rounded-sm" />
               )}
             </div>
+            </div>
 
-            {/* Contact button */}
             {artist?.vendor_id && (
               <button
                 onClick={() => setShowContact(true)}
-                className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-wider rounded-sm transition-colors shadow-lg"
+                className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-wider rounded-sm transition-colors shadow-lg"
               >
                 <MessageSquare size={14} />
                 Contact Artist

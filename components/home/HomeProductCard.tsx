@@ -52,7 +52,7 @@ export default function HomeProductCard({ product }: { product: ApiProduct }) {
           <div className="flex items-center gap-1 mt-1 mb-2">
             <Star size={10} className="fill-dp-accent-gold text-dp-accent-gold" aria-hidden />
             <span className="text-[11px] text-dp-text-secondary">{parseFloat(product.rating).toFixed(1)}</span>
-            <span className="text-[11px] text-dp-text-tertiary">({product.review_count.toLocaleString()})</span>
+            <span className="text-[11px] text-dp-text-tertiary">({product.review_count.toLocaleString("en-US")})</span>
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-[15px] font-bold text-dp-text-primary">{formatPrice(price)}</span>

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
 
@@ -93,10 +93,10 @@ function IconAuction({ active }: { active: boolean }) {
 // ─── Nav items ───────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { href: "/",         label: "Home",    key: "home" },
-  { href: "/artists",  label: "Panels",  key: "panels" },
-  { href: "/custom",   label: "Figures", key: "figures" },
-  { href: "/cart",     label: "Cart",    key: "cart" },
+  { href: "/", label: "Home", key: "home" },
+  { href: "/catalog?category=wallpanels", label: "Panels", key: "panels" },
+  { href: "/catalog?category=figures", label: "Figures", key: "figures" },
+  { href: "/cart", label: "Cart", key: "cart" },
   { href: "/auctions", label: "Auction", key: "auction" },
 ] as const
 
@@ -104,6 +104,7 @@ const NAV_ITEMS = [
 
 export default function BottomNav() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [cartCount, setCartCount] = useState(0)
 
   // Lightly fetch cart item count (best-effort, no crash if fails)
@@ -116,8 +117,12 @@ export default function BottomNav() {
       .catch(() => {})
   }, [pathname]) // re-check when page changes
 
-  function isActive(href: string) {
-    if (href === "/") return pathname === "/"
+  function isActive(href: string, key: string) {
+    if (key === "home") return pathname === "/"
+    if (key === "panels") return pathname.startsWith("/catalog") && searchParams.get("category") === "wallpanels"
+    if (key === "figures") return pathname.startsWith("/catalog") && searchParams.get("category") === "figures"
+    if (key === "cart") return pathname.startsWith("/cart")
+    if (key === "auction") return pathname.startsWith("/auctions")
     return pathname.startsWith(href)
   }
 
@@ -138,7 +143,7 @@ export default function BottomNav() {
         >
           <ul className="flex items-stretch h-16 max-w-lg mx-auto" role="list">
             {NAV_ITEMS.map(({ href, label, key }) => {
-              const active = isActive(href)
+              const active = isActive(href, key)
               return (
                 <li key={key} className="flex-1 relative">
                   {/* Active indicator at top */}

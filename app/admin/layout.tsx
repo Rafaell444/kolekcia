@@ -9,6 +9,7 @@ import {
   Image as ImageIcon, Star, Bell, LogOut, Trophy, Shield, Store,
 } from "lucide-react"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
+import { ThemeProvider } from "@/components/ThemeProvider"
 import { getAdminUser, clearAdminTokens, type AdminUser } from "@/lib/admin-auth"
 
 // ── Nav definitions ────────────────────────────────────────────────────────────
@@ -129,6 +130,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
+    <ThemeProvider>
     <div className="min-h-screen bg-dp-bg-base flex">
       {/* ── Sidebar ── */}
       <aside className="w-60 shrink-0 bg-dp-bg-surface border-r border-dp-border flex flex-col sticky top-0 h-screen overflow-y-auto">
@@ -213,5 +215,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {children}
       </main>
     </div>
+    </ThemeProvider>
   )
 }

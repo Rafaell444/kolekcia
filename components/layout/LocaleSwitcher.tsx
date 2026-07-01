@@ -3,10 +3,11 @@
 import React, { useState, useRef, useEffect } from "react"
 import { ChevronDown, Check } from "lucide-react"
 import { useLocale, LANGUAGES, CURRENCIES, type Language, type Currency } from "@/contexts/locale-context"
+import FlagIcon from "@/components/ui/FlagIcon"
 
 // ─── Compact header button ────────────────────────────────────────────────────
 
-export default function LocaleSwitcher() {
+export default function LocaleSwitcher({ placement = "bottom" }: { placement?: "bottom" | "top" }) {
   const { currentLang, currentCur, setLanguage, setCurrency } = useLocale()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<"lang" | "cur">("lang")
@@ -43,11 +44,12 @@ export default function LocaleSwitcher() {
             : "border-dp-border text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover bg-transparent"
         }`}
       >
-        <span className="text-[14px] leading-none">{currentLang.flag}</span>
-        <span className="hidden sm:inline uppercase tracking-widest">{currentLang.code}</span>
-        <span className="text-dp-border-hover hidden sm:inline">·</span>
-        <span className="hidden sm:inline">{currentCur.symbol}</span>
-        <span className="hidden sm:inline uppercase tracking-widest">{currentCur.code}</span>
+        <FlagIcon code={currentLang.code} size={18} />
+        <span className="uppercase tracking-widest">{currentLang.code}</span>
+        <span className="text-dp-border-hover">·</span>
+        <FlagIcon code={currentCur.code} size={18} />
+        <span>{currentCur.symbol}</span>
+        <span className="uppercase tracking-widest">{currentCur.code}</span>
         <ChevronDown
           size={11}
           className={`transition-transform duration-150 ${open ? "rotate-180" : ""}`}
@@ -57,7 +59,9 @@ export default function LocaleSwitcher() {
       {/* Dropdown panel */}
       {open && (
         <div
-          className="absolute right-0 top-full mt-1.5 w-64 bg-dp-bg-surface border border-dp-border rounded-sm shadow-xl z-[200] overflow-hidden"
+          className={`absolute right-0 w-64 bg-dp-bg-surface border border-dp-border rounded-sm shadow-xl z-[200] overflow-hidden ${
+            placement === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          }`}
           role="dialog"
           aria-label="Language and currency selector"
         >
@@ -100,7 +104,7 @@ export default function LocaleSwitcher() {
                           : "hover:bg-dp-bg-elevated text-dp-text-secondary"
                       }`}
                     >
-                      <span className="text-xl leading-none">{lang.flag}</span>
+                      <FlagIcon code={lang.code} size={22} />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-semibold leading-tight">{lang.nativeLabel}</p>
                         <p className="text-[11px] text-dp-text-tertiary">{lang.label}</p>
@@ -128,7 +132,7 @@ export default function LocaleSwitcher() {
                           : "hover:bg-dp-bg-elevated text-dp-text-secondary"
                       }`}
                     >
-                      <span className="text-xl leading-none">{cur.flag}</span>
+                      <FlagIcon code={cur.code} size={22} />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-semibold leading-tight">
                           <span className="font-mono">{cur.symbol}</span>
@@ -180,7 +184,7 @@ export function LocaleSwitcherInline() {
                     : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover hover:text-dp-text-primary"
                 }`}
               >
-                <span className="text-[14px]">{lang.flag}</span>
+                <FlagIcon code={lang.code} size={16} />
                 <span className="uppercase tracking-widest">{lang.code}</span>
               </button>
             )
@@ -204,6 +208,7 @@ export function LocaleSwitcherInline() {
                     : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover hover:text-dp-text-primary"
                 }`}
               >
+                <FlagIcon code={cur.code} size={16} />
                 <span className="font-mono">{cur.symbol}</span>
                 <span className="uppercase tracking-widest">{cur.code}</span>
               </button>

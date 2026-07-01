@@ -8,6 +8,7 @@ const nextConfig = {
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   },
   images: {
+    unoptimized: process.env.NODE_ENV === "development",
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "plus.unsplash.com" },
@@ -15,6 +16,7 @@ const nextConfig = {
       { protocol: "http",  hostname: "127.0.0.1", port: "8000" },
       { protocol: "http",  hostname: "localhost",  port: "8000" },
       { protocol: "https", hostname: "*.vercel.app" },
+      { protocol: "https", hostname: "*.pythonanywhere.com" },
     ],
   },
   async rewrites() {

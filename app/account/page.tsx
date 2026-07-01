@@ -7,7 +7,7 @@ import Link from "next/link"
 import {
   Package, Heart, Star, Settings, LogOut, ChevronRight,
   Truck, CheckCircle2, Clock, XCircle, RotateCcw,
-  Award, Zap, ShoppingBag, User, MapPin, Bell,
+  Award, Zap, ShoppingBag, User, MapPin, BellRing, MessageSquare,
   Lock, Plus, Pencil, Trash2, Home, Building2,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation"
 import { authFetch, apiFetch } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
 import { productHref } from "@/lib/product-url"
+import InboxPanel from "@/components/messaging/InboxPanel"
 
 type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count: number; tracking_code: string }
 type Badge = { id: string; name: string; icon: string; rarity: string; description: string }
@@ -28,12 +29,12 @@ type ReferralStats = { code: string; total_invites: number; converted_invites: n
 
 const ACCOUNT_TABS = [
   { id: "overview",      label: "Overview",       Icon: User },
+  { id: "inbox",         label: "Inbox",          Icon: MessageSquare },
   { id: "orders",        label: "Orders",         Icon: Package },
   { id: "wishlist",      label: "Wishlist",       Icon: Heart },
   { id: "badges",        label: "Badges & XP",    Icon: Award },
   { id: "settings",      label: "Settings",       Icon: Settings },
   { id: "addresses",     label: "Addresses",      Icon: MapPin },
-  { id: "notifications", label: "Notifications",  Icon: Bell },
 ]
 
 const ORDER_STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -755,11 +756,14 @@ function SettingsTab() {
   )
 }
 
-function ComingSoon({ title }: { title: string }) {
+function InboxTab() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <p className="font-display text-4xl text-dp-text-primary mb-2">{title}</p>
-      <p className="text-[13px] text-dp-text-tertiary">This section is coming soon.</p>
+    <div className="flex flex-col gap-4">
+      <div>
+        <h2 className="font-display text-2xl text-dp-text-primary">Inbox</h2>
+        <p className="text-[13px] text-dp-text-tertiary mt-1">Your conversations with artists and sellers.</p>
+      </div>
+      <InboxPanel embedded autoSelectFirst={false} />
     </div>
   )
 }
@@ -777,12 +781,12 @@ export default function AccountPage(): React.ReactElement {
 
   const tabContent: Record<string, React.ReactNode> = {
     overview:      <OverviewTab />,
+    inbox:         <InboxTab />,
     orders:        <OrdersTab />,
     wishlist:      <WishlistTab />,
     badges:        <BadgesTab />,
     settings:      <SettingsTab />,
     addresses:     <AddressesTab />,
-    notifications: <ComingSoon title="Notifications" />,
   }
 
   const displayName = user?.name || user?.email || "Account"
@@ -790,25 +794,45 @@ export default function AccountPage(): React.ReactElement {
   return (
     <SiteShell>
       <div className="bg-dp-bg-surface border-b border-dp-border">
-        <div className="dp-container py-8 flex items-center gap-5">
-          {user?.avatar ? (
-            <Image src={user.avatar} alt={displayName} width={64} height={64} className="rounded-full border-2 border-dp-accent-gold shrink-0" />
-          ) : (
-            <div className="w-16 h-16 rounded-full bg-dp-bg-elevated border-2 border-dp-accent-gold flex items-center justify-center shrink-0">
-              <User size={28} className="text-dp-text-tertiary" />
+        <div className="dp-container py-6 md:py-8 flex flex-col sm:flex-row sm:items-start gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 w-full">
+            {user?.avatar ? (
+              <Image src={user.avatar} alt={displayName} width={64} height={64} className="rounded-full border-2 border-dp-accent-gold shrink-0" />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-dp-bg-elevated border-2 border-dp-accent-gold flex items-center justify-center shrink-0">
+                <User size={28} className="text-dp-text-tertiary" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="font-display text-2xl sm:text-3xl text-dp-text-primary truncate">{displayName}</h1>
+                <p className="text-[12px] text-dp-text-tertiary mt-0.5">Level {profile?.level ?? 1} · {(profile?.xp ?? 0).toLocaleString()} XP</p>
+              </div>
+              <Link
+                href="/account/notifications"
+                className="shrink-0 flex items-center justify-center w-9 h-9 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-accent-cta hover:border-dp-border-hover transition-colors"
+                aria-label="Notifications"
+              >
+                <BellRing size={16} strokeWidth={1.75} />
+              </Link>
             </div>
-          )}
-          <div>
-            <h1 className="font-display text-3xl text-dp-text-primary">{displayName}</h1>
-            <p className="text-[12px] text-dp-text-tertiary mt-0.5">Level {profile?.level ?? 1} · {(profile?.xp ?? 0).toLocaleString()} XP</p>
           </div>
-          <button onClick={handleLogout} className="ml-auto flex items-center gap-1.5 text-[11px] text-dp-text-tertiary hover:text-dp-accent-cta transition-colors">
+          <button onClick={handleLogout} className="self-end sm:self-center shrink-0 flex items-center gap-1.5 text-[11px] text-dp-text-tertiary hover:text-dp-accent-cta transition-colors sm:ml-2">
             <LogOut size={13} /> Sign out
           </button>
         </div>
       </div>
 
-      <div className="dp-container py-8 flex gap-8 items-start">
+      <div className="dp-container py-6 md:py-8 flex flex-col md:flex-row gap-6 md:gap-8 items-start">
+        <div className="md:hidden w-full overflow-x-auto flex gap-2 pb-1 -mx-1 px-1">
+          {ACCOUNT_TABS.map(({ id, label }) => (
+            <button key={id} onClick={() => setActiveTab(id)}
+              className={`shrink-0 px-3 py-1.5 rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors whitespace-nowrap ${activeTab === id ? "bg-dp-accent-cta text-white" : "bg-dp-bg-surface border border-dp-border text-dp-text-secondary hover:text-dp-text-primary"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
         <aside className="hidden md:flex flex-col w-52 shrink-0 gap-1" aria-label="Account navigation">
           {ACCOUNT_TABS.map(({ id, label, Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
@@ -820,16 +844,7 @@ export default function AccountPage(): React.ReactElement {
           ))}
         </aside>
 
-        <div className="md:hidden w-full overflow-x-auto flex gap-2 pb-2 mb-4">
-          {ACCOUNT_TABS.map(({ id, label }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`shrink-0 px-3 py-1.5 rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors whitespace-nowrap ${activeTab === id ? "bg-dp-accent-cta text-white" : "bg-dp-bg-surface border border-dp-border text-dp-text-secondary hover:text-dp-text-primary"}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <main className="flex-1 min-w-0">{tabContent[activeTab]}</main>
+        <main className="flex-1 min-w-0 w-full">{tabContent[activeTab]}</main>
       </div>
     </SiteShell>
   )

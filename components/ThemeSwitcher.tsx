@@ -1,8 +1,8 @@
 "use client"
 
-import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 import { Sun, Moon } from "lucide-react"
+import { useTheme } from "@/components/ThemeProvider"
 
 export function ThemeSwitcher() {
   const { theme, setTheme } = useTheme()
@@ -11,7 +11,6 @@ export function ThemeSwitcher() {
   useEffect(() => { setMounted(true) }, [])
 
   if (!mounted) {
-    // Render a placeholder to avoid layout shift
     return (
       <button
         className="relative flex items-center justify-center w-8 h-8 rounded-sm border border-dp-border text-dp-text-tertiary"

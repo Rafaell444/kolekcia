@@ -8,6 +8,7 @@ import {
   ChevronRight, LogOut, ArrowLeft, Settings,
 } from "lucide-react"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
+import { ThemeProvider } from "@/components/ThemeProvider"
 
 export default function TenantAdminLayout({ children }: { children: React.ReactNode }): React.ReactElement {
   const pathname = usePathname()
@@ -37,6 +38,7 @@ export default function TenantAdminLayout({ children }: { children: React.ReactN
   }
 
   return (
+    <ThemeProvider>
     <div className="min-h-screen bg-dp-bg-base flex">
       <aside className="w-60 shrink-0 bg-dp-bg-surface border-r border-dp-border flex flex-col sticky top-0 h-screen overflow-y-auto">
         <div className="px-5 py-5 border-b border-dp-border">
@@ -91,5 +93,6 @@ export default function TenantAdminLayout({ children }: { children: React.ReactN
 
       <main className="flex-1 min-w-0 overflow-y-auto">{children}</main>
     </div>
+    </ThemeProvider>
   )
 }

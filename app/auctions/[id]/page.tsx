@@ -19,11 +19,64 @@ import {
   Plus,
   Loader2,
   Lock,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import { apiFetch, authFetch } from "@/lib/api"
 import { useAuth } from "@/contexts/auth-context"
 import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
+
+// ─── Auction FAQ ─────────────────────────────────────────────
+
+const AUCTION_FAQS = [
+  {
+    q: "How do live auctions work?",
+    a: "Place a bid at or above the current highest bid. The auction runs until the countdown ends. The highest bidder when time expires wins the item.",
+  },
+  {
+    q: "Are bids binding?",
+    a: "Yes. Every bid you place is a commitment to purchase if you win. Please bid only amounts you are prepared to pay.",
+  },
+  {
+    q: "When do I pay if I win?",
+    a: "Winners receive checkout instructions by email and must complete payment within 48 hours of the auction ending.",
+  },
+  {
+    q: "What is the minimum bid increment?",
+    a: "Each new bid must be at least $1.00 higher than the current highest bid unless otherwise stated on the listing.",
+  },
+  {
+    q: "What happens if I don't pay in time?",
+    a: "Unpaid wins may be offered to the next highest bidder or relisted. Repeated non-payment can restrict your ability to bid.",
+  },
+  {
+    q: "How is shipping handled for auction wins?",
+    a: "Shipping is calculated at checkout after you win. We ship worldwide using tracked carriers; delivery times vary by destination.",
+  },
+]
+
+function AuctionFaqItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border-b border-dp-border last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center justify-between w-full py-4 text-left group"
+        aria-expanded={open}
+      >
+        <span className="text-[14px] font-bold text-dp-text-primary group-hover:text-dp-accent-cta transition-colors pr-4">{q}</span>
+        {open
+          ? <ChevronUp size={16} className="text-dp-accent-cta shrink-0" />
+          : <ChevronDown size={16} className="text-dp-text-tertiary shrink-0" />}
+      </button>
+      {open && (
+        <p className="pb-4 text-[13px] text-dp-text-secondary leading-relaxed">{a}</p>
+      )}
+    </div>
+  )
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -966,6 +1019,20 @@ export default function AuctionDetailPage(): React.ReactElement {
           </div>
         </div>
       </div>
+
+      <section className="border-t border-dp-border bg-dp-bg-elevated py-12" aria-labelledby="auction-faq-heading">
+        <div className="dp-container max-w-3xl">
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">FAQ</p>
+          <h2 id="auction-faq-heading" className="font-display text-3xl md:text-4xl text-dp-text-primary mb-6">
+            Auction Questions
+          </h2>
+          <div className="bg-dp-bg-surface border border-dp-border rounded-sm px-5 sm:px-6">
+            {AUCTION_FAQS.map((faq) => (
+              <AuctionFaqItem key={faq.q} q={faq.q} a={faq.a} />
+            ))}
+          </div>
+        </div>
+      </section>
     </SiteShell>
   )
 }

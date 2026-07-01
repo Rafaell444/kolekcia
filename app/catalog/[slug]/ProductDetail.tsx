@@ -300,7 +300,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     <SiteShell>
       {/* Breadcrumb */}
       <div className="dp-container py-4">
-        <nav className="flex items-center gap-2 text-[12px] text-dp-text-tertiary" aria-label="Breadcrumb">
+        <nav className="flex items-center gap-2 text-[12px] text-dp-text-tertiary flex-wrap" aria-label="Breadcrumb">
           <Link href="/" className="hover:text-dp-text-primary transition-colors">Home</Link>
           <span>/</span>
           <Link href="/catalog" className="hover:text-dp-text-primary transition-colors">Shop</Link>
@@ -313,6 +313,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
           <span>/</span>
           <span className="text-dp-text-primary">{product.title}</span>
         </nav>
+        <Link href="/catalog" className="md:hidden inline-flex items-center gap-1 mt-3 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
+          <ChevronLeft size={13} /> Back to catalog
+        </Link>
       </div>
 
       {/* ── Main product section ──────────────────────────── */}
@@ -354,7 +357,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
           {/* Right: details */}
           <div className="flex flex-col gap-5">
-            <Link href="/catalog" className="inline-flex items-center gap-1 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors w-fit">
+            <Link href="/catalog" className="hidden md:inline-flex items-center gap-1 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors w-fit">
               <ChevronLeft size={13} /> Back to catalog
             </Link>
 
@@ -404,31 +407,34 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             {(product.finishes?.length ?? 0) > 0 && <VariantSelector label="Finish" options={product.finishes} selected={selectedFinish} onSelect={setSelectedFinish} />}
             {(product.frames?.length ?? 0) > 0 && <VariantSelector label="Frame"  options={product.frames}   selected={selectedFrame}  onSelect={setSelectedFrame} />}
 
-            <div className="flex items-center gap-3 pt-1">
-              <div className="flex items-center border border-dp-border rounded-sm overflow-hidden">
-                <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Decrease quantity">−</button>
-                <span className="px-4 py-2.5 text-[14px] font-bold text-dp-text-primary min-w-[3rem] text-center tabular-nums">{qty}</span>
-                <button onClick={() => setQty((q) => q + 1)} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Increase quantity">+</button>
+            <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex items-stretch gap-2 w-full sm:flex-1 sm:min-w-0">
+                <div className="flex items-center border border-dp-border rounded-sm overflow-hidden shrink-0">
+                  <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Decrease quantity">−</button>
+                  <span className="px-4 py-2.5 text-[14px] font-bold text-dp-text-primary min-w-[3rem] text-center tabular-nums">{qty}</span>
+                  <button onClick={() => setQty((q) => q + 1)} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Increase quantity">+</button>
+                </div>
+                <button
+                  onClick={() => { void handleAddToCart() }}
+                  disabled={adding}
+                  className={`flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-3 rounded-sm text-[11px] sm:text-[13px] font-black uppercase tracking-widest transition-colors disabled:opacity-60 ${
+                    added
+                      ? "bg-dp-success text-white"
+                      : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"
+                  }`}
+                >
+                  {adding
+                    ? <><Loader2 size={16} className="animate-spin shrink-0" /> <span className="truncate">Adding…</span></>
+                    : added
+                      ? <><Check size={16} className="shrink-0" /> <span className="truncate">Added to Cart</span></>
+                      : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatPrice(price * qty)}</span></>}
+                </button>
               </div>
-              <button
-                onClick={() => { void handleAddToCart() }}
-                disabled={adding}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-sm text-[13px] font-black uppercase tracking-widest transition-colors disabled:opacity-60 ${
-                  added
-                    ? "bg-dp-success text-white"
-                    : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"
-                }`}
-              >
-                {adding
-                  ? <><Loader2 size={16} className="animate-spin" /> Adding…</>
-                  : added
-                    ? <><Check size={16} /> Added to Cart</>
-                    : <><ShoppingCart size={16} /> Add to Cart — {formatPrice(price * qty)}</>}
-              </button>
+              <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
               <button
                 onClick={() => { void handleWishlist() }}
                 disabled={wishWorking}
-                className={`p-3 border rounded-sm transition-colors disabled:opacity-60 ${
+                className={`flex-1 sm:flex-none p-3 border rounded-sm transition-colors disabled:opacity-60 flex items-center justify-center ${
                   wishlisted
                     ? "border-dp-accent-cta text-dp-accent-cta bg-dp-accent-cta/10"
                     : "border-dp-border text-dp-text-secondary hover:text-dp-accent-cta hover:border-dp-accent-cta"
@@ -441,12 +447,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               </button>
               <button
                 onClick={() => { void handleShare() }}
-                className="p-3 border border-dp-border rounded-sm text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
+                className="flex-1 sm:flex-none p-3 border border-dp-border rounded-sm text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors flex items-center justify-center"
                 aria-label={shareCopied ? "Link copied" : "Share this product"}
                 title={shareCopied ? "Link copied!" : "Share"}
               >
                 <Share2 size={16} />
               </button>
+              </div>
             </div>
 
             {vendorId && (
@@ -730,13 +737,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
           </div>
           <button
             onClick={handleAddToCart}
-            className={`shrink-0 flex items-center gap-2 px-8 py-4 rounded-sm text-[13px] font-black uppercase tracking-widest transition-colors ${
+            className={`w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-6 sm:px-8 py-4 rounded-sm text-[12px] sm:text-[13px] font-black uppercase tracking-widest transition-colors ${
               added ? "bg-dp-success text-white" : "bg-white text-dp-accent-cta hover:bg-dp-bg-elevated"
             }`}
           >
             {added
-              ? <><Check size={16} /> Added!</>
-              : <><ShoppingCart size={16} /> Add to Cart — {formatPrice(price * qty)}</>}
+              ? <><Check size={16} className="shrink-0" /> Added!</>
+              : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatPrice(price * qty)}</span></>}
           </button>
         </div>
       </section>

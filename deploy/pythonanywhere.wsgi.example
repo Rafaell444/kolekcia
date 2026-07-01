@@ -1,0 +1,15 @@
+# Paste into PythonAnywhere → Web → WSGI configuration file
+# Replace YOUR_USERNAME with your PythonAnywhere username.
+
+import os
+import sys
+
+PROJECT_DIR = "/home/YOUR_USERNAME/kolekcia/backend"
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "kolekcia.settings.production")
+
+from django.core.wsgi import get_wsgi_application
+
+application = get_wsgi_application()

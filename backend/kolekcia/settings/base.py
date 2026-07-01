@@ -9,6 +9,7 @@ env = environ.Env(
     DATABASE_URL=(str, f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
     ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     CORS_ALLOWED_ORIGINS=(list, ["http://localhost:3000"]),
+    CSRF_TRUSTED_ORIGINS=(list, []),
     SECRET_KEY=(str, "django-insecure-change-me"),
     FRONTEND_URL=(str, "http://localhost:3000"),
 )
@@ -158,6 +159,9 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 CORS_ALLOW_CREDENTIALS = True
+
+_csrf_origins = env("CSRF_TRUSTED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = _csrf_origins if _csrf_origins else CORS_ALLOWED_ORIGINS
 
 EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@kolekcia.com")

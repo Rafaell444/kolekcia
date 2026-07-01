@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import { Barlow, Barlow_Condensed, Bebas_Neue, Geist_Mono } from 'next/font/google'
-import { ThemeProvider } from '@/components/ThemeProvider'
 import { AuthProvider } from '@/contexts/auth-context'
 import { GamificationProvider } from '@/contexts/gamification-context'
 import { CartProvider } from '@/contexts/cart-context'
@@ -93,6 +92,7 @@ export default function RootLayout({
       suppressHydrationWarning
       data-scroll-behavior="smooth"
       className={`
+        light
         ${bebasNeue.variable}
         ${barlow.variable}
         ${barlowCondensed.variable}
@@ -105,13 +105,6 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className="font-sans antialiased min-h-screen bg-background text-foreground">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="light"
-          forcedTheme="light"
-          enableSystem={false}
-          disableTransitionOnChange
-        >
           <LocaleProvider>
             <AuthProvider>
               <CartProvider>
@@ -124,7 +117,6 @@ export default function RootLayout({
               </CartProvider>
             </AuthProvider>
           </LocaleProvider>
-        </ThemeProvider>
       </body>
     </html>
   )

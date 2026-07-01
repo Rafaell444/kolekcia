@@ -3,9 +3,10 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, Suspense } from "react"
+import { createPortal } from "react-dom"
 import {
-  ShoppingCart, Search, User, Menu, X, Zap, Loader2,
+  ShoppingCart, User, Menu, X, Zap, Loader2, MessageSquare,
   Settings, LogOut, Package, Heart, Award,
   ArrowRight, ChevronDown, Flame, Sparkles,
   Star, Brush, Sword, Globe2, Music2, Film,
@@ -18,6 +19,7 @@ import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import TrustBar from "@/components/home/TrustBar"
 import LocaleSwitcher, { LocaleSwitcherInline } from "@/components/layout/LocaleSwitcher"
+import { DesktopSearch, MobileHeaderSearch, MenuSearch } from "@/components/layout/ProductSearch"
 import { useLocale } from "@/contexts/locale-context"
 
 type NavCategory = { id: string; name: string; slug: string }
@@ -229,155 +231,7 @@ function XpBar() {
   )
 }
 
-// ── Live search bar ───────────────────────────────────────
-type SearchProduct = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
-
-function SearchBar() {
-  const router = useRouter()
-  const { formatPrice } = useLocale()
-  const [open, setOpen]     = useState(false)
-  const [query, setQuery]   = useState("")
-  const [results, setResults] = useState<SearchProduct[]>([])
-  const [busy, setBusy]     = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const wrapRef  = useRef<HTMLDivElement>(null)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Close on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handler)
-    return () => document.removeEventListener("mousedown", handler)
-  }, [])
-
-  // Debounced search
-  useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    const q = query.trim()
-    if (!q) { setResults([]); return }
-    timerRef.current = setTimeout(async () => {
-      setBusy(true)
-      try {
-        const data = await apiFetch<{ results: SearchProduct[] }>(`/products/?search=${encodeURIComponent(q)}&page_size=6`)
-        setResults(data.results)
-      } catch { setResults([]) }
-      finally { setBusy(false) }
-    }, 280)
-    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [query])
-
-  function openSearch() {
-    setOpen(true)
-    setTimeout(() => inputRef.current?.focus(), 50)
-  }
-
-  function handleSelect(product: SearchProduct) {
-    setOpen(false)
-    setQuery("")
-    router.push(productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug }))
-  }
-
-  function handleKey(e: React.KeyboardEvent) {
-    if (e.key === "Escape") { setOpen(false); setQuery("") }
-    if (e.key === "Enter" && query.trim()) {
-      setOpen(false)
-      router.push(`/catalog?search=${encodeURIComponent(query.trim())}`)
-    }
-  }
-
-  return (
-    <div ref={wrapRef} className="relative hidden md:block">
-      {open ? (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-dp-bg-elevated border border-dp-accent-cta/60 rounded-sm min-w-[220px] lg:min-w-[280px]">
-          <Search size={13} className="text-dp-text-tertiary shrink-0" aria-hidden />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKey}
-            placeholder="Search designs…"
-            className="flex-1 bg-transparent text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary outline-none"
-            aria-label="Search designs"
-            autoComplete="off"
-          />
-          {busy && <Loader2 size={12} className="animate-spin text-dp-text-tertiary shrink-0" />}
-          <button
-            onClick={() => { setOpen(false); setQuery("") }}
-            className="shrink-0 text-dp-text-tertiary hover:text-dp-text-primary transition-colors"
-            aria-label="Close search"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={openSearch}
-          className="flex items-center gap-2 px-3 py-1.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-tertiary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
-          aria-label="Open search"
-        >
-          <Search size={13} aria-hidden />
-          <span className="hidden lg:block">Search…</span>
-        </button>
-      )}
-
-      {/* Results dropdown */}
-      {open && (results.length > 0 || busy) && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl z-50 overflow-hidden min-w-[320px]">
-          {results.length === 0 && busy ? (
-            <div className="px-4 py-3 text-[12px] text-dp-text-tertiary flex items-center gap-2">
-              <Loader2 size={12} className="animate-spin" /> Searching…
-            </div>
-          ) : (
-            <>
-              <ul>
-                {results.map((r) => (
-                  <li key={r.id}>
-                    <button
-                      onClick={() => handleSelect(r)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-dp-bg-elevated transition-colors text-left"
-                    >
-                      <div className="w-9 h-12 shrink-0 rounded-sm overflow-hidden bg-dp-bg-elevated border border-dp-border">
-                        {r.image_url && (
-                          <img src={r.image_url} alt="" className="w-full h-full object-cover" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-semibold text-dp-text-primary truncate">{r.title}</p>
-                        <p className="text-[11px] text-dp-text-tertiary truncate">{r.artist_name}</p>
-                      </div>
-                      <p className="text-[13px] font-bold text-dp-text-primary shrink-0">
-                        {formatPrice(parseFloat(r.base_price))}
-                      </p>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <div className="px-3 py-2 border-t border-dp-border">
-                <button
-                  onClick={() => { setOpen(false); router.push(`/catalog?search=${encodeURIComponent(query.trim())}`) }}
-                  className="text-[11px] font-semibold text-dp-accent-cta hover:underline"
-                >
-                  See all results for &ldquo;{query}&rdquo; →
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Empty state */}
-      {open && query.trim().length > 0 && results.length === 0 && !busy && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl z-50 px-4 py-3 min-w-[320px]">
-          <p className="text-[12px] text-dp-text-tertiary">No results for &ldquo;{query}&rdquo;</p>
-        </div>
-      )}
-    </div>
-  )
-}
+// ── Live search — see ProductSearch.tsx ───────────────────
 
 function MegaNavItem({
   label,
@@ -499,6 +353,7 @@ function AccountMenu() {
             <>
               {[
                 { href: "/account",          icon: <User    size={13} />, label: "Profile & Orders" },
+                { href: "/inbox",            icon: <MessageSquare size={13} />, label: "Inbox" },
                 { href: "/account/wishlist", icon: <Heart   size={13} />, label: "Wishlist" },
                 { href: "/account/awards",   icon: <Award   size={13} />, label: "Awards & XP" },
                 { href: "/account/orders",   icon: <Package size={13} />, label: "Order History" },
@@ -546,14 +401,27 @@ function AccountMenu() {
 }
 
 // ── Header ────────────────────────────────────────────────
-function SiteHeader() {
+function SiteHeader({
+  mobileOpen,
+  onMobileOpenChange,
+}: {
+  mobileOpen: boolean
+  onMobileOpenChange: (open: boolean) => void
+}) {
   const { itemCount } = useCart()
   const pathname     = usePathname()
-  const [mobileOpen, setMobileOpen]   = useState(false)
   const [activeMenu, setActiveMenu]   = useState<MegaMenuKey>(null)
   const [mobileShop, setMobileShop]   = useState(false)
+  const [mounted, setMounted]         = useState(false)
   const headerRef    = useRef<HTMLElement>(null)
   const closeTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const setMobileOpen = useCallback(
+    (open: boolean | ((prev: boolean) => boolean)) => {
+      onMobileOpenChange(typeof open === "function" ? open(mobileOpen) : open)
+    },
+    [mobileOpen, onMobileOpenChange]
+  )
 
   const handleEnter = useCallback((key: MegaMenuKey) => {
     if (closeTimer.current) clearTimeout(closeTimer.current)
@@ -576,12 +444,24 @@ function SiteHeader() {
   }, [])
 
   // Close mega menu on route change
-  useEffect(() => { setActiveMenu(null); setMobileOpen(false) }, [pathname])
+  useEffect(() => { setActiveMenu(null); onMobileOpenChange(false) }, [pathname, onMobileOpenChange])
+
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (!mobileOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = prev }
+  }, [mobileOpen])
+
+  useEffect(() => { setMounted(true) }, [])
+
+  const closeMobileMenu = useCallback(() => onMobileOpenChange(false), [onMobileOpenChange])
 
   return (
     <header
       ref={headerRef}
-      className="sticky top-0 z-50 bg-dp-bg-surface border-b border-dp-border"
+      className={`sticky top-0 z-50 bg-dp-bg-surface border-b border-dp-border ${mobileOpen ? "max-lg:hidden" : ""}`}
       onMouseLeave={handleLeave}
     >
       <div className="dp-container flex items-center justify-between gap-4 py-3">
@@ -609,7 +489,8 @@ function SiteHeader() {
         <div className="flex items-center gap-2">
           <LocaleSwitcher />
           <XpBar />
-          <SearchBar />
+          <MobileHeaderSearch hidden={mobileOpen} />
+          <DesktopSearch />
           <Link
             href="/cart"
             className="relative flex items-center justify-center w-8 h-8 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
@@ -640,50 +521,67 @@ function SiteHeader() {
         {activeMenu === "shop" && <ShopMegaMenu onClose={() => setActiveMenu(null)} />}
       </div>
 
-      {/* Mobile nav */}
-      {mobileOpen && (
-        <nav id="mobile-nav" className="lg:hidden border-t border-dp-border bg-dp-bg-surface" aria-label="Mobile navigation">
-          <div className="dp-container py-4 flex flex-col gap-1">
-            {/* Shop toggle */}
+      {/* Mobile nav — full-screen overlay (covers promo + header), bottom tab bar stays visible */}
+      {mounted && mobileOpen && createPortal(
+        <nav
+          id="mobile-nav"
+          className="lg:hidden fixed inset-x-0 top-0 bottom-16 z-[100] flex flex-col bg-dp-bg-surface"
+          aria-label="Mobile navigation"
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-dp-border shrink-0">
+            <Link href="/" onClick={closeMobileMenu} className="font-display text-lg text-dp-text-primary tracking-wider">
+              KOLEKCIA
+            </Link>
             <button
-              onClick={() => setMobileShop((o) => !o)}
-              className="flex items-center justify-between py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors"
+              type="button"
+              onClick={closeMobileMenu}
+              className="flex items-center justify-center w-9 h-9 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-text-primary transition-colors"
+              aria-label="Close menu"
             >
-              Shop <ChevronDown size={14} className={`transition-transform ${mobileShop ? "rotate-180" : ""}`} />
+              <X size={18} />
             </button>
-            {mobileShop && (
-              <div className="pl-3 pb-2 flex flex-col gap-1 border-l-2 border-dp-accent-cta/30 ml-2">
-                {[
-                  { label: "All Designs",      href: "/catalog" },
-                  { label: "New Arrivals",      href: "/catalog?filter=new" },
-                  { label: "Trending",          href: "/catalog?sort=popular" },
-                  { label: "Limited Editions",  href: "/catalog?filter=limited" },
-                  { label: "On Sale",           href: "/catalog?filter=sale" },
-                ].map(({ label, href }) => (
-                  <Link key={label} href={href} onClick={() => setMobileOpen(false)} className="py-1.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
-                ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            <div className="dp-container py-4 flex flex-col gap-1">
+              <button
+                onClick={() => setMobileShop((o) => !o)}
+                className="flex items-center justify-between py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors"
+              >
+                Shop <ChevronDown size={14} className={`transition-transform ${mobileShop ? "rotate-180" : ""}`} />
+              </button>
+              {mobileShop && (
+                <div className="pl-3 pb-2 flex flex-col gap-1 border-l-2 border-dp-accent-cta/30 ml-2">
+                  {[
+                    { label: "All Designs",      href: "/catalog" },
+                    { label: "Wallpanels",       href: "/catalog?category=wallpanels" },
+                    { label: "Figures",          href: "/catalog?category=figures" },
+                    { label: "New Arrivals",      href: "/catalog?filter=new" },
+                    { label: "Trending",          href: "/catalog?sort=popular" },
+                    { label: "Limited Editions",  href: "/catalog?filter=limited" },
+                    { label: "On Sale",           href: "/catalog?filter=sale" },
+                  ].map(({ label, href }) => (
+                    <Link key={label} href={href} onClick={closeMobileMenu} className="py-1.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
+                  ))}
+                </div>
+              )}
+
+              <Link href="/artists"  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Artists</Link>
+              <Link href="/auctions" onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Auctions</Link>
+              <Link href="/blog" onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Blog</Link>
+              <Link href="/custom"   onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Custom</Link>
+              <Link href="/about"    onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">About Us</Link>
+              <Link href="/contact"  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Contact Us</Link>
+
+              <div className="pt-3 border-t border-dp-border mt-2">
+                <LocaleSwitcherInline />
               </div>
-            )}
 
-            <Link href="/artists"  onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Artists</Link>
-            <Link href="/auctions" onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Auctions</Link>
-            <Link href="/blog" onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Blog</Link>
-            <Link href="/custom"   onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Custom</Link>
-            <Link href="/about"    onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">About Us</Link>
-            <Link href="/contact"  onClick={() => setMobileOpen(false)} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Contact Us</Link>
-
-            {/* Language & Currency */}
-            <div className="pt-3 border-t border-dp-border mt-2">
-              <LocaleSwitcherInline />
-            </div>
-
-            <div className="pt-2 border-t border-dp-border mt-1">
-              <Link href="/admin" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 py-2 text-[12px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">
-                <Settings size={13} /> Admin Panel
-              </Link>
+              <MenuSearch onClose={closeMobileMenu} />
             </div>
           </div>
-        </nav>
+        </nav>,
+        document.body
       )}
     </header>
   )
@@ -788,7 +686,7 @@ function SiteFooter() {
             ].map(({ label, href }) => (
               <Link key={label} href={href} className="text-[11px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">{label}</Link>
             ))}
-            <LocaleSwitcher />
+            <LocaleSwitcher placement="top" />
           </div>
         </div>
       </div>
@@ -801,14 +699,22 @@ import BottomNav from "@/components/layout/BottomNav"
 import FastCart from "@/components/cart/FastCart"
 
 export default function SiteShell({ children }: { children: React.ReactNode }) {
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const pathname = usePathname()
+  const hideTrustBar =
+    pathname.startsWith("/account") ||
+    /^\/auctions\/[^/]+/.test(pathname)
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <PromoBanner />
-      <SiteHeader />
+      {!mobileOpen && <PromoBanner />}
+      <SiteHeader mobileOpen={mobileOpen} onMobileOpenChange={setMobileOpen} />
       <main className="flex-1">{children}</main>
-      <TrustBar />
+      {!hideTrustBar && <TrustBar />}
       <SiteFooter />
-      <BottomNav />
+      <Suspense fallback={<div className="h-[64px] lg:hidden" aria-hidden />}>
+        <BottomNav />
+      </Suspense>
       <FastCart />
     </div>
   )
