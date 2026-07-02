@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/cart-context"
 import { useWishlist } from "@/contexts/wishlist-context"
 import { useLocale } from "@/contexts/locale-context"
+import { formatAmount } from "@/lib/product-pricing"
 import { getAccessToken } from "@/lib/auth-storage"
 import { savePendingCartIntent } from "@/lib/pending-cart"
 import { productHref } from "@/lib/product-url"
@@ -30,6 +31,7 @@ export type ProductCardProps = {
     category?: string
     slug?: string
     defaultVariantId?: number | null
+    priceIsLocalized?: boolean
   }
 }
 
@@ -38,10 +40,13 @@ export default function ProductCard({ product: p }: ProductCardProps) {
   const router = useRouter()
   const { addItem } = useCart()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()
-  const { formatPrice } = useLocale()
+  const { formatPrice, currency } = useLocale()
   const [adding, setAdding]           = useState(false)
   const [addedToCart, setAddedToCart] = useState(false)
   const [wishWorking, setWishWorking] = useState(false)
+
+  const displayPrice = (amount: number | null | undefined) =>
+    p.priceIsLocalized ? formatAmount(amount, currency) : formatPrice(amount)
 
   const wishlisted = isWishlisted(Number(p.id))
 
@@ -104,7 +109,7 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     <Link
       href={href}
       className="group relative flex flex-col bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-dp-accent-cta"
-      aria-label={`${p.title} by ${p.artistName} — ${formatPrice(p.price)}`}
+      aria-label={`${p.title} by ${p.artistName} — ${displayPrice(p.price)}`}
     >
       {/* ── Image ── */}
       <div className="relative aspect-poster overflow-hidden bg-dp-bg-elevated">
@@ -177,11 +182,11 @@ export default function ProductCard({ product: p }: ProductCardProps) {
       {/* ── Price ── */}
       <div className="flex items-center gap-2 px-3 pb-3 mt-auto">
         <span className="text-[15px] font-bold text-dp-text-primary">
-          {formatPrice(p.price)}
+          {displayPrice(p.price)}
         </span>
         {p.originalPrice && p.originalPrice > p.price && (
           <span className="text-[12px] text-dp-text-tertiary line-through">
-            {formatPrice(p.originalPrice)}
+            {displayPrice(p.originalPrice)}
           </span>
         )}
       </div>

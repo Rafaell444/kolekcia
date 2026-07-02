@@ -1,6 +1,8 @@
 "use client"
 
-// Infinite auto-scrolling carousel of brand/fandom logos
+// Infinite carousel — virtual offset so drag works both directions without hitting scroll edges
+import React, { useCallback, useEffect, useRef } from "react"
+
 const BRANDS = [
   { id: "b1",  name: "The Witcher",       bg: "#000",   text: "#fff", abbr: "THE WITCHER" },
   { id: "b2",  name: "Harry Potter",      bg: "#f5f0e8",text: "#1a1a1a", abbr: "Harry Potter" },
@@ -20,31 +22,112 @@ const BRANDS = [
   { id: "b16", name: "DC",               bg: "#0074e8",text: "#fff", abbr: "DC" },
 ]
 
-// Duplicate for seamless loop
-const LOOP = [...BRANDS, ...BRANDS]
+const LOOP = [...BRANDS, ...BRANDS, ...BRANDS]
+const COPIES = 3
+
+function segmentWidth(el: HTMLDivElement) {
+  return el.scrollWidth / COPIES
+}
+
+/** Map unbounded offset → scroll position inside the middle copy */
+function applyOffset(el: HTMLDivElement, offset: number) {
+  const seg = segmentWidth(el)
+  if (seg <= 0) return
+  const local = ((offset % seg) + seg) % seg
+  el.scrollLeft = seg + local
+}
 
 export default function BrandsCarousel() {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const offsetRef = useRef(0)
+  const draggingRef = useRef(false)
+  const pointerIdRef = useRef<number | null>(null)
+  const dragStartRef = useRef({ x: 0, offset: 0 })
+  const rafRef = useRef<number | null>(null)
+
+  const paint = useCallback(() => {
+    const el = trackRef.current
+    if (el) applyOffset(el, offsetRef.current)
+  }, [])
+
+  const tick = useCallback(() => {
+    if (draggingRef.current) return
+    offsetRef.current += 0.6
+    paint()
+  }, [paint])
+
+  useEffect(() => {
+    const el = trackRef.current
+    if (!el) return
+
+    paint()
+    const ro = new ResizeObserver(paint)
+    ro.observe(el)
+
+    const loop = () => {
+      tick()
+      rafRef.current = requestAnimationFrame(loop)
+    }
+    rafRef.current = requestAnimationFrame(loop)
+
+    return () => {
+      ro.disconnect()
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [tick, paint])
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    const el = trackRef.current
+    if (!el) return
+    e.preventDefault()
+    draggingRef.current = true
+    pointerIdRef.current = e.pointerId
+    dragStartRef.current = { x: e.clientX, offset: offsetRef.current }
+    el.setPointerCapture(e.pointerId)
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!draggingRef.current || pointerIdRef.current !== e.pointerId) return
+    const dx = e.clientX - dragStartRef.current.x
+    offsetRef.current = dragStartRef.current.offset - dx
+    paint()
+  }
+
+  function endDrag(e: React.PointerEvent<HTMLDivElement>) {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    pointerIdRef.current = null
+    trackRef.current?.releasePointerCapture(e.pointerId)
+  }
+
   return (
     <section className="py-10 border-y border-dp-border overflow-hidden" aria-label="Official licensed fandoms">
       <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-dp-text-tertiary mb-6">
         Official Metal Posters from 200+ Fandoms
       </p>
       <div className="relative">
-        {/* Fade edges */}
         <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-20 z-10 bg-gradient-to-r from-background to-transparent" aria-hidden />
         <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-20 z-10 bg-gradient-to-l from-background to-transparent" aria-hidden />
 
-        {/* Scrolling track */}
-        <div className="flex gap-3 brands-scroll" aria-hidden>
+        <div
+          ref={trackRef}
+          className="flex gap-3 overflow-x-auto scrollbar-none cursor-grab active:cursor-grabbing select-none touch-none"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          aria-hidden
+        >
           {LOOP.map((brand, i) => (
             <div
               key={`${brand.id}-${i}`}
-              className="shrink-0 w-[110px] h-[72px] rounded-lg flex items-center justify-center select-none"
+              className="shrink-0 w-[110px] h-[72px] rounded-lg flex items-center justify-center"
               style={{ background: brand.bg }}
               title={brand.name}
             >
               <span
-                className="text-[11px] font-black tracking-tight text-center leading-tight px-2"
+                className="text-[11px] font-black tracking-tight text-center leading-tight px-2 pointer-events-none"
                 style={{ color: brand.text }}
               >
                 {brand.abbr}

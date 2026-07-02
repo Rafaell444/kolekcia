@@ -1,7 +1,11 @@
 "use client"
 
 import React, { useEffect, useRef, useState, useCallback } from "react"
+import Link from "next/link"
 import { adminFetch } from "@/lib/admin-auth"
+import { parseList, type PaginatedResponse } from "@/lib/api"
+import { productHref } from "@/lib/product-url"
+import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, Loader2 } from "lucide-react"
 
 type Message = { id: string; from_role: string; text: string; sent_at: string; read: boolean }
@@ -13,10 +17,15 @@ type Conversation = {
   customer_email: string
   customer_name: string
   vendor_name: string | null
+  product_id: number | null
+  product_slug: string | null
+  product_title: string | null
+  product_image_url: string | null
   messages: Message[]
 }
 
 const POLL_INTERVAL = 3000
+const LIST_POLL_INTERVAL = 10000
 
 function relTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000
@@ -35,20 +44,51 @@ export default function AdminInboxPage(): React.ReactElement {
   const endRef = useRef<HTMLDivElement>(null)
   const lastMsgCount = useRef<number>(0)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const activeIdRef = useRef<string | null>(null)
 
-  // Load conversation list
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+
+  function applyOpenedConv(full: Conversation, id: string) {
+    lastMsgCount.current = full.messages?.length ?? 0
+    setConvs((prev) => prev.map((c) => (c.id === id ? { ...full, unread_count: 0 } : c)))
+    notifyInboxRead()
+  }
+
+  const pollList = useCallback(async () => {
+    try {
+      const raw = await adminFetch<Conversation[] | PaginatedResponse<Conversation>>("/messaging/conversations/")
+      const data = parseList(raw)
+      const currentActiveId = activeIdRef.current
+      setConvs((prev) => {
+        const prevActive = currentActiveId ? prev.find((c) => c.id === currentActiveId) : null
+        return data.map((c) => {
+          if (c.id === currentActiveId && prevActive?.messages?.length) {
+            return { ...prevActive, unread_count: 0 }
+          }
+          return c
+        })
+      })
+    } catch { /* noop */ }
+  }, [])
+
+  // Load conversation list (no auto-open)
   useEffect(() => {
     let cancelled = false
-    adminFetch<Conversation[]>("/messaging/conversations/")
-      .then((d) => {
+    adminFetch<Conversation[] | PaginatedResponse<Conversation>>("/messaging/conversations/")
+      .then((raw) => {
         if (cancelled) return
-        setConvs(d)
-        if (d.length > 0) { setActiveId(d[0].id); lastMsgCount.current = d[0].messages?.length ?? 0 }
+        setConvs(parseList(raw))
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
+
+  // Refresh list unread counts without opening chats
+  useEffect(() => {
+    const id = setInterval(() => { void pollList() }, LIST_POLL_INTERVAL)
+    return () => clearInterval(id)
+  }, [pollList])
 
   // Auto-scroll
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }) }, [activeId, convs])
@@ -61,8 +101,8 @@ export default function AdminInboxPage(): React.ReactElement {
       const newCount = full.messages?.length ?? 0
       if (newCount > lastMsgCount.current) {
         lastMsgCount.current = newCount
-        setConvs((prev) => prev.map((c) => c.id === activeId ? full : c))
       }
+      setConvs((prev) => prev.map((c) => (c.id === activeId ? { ...full, unread_count: 0 } : c)))
     } catch { /* noop */ }
   }, [activeId])
 
@@ -78,8 +118,7 @@ export default function AdminInboxPage(): React.ReactElement {
     setDraft("")
     try {
       const full = await adminFetch<Conversation>(`/messaging/conversations/${id}/`)
-      lastMsgCount.current = full.messages?.length ?? 0
-      setConvs((prev) => prev.map((c) => c.id === id ? full : c))
+      applyOpenedConv(full, id)
     } catch { /* noop */ }
   }
 
@@ -169,6 +208,26 @@ export default function AdminInboxPage(): React.ReactElement {
                   <p className="text-[11px] text-dp-text-tertiary truncate">{active.subject}</p>
                 </div>
               </div>
+
+              {active.product_id && active.product_title && (
+                <div className="px-6 py-3 border-b border-dp-border bg-dp-bg-elevated/60 shrink-0">
+                  <Link
+                    href={productHref({ id: active.product_id, slug: active.product_slug ?? undefined })}
+                    className="flex items-center gap-3 hover:opacity-90 transition-opacity"
+                  >
+                    {active.product_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={active.product_image_url} alt={active.product_title} className="w-10 h-12 rounded-sm object-cover border border-dp-border" />
+                    ) : (
+                      <div className="w-10 h-12 rounded-sm border border-dp-border bg-dp-bg-base" />
+                    )}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-dp-text-tertiary">Product context</p>
+                      <p className="text-[12px] font-semibold text-dp-text-primary">{active.product_title}</p>
+                    </div>
+                  </Link>
+                </div>
+              )}
 
               <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-3 bg-dp-bg-base">
                 {(active.messages ?? []).map((m) => (

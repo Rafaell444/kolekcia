@@ -7,6 +7,8 @@ import ProductCard from "@/components/catalog/ProductCard"
 import { SlidersHorizontal, X, ChevronDown, ChevronUp, LayoutGrid, List } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
+import { resolveProductPrices, formatAmount } from "@/lib/product-pricing"
+import CategoryVendorBanner from "@/components/catalog/CategoryVendorBanner"
 
 type ApiCategory = { id: string; name: string; slug: string; count: number }
 
@@ -21,6 +23,7 @@ type ApiProduct = {
   original_price: string | null
   rating: string
   review_count: number
+  regional_prices?: Record<string, { price?: string; original?: string | null }>
   is_limited: boolean
   is_sale: boolean
   is_new: boolean
@@ -87,17 +90,26 @@ function FilterGroup({ title, children }: { title: string; children: React.React
   )
 }
 
+function filtersForPage(lockedCategory: string): Filters {
+  return {
+    ...DEFAULT_FILTERS,
+    categories: lockedCategory ? [lockedCategory] : [],
+  }
+}
+
 // ─── Filter sidebar ────────────────────────────────────────
 function FilterSidebar({
   filters,
   onChange,
   onReset,
   categories,
+  hideCategoryFilter = false,
 }: {
   filters: Filters
   onChange: (f: Filters) => void
   onReset: () => void
   categories: ApiCategory[]
+  hideCategoryFilter?: boolean
 }) {
   const toggle = (key: keyof Filters, value: string) => {
     const arr = filters[key] as string[]
@@ -108,7 +120,7 @@ function FilterSidebar({
   }
 
   const activeCount =
-    filters.categories.length +
+    (hideCategoryFilter ? 0 : filters.categories.length) +
     (filters.isLimited ? 1 : 0) +
     (filters.isSale ? 1 : 0) +
     (filters.isNew ? 1 : 0) +
@@ -139,6 +151,7 @@ function FilterSidebar({
       </div>
 
       {/* Category */}
+      {!hideCategoryFilter && (
       <FilterGroup title="Category">
         <ul className="flex flex-col gap-1.5">
           {categories.map((cat) => (
@@ -161,6 +174,7 @@ function FilterSidebar({
           ))}
         </ul>
       </FilterGroup>
+      )}
 
       {/* Price */}
       <FilterGroup title="Max Price">
@@ -221,7 +235,6 @@ function ProductSkeleton() {
   )
 }
 
-// ─── Sort map ──────────────────────────────────────────────
 const SORT_MAP: Record<string, string> = {
   trending:    "featured",
   newest:      "newest",
@@ -231,17 +244,25 @@ const SORT_MAP: Record<string, string> = {
   rating:      "featured",
 }
 
+const CATEGORY_VENDOR_SLUGS = new Set(["figures", "wallpanels"])
+
+function catalogHeading(category: string, search: string): string {
+  if (search) return `Results for "${search}"`
+  if (category === "figures") return "All Figure Designs"
+  if (category === "wallpanels") return "All Wallpanel Designs"
+  return "All Designs"
+}
+
 // ─── Page ──────────────────────────────────────────────────
 function CatalogPageInner(): React.ReactElement {
   const searchParams = useSearchParams()
   const urlSearch = searchParams.get("search") ?? ""
   const urlCategory = searchParams.get("category") ?? ""
-  const { formatPrice } = useLocale()
+  const { currency, rates } = useLocale()
+  const lockedCategory = CATEGORY_VENDOR_SLUGS.has(urlCategory) ? urlCategory : ""
+  const hideCategoryFilter = Boolean(lockedCategory)
 
-  const [filters, setFilters]   = useState<Filters>(() => ({
-    ...DEFAULT_FILTERS,
-    categories: urlCategory ? [urlCategory] : [],
-  }))
+  const [filters, setFilters]   = useState<Filters>(() => filtersForPage(lockedCategory))
   const [sort, setSort]         = useState("trending")
   const [view, setView]         = useState<"grid" | "list">("grid")
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -262,16 +283,25 @@ function CatalogPageInner(): React.ReactElement {
 
   useEffect(() => {
     setFilters((prev) => {
+      if (lockedCategory) {
+        if (prev.categories.length === 1 && prev.categories[0] === lockedCategory) return prev
+        return { ...prev, categories: [lockedCategory] }
+      }
       const nextCategories = urlCategory ? [urlCategory] : []
       if (prev.categories.join(",") === nextCategories.join(",")) return prev
       return { ...prev, categories: nextCategories }
     })
-  }, [urlCategory])
+  }, [urlCategory, lockedCategory])
+
+  const resetFilters = useCallback(() => {
+    setFilters(filtersForPage(lockedCategory))
+  }, [lockedCategory])
 
   const buildQueryString = useCallback(() => {
     const params = new URLSearchParams()
     if (urlSearch) params.set("search", urlSearch)
-    if (filters.categories.length === 1) params.set("category", filters.categories[0])
+    const effectiveCategory = lockedCategory || (filters.categories.length === 1 ? filters.categories[0] : "")
+    if (effectiveCategory) params.set("category", effectiveCategory)
     if (filters.priceMax < 100) params.set("max_price", String(filters.priceMax))
     if (filters.isLimited) params.set("limited", "true")
     if (filters.isSale) params.set("sale", "true")
@@ -280,7 +310,7 @@ function CatalogPageInner(): React.ReactElement {
     params.set("sort", SORT_MAP[sort] ?? "featured")
     params.set("page", String(page))
     return params.toString()
-  }, [filters, sort, page, urlSearch])
+  }, [filters, sort, page, urlSearch, lockedCategory])
 
   useEffect(() => {
     let cancelled = false
@@ -319,11 +349,15 @@ function CatalogPageInner(): React.ReactElement {
 
   return (
     <SiteShell>
-      {/* ── Page header ── */}
+      {CATEGORY_VENDOR_SLUGS.has(urlCategory) && (
+        <CategoryVendorBanner categorySlug={urlCategory} />
+      )}
+
+      {/* ── Page header (compact when vendor hero is shown) ── */}
       <div className="border-b border-dp-border bg-dp-bg-surface">
-        <div className="dp-container py-6">
-          <h1 className="font-display text-4xl md:text-5xl text-dp-text-primary">
-            {urlSearch ? `Results for "${urlSearch}"` : "All Designs"}
+        <div className={`dp-container ${CATEGORY_VENDOR_SLUGS.has(urlCategory) ? "py-4 sm:py-5" : "py-6"}`}>
+          <h1 className={`font-display text-dp-text-primary ${CATEGORY_VENDOR_SLUGS.has(urlCategory) ? "text-2xl sm:text-3xl md:text-4xl" : "text-4xl md:text-5xl"}`}>
+            {catalogHeading(urlCategory, urlSearch)}
           </h1>
           <p className="text-dp-text-secondary text-sm mt-1">
             {fetchLoading ? "Loading…" : `${totalCount.toLocaleString()} results`}
@@ -358,8 +392,9 @@ function CatalogPageInner(): React.ReactElement {
             <FilterSidebar
               filters={filters}
               onChange={setFilters}
-              onReset={() => setFilters(DEFAULT_FILTERS)}
+              onReset={resetFilters}
               categories={categories}
+              hideCategoryFilter={hideCategoryFilter}
             />
           </div>
 
@@ -369,7 +404,7 @@ function CatalogPageInner(): React.ReactElement {
             <div className="hidden lg:flex items-center justify-between mb-5">
               <span className="text-[13px] text-dp-text-secondary">
                 {totalCount} results for{" "}
-                <strong className="text-dp-text-primary">All Designs</strong>
+                <strong className="text-dp-text-primary">{catalogHeading(urlCategory, urlSearch)}</strong>
               </span>
               <div className="flex items-center gap-3">
                 {/* Sort */}
@@ -417,7 +452,7 @@ function CatalogPageInner(): React.ReactElement {
                 <p className="font-display text-3xl text-dp-text-primary mb-2">No results</p>
                 <p className="text-dp-text-tertiary text-sm mb-4">Try adjusting your filters.</p>
                 <button
-                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                  onClick={resetFilters}
                   className="px-5 py-2 border border-dp-border text-dp-text-secondary hover:text-dp-text-primary rounded-sm text-[12px] font-semibold uppercase tracking-widest transition-colors"
                 >
                   Clear Filters
@@ -425,23 +460,28 @@ function CatalogPageInner(): React.ReactElement {
               </div>
             ) : view === "grid" ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-                {products.map((p) => (
+                {products.map((p) => {
+                  const resolved = resolveProductPrices(p.base_price, p.original_price, p.regional_prices, currency, rates)
+                  return (
                   <ProductCard key={p.id} product={{
                     id: String(p.id), title: p.title, artistName: p.artist_name,
                     slug: p.slug,
                     category: p.category_slug,
-                    imageUrl: p.image_url, price: parseFloat(p.base_price),
-                    originalPrice: p.original_price ? parseFloat(p.original_price) : null,
+                    imageUrl: p.image_url, price: resolved.price,
+                    originalPrice: resolved.original,
                     rating: parseFloat(p.rating), reviews: p.review_count,
                     isLimited: p.is_limited, isSale: p.is_sale, isNew: p.is_new,
                     isExclusive: p.is_exclusive, tags: p.tags,
                     defaultVariantId: p.default_variant_id,
+                    priceIsLocalized: true,
                   }} />
-                ))}
+                )})}
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                {products.map((p) => (
+                {products.map((p) => {
+                  const resolved = resolveProductPrices(p.base_price, p.original_price, p.regional_prices, currency, rates)
+                  return (
                   <div key={p.id} className="flex gap-4 bg-dp-bg-surface border border-dp-border rounded-sm p-3 dp-card-hover">
                     <div className="relative w-20 h-28 shrink-0 overflow-hidden rounded-sm">
                       <img src={p.image_url} alt={p.title} className="w-full h-full object-cover" />
@@ -453,15 +493,15 @@ function CatalogPageInner(): React.ReactElement {
                         <p className="text-[12px] text-dp-text-secondary mt-1">{p.tags.join(" · ")}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-base font-bold text-dp-text-primary">{formatPrice(parseFloat(p.base_price))}</span>
-                        {p.original_price && (
-                          <span className="text-[12px] text-dp-text-tertiary line-through">{formatPrice(parseFloat(p.original_price))}</span>
+                        <span className="text-base font-bold text-dp-text-primary">{formatAmount(resolved.price, currency)}</span>
+                        {resolved.original != null && (
+                          <span className="text-[12px] text-dp-text-tertiary line-through">{formatAmount(resolved.original, currency)}</span>
                         )}
                         {p.is_limited && <span className="badge-limited">Limited</span>}
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
             {/* Pagination */}
@@ -498,8 +538,9 @@ function CatalogPageInner(): React.ReactElement {
             <FilterSidebar
               filters={filters}
               onChange={setFilters}
-              onReset={() => { setFilters(DEFAULT_FILTERS); setMobileOpen(false) }}
+              onReset={() => { resetFilters(); setMobileOpen(false) }}
               categories={categories}
+              hideCategoryFilter={hideCategoryFilter}
             />
             <button
               onClick={() => setMobileOpen(false)}

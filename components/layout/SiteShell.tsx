@@ -15,6 +15,8 @@ import {
 import { useAuth } from "@/contexts/auth-context"
 import { useCart } from "@/contexts/cart-context"
 import { useGamification } from "@/contexts/gamification-context"
+import { UnreadBadge } from "@/components/messaging/UnreadBadge"
+import { useInboxUnreadCount } from "@/hooks/use-inbox-unread"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import TrustBar from "@/components/home/TrustBar"
@@ -310,6 +312,7 @@ function AccountMenu() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const inboxUnread = useInboxUnreadCount()
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -364,10 +367,13 @@ function AccountMenu() {
                   href={href}
                   role="menuitem"
                   onClick={() => setOpen(false)}
-                  className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors"
+                  className="flex items-center justify-between gap-2.5 px-4 py-2.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors"
                 >
-                  <span className="text-dp-text-tertiary">{icon}</span>
-                  {label}
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-dp-text-tertiary">{icon}</span>
+                    {label}
+                  </span>
+                  {href === "/inbox" && <UnreadBadge count={inboxUnread} />}
                 </Link>
               ))}
               <div className="border-t border-dp-border">
@@ -487,7 +493,9 @@ function SiteHeader({
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <LocaleSwitcher />
+          <div className="hidden lg:block">
+            <LocaleSwitcher />
+          </div>
           <XpBar />
           <MobileHeaderSearch hidden={mobileOpen} />
           <DesktopSearch />

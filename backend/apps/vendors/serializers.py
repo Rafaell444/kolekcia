@@ -9,7 +9,9 @@ class VendorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vendor
         fields = (
-            "id", "name", "slug", "logo_url", "description", "payment_email",
+            "id", "name", "slug", "logo_url", "banner_url", "description", "payment_email",
+            "catalog_category_slug",
+            "social_website", "social_instagram", "social_facebook", "social_twitter", "social_tiktok", "social_youtube",
             "custom_product_type", "custom_product_description", "custom_cover_url",
             "owner_email", "owner_name", "created_at",
         )
@@ -20,3 +22,12 @@ class VendorPublicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vendor
         fields = ("id", "name", "slug", "logo_url", "custom_product_type", "custom_product_description", "custom_cover_url")
+
+
+class VendorStorefrontSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Vendor
+        fields = (
+            "name", "slug", "logo_url", "banner_url", "description",
+            "social_website", "social_instagram", "social_facebook", "social_twitter", "social_tiktok", "social_youtube",
+        )

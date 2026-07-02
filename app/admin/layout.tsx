@@ -10,6 +10,8 @@ import {
 } from "lucide-react"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { ThemeProvider } from "@/components/ThemeProvider"
+import { UnreadBadge } from "@/components/messaging/UnreadBadge"
+import { useAdminInboxUnreadCount } from "@/hooks/use-inbox-unread"
 import { getAdminUser, clearAdminTokens, type AdminUser } from "@/lib/admin-auth"
 
 // ── Nav definitions ────────────────────────────────────────────────────────────
@@ -94,6 +96,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter()
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
   const [ready, setReady] = useState(false)
+  const inboxUnread = useAdminInboxUnreadCount()
 
   const isLoginPage = pathname === "/admin/login"
 
@@ -180,7 +183,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <Icon size={15} className={active ? "text-dp-accent-cta" : "text-dp-text-tertiary group-hover:text-dp-text-secondary"} aria-hidden />
                       {label}
                     </span>
-                    {active && <ChevronRight size={12} className="text-dp-text-tertiary" aria-hidden />}
+                    {href === "/admin/inbox" && inboxUnread > 0 ? (
+                      <UnreadBadge count={inboxUnread} />
+                    ) : active ? (
+                      <ChevronRight size={12} className="text-dp-text-tertiary" aria-hidden />
+                    ) : null}
                   </Link>
                 )
               })}

@@ -13,6 +13,8 @@ class Command(BaseCommand):
         self._seed_categories()
         self._seed_artists()
         self._seed_products()
+        self._sync_product_vendors()
+        self._sync_tenants()
         self._seed_cms()
         self._seed_gamification()
         self.stdout.write(self.style.SUCCESS("Database seeded successfully."))
@@ -80,6 +82,9 @@ class Command(BaseCommand):
         self.stdout.write("  Categories seeded.")
 
     def _seed_artists(self):
+        from apps.users.models import User
+        from apps.vendors.models import Vendor
+
         artists_data = [
             (
                 "Ryo Tanabe",
@@ -92,6 +97,8 @@ class Command(BaseCommand):
                 22,
                 "Gold",
                 True,
+                "vendor2@kolekcia.com",
+                "figure-studio",
             ),
             (
                 "Alex Tanaka",
@@ -104,12 +111,18 @@ class Command(BaseCommand):
                 18,
                 "Gold",
                 True,
+                "vendor1@kolekcia.com",
+                "panel-studio",
             ),
         ]
-        for name, handle, avatar, cover, bio, designs, followers, level, badge, verified in artists_data:
+        for name, handle, avatar, cover, bio, designs, followers, level, badge, verified, user_email, vendor_slug in artists_data:
+            user = User.objects.filter(email=user_email).first()
+            vendor = Vendor.objects.filter(slug=vendor_slug).first()
             Artist.objects.create(
                 name=name,
                 handle=handle,
+                user=user,
+                vendor=vendor,
                 avatar_url=avatar,
                 cover_url=cover,
                 bio=bio,
@@ -146,6 +159,7 @@ class Command(BaseCommand):
                 title=title,
                 artist=artist,
                 category=category,
+                vendor=artist.vendor,
                 base_price=price,
                 original_price=orig_price,
                 is_limited=is_limited,
@@ -164,6 +178,51 @@ class Command(BaseCommand):
             cat.save(update_fields=["count"])
 
         self.stdout.write("  Products seeded.")
+
+    def _sync_product_vendors(self):
+        from apps.vendors.models import Vendor
+
+        panel_vendor = Vendor.objects.filter(slug="panel-studio").first()
+        figure_vendor = Vendor.objects.filter(slug="figure-studio").first()
+        updated = 0
+
+        for product in Product.objects.select_related("artist", "category", "vendor"):
+            target_vendor = product.vendor
+            if not target_vendor and product.artist and product.artist.vendor:
+                target_vendor = product.artist.vendor
+            if not target_vendor and product.category:
+                if product.category.slug == "wallpanels":
+                    target_vendor = panel_vendor
+                elif product.category.slug == "figures":
+                    target_vendor = figure_vendor
+            if target_vendor and product.vendor_id != target_vendor.id:
+                product.vendor = target_vendor
+                product.save(update_fields=["vendor"])
+                updated += 1
+
+        self.stdout.write(f"  Product vendors synced ({updated} updated).")
+
+    def _sync_tenants(self):
+        from apps.tenants.models import Tenant
+        from apps.users.models import User
+        from apps.vendors.models import Vendor
+
+        tenant_specs = [
+            ("wallpanels", "Wallpanels", "panel-studio", "vendor1@kolekcia.com"),
+            ("figures", "Figures", "figure-studio", "vendor2@kolekcia.com"),
+        ]
+        for tenant_id, tenant_name, vendor_slug, owner_email in tenant_specs:
+            owner = User.objects.filter(email=owner_email).first()
+            vendor = Vendor.objects.filter(slug=vendor_slug).first()
+            tenant, _ = Tenant.objects.get_or_create(id=tenant_id, defaults={"name": tenant_name, "owner": owner})
+            tenant.name = tenant_name
+            if owner:
+                tenant.owner = owner
+            tenant.save(update_fields=["name", "owner"])
+            if vendor:
+                tenant.products.set(vendor.products.all())
+
+        self.stdout.write("  Tenants synced.")
 
     def _seed_cms(self):
         slides = [

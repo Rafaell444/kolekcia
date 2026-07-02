@@ -36,19 +36,19 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # Award 500 XP welcome bonus
+        # Award 5 XP welcome bonus
         try:
             from apps.gamification.models import XPRule
             from apps.gamification.services import award_xp
-            XPRule.objects.get_or_create(
+            XPRule.objects.update_or_create(
                 action_key="registration_bonus",
                 defaults={
-                    "xp_amount": 500,
+                    "xp_amount": 5,
                     "is_one_time": True,
                     "description": "New member welcome bonus",
                 },
             )
-            award_xp(user, "registration_bonus")
+            award_xp(user, "registration_bonus", xp_amount=5)
         except Exception:
             pass  # never block registration if gamification fails
 

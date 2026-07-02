@@ -1,7 +1,8 @@
 "use client"
 import React, { useEffect, useState } from "react"
-import { adminFetch } from "@/lib/admin-auth"
+import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import { Save, Globe, Mail, CreditCard, Bell, Shield, Palette } from "lucide-react"
+import { VendorStorefrontSection } from "./VendorStorefrontForm"
 
 function Section({ title, icon: Icon, children }: { title: string; icon: React.FC<{size?:number;className?:string}>; children: React.ReactNode }) {
   return (
@@ -53,6 +54,9 @@ export default function AdminSettingsPage(): React.ReactElement {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  const adminUser = typeof window !== "undefined" ? getAdminUser() : null
+  const isVendor = Boolean(adminUser && !adminUser.is_staff && adminUser.vendor)
+
   useEffect(() => {
     let cancelled = false
     adminFetch<Setting[]>("/admin/settings/")
@@ -86,7 +90,9 @@ export default function AdminSettingsPage(): React.ReactElement {
     <div className="p-8 flex flex-col gap-6">
       <div>
         <h1 className="font-display text-4xl text-dp-text-primary">Settings</h1>
-        <p className="text-[13px] text-dp-text-tertiary mt-1">Configure platform-wide settings for Kolekcia.</p>
+        <p className="text-[13px] text-dp-text-tertiary mt-1">
+          {isVendor ? "Manage your store settings." : "Configure platform-wide settings for Kolekcia."}
+        </p>
       </div>
 
       <Section title="General" icon={Globe}>
@@ -95,6 +101,8 @@ export default function AdminSettingsPage(): React.ReactElement {
         <Field label="Support Email"    defaultValue={val("support_email", "support@kolekcia.com")} type="email" />
         <Field label="Support Phone"    defaultValue={val("support_phone", "+1 (800) 000-0000")} />
       </Section>
+
+      <VendorStorefrontSection isVendor={isVendor} />
 
       <Section title="Email & Notifications" icon={Mail}>
         <Field label="Shipping Email From"   defaultValue="noreply@kolekcia.com" hint="This address will appear as the sender for shipping confirmations." />
@@ -113,24 +121,30 @@ export default function AdminSettingsPage(): React.ReactElement {
         <Toggle label="Enable PayPal" />
       </Section>
 
-      <Section title="Notifications" icon={Bell}>
-        <Toggle label="Admin notification on new order"   defaultOn={true} />
-        <Toggle label="Admin notification on new message" defaultOn={true} />
-        <Toggle label="Admin notification on new auction bid" defaultOn={true} />
-      </Section>
+      {!isVendor && (
+        <Section title="Notifications" icon={Bell}>
+          <Toggle label="Admin notification on new order"   defaultOn={true} />
+          <Toggle label="Admin notification on new message" defaultOn={true} />
+          <Toggle label="Admin notification on new auction bid" defaultOn={true} />
+        </Section>
+      )}
 
-      <Section title="Security" icon={Shield}>
-        <Toggle label="Two-factor authentication for admin" defaultOn={true} />
-        <Toggle label="Maintenance mode" sub="Show a maintenance page to all visitors" />
-        <Toggle label="Registration open" sub="Allow new user sign-ups" defaultOn={true} />
-      </Section>
+      {!isVendor && (
+        <Section title="Security" icon={Shield}>
+          <Toggle label="Two-factor authentication for admin" defaultOn={true} />
+          <Toggle label="Maintenance mode" sub="Show a maintenance page to all visitors" />
+          <Toggle label="Registration open" sub="Allow new user sign-ups" defaultOn={true} />
+        </Section>
+      )}
 
-      <Section title="Appearance" icon={Palette}>
-        <Field label="Primary CTA Colour"  defaultValue="#e63946" hint="Hex code for the main action colour." />
-        <Field label="Accent Gold Colour"  defaultValue="#e8a427" />
-        <Toggle label="Show promo banner on homepage" defaultOn={true} />
-        <Toggle label="Enable dark mode only" defaultOn={true} />
-      </Section>
+      {!isVendor && (
+        <Section title="Appearance" icon={Palette}>
+          <Field label="Primary CTA Colour"  defaultValue="#e63946" hint="Hex code for the main action colour." />
+          <Field label="Accent Gold Colour"  defaultValue="#e8a427" />
+          <Toggle label="Show promo banner on homepage" defaultOn={true} />
+          <Toggle label="Enable dark mode only" defaultOn={true} />
+        </Section>
+      )}
 
       <div className="flex justify-end">
         <button

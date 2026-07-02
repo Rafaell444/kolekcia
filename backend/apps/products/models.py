@@ -2,6 +2,7 @@ from django.db import models
 from django.utils.text import slugify
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
 from apps.users.models import User
 
 
@@ -79,6 +80,12 @@ class PosterFrame(models.Model):
 
 
 class Product(models.Model):
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("paused", "Paused"),
+        ("sold", "Sold"),
+    ]
+
     title = models.CharField(max_length=255)
     slug = models.SlugField(unique=True, max_length=280, blank=True)
     artist = models.ForeignKey(Artist, on_delete=models.SET_NULL, null=True, related_name="products")
@@ -86,12 +93,15 @@ class Product(models.Model):
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    # Per-currency overrides, e.g. {"USD": {"price": "29.99", "original": "39.99"}, "GEL": {...}}
+    regional_prices = models.JSONField(default=dict, blank=True)
     rating = models.DecimalField(max_digits=3, decimal_places=1, default=0)
     review_count = models.PositiveIntegerField(default=0)
     is_limited = models.BooleanField(default=False)
     is_sale = models.BooleanField(default=False)
     is_new = models.BooleanField(default=False)
     is_exclusive = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
     tags = models.JSONField(default=list)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -138,7 +148,9 @@ class ProductVariant(models.Model):
 
     @property
     def price(self):
-        return self.product.base_price + self.surcharge
+        # Defensive cast: some API update paths may keep in-memory values as strings
+        # until reloaded, while surcharge is Decimal.
+        return Decimal(self.product.base_price) + Decimal(self.surcharge)
 
     def __str__(self):
         return f"{self.product.title} — {self.size_id}/{self.finish_id}/{self.frame_id}"

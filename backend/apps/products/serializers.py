@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Category, Artist, Product, ProductImage, ProductVariant, PosterSize, PosterFinish, PosterFrame, Review, WishlistItem
+from apps.vendors.models import Vendor
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -59,8 +60,10 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 
 class ProductListSerializer(serializers.ModelSerializer):
     slug = serializers.CharField(read_only=True)
-    artist_name = serializers.CharField(source="artist.name", read_only=True)
-    category_slug = serializers.CharField(source="category.slug", read_only=True)
+    artist_name = serializers.CharField(source="artist.name", read_only=True, allow_null=True)
+    category_slug = serializers.CharField(source="category.slug", read_only=True, allow_null=True)
+    vendor_slug = serializers.CharField(source="vendor.slug", read_only=True, allow_null=True)
+    vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True)
     image_url = serializers.SerializerMethodField()
     default_variant_id = serializers.SerializerMethodField()
 
@@ -68,8 +71,9 @@ class ProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = (
             "id", "slug", "title", "artist_name", "category_slug", "image_url",
-            "base_price", "original_price", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "tags",
+            "vendor_slug", "vendor_name",
+            "base_price", "original_price", "regional_prices", "rating", "review_count",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "status", "tags",
             "default_variant_id",
         )
 
@@ -84,12 +88,18 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 class ProductDetailSerializer(serializers.ModelSerializer):
     slug = serializers.CharField(read_only=True)
-    artist = ArtistSerializer()
-    artist_name = serializers.CharField(source="artist.name", read_only=True)
-    category = CategorySerializer()
+    artist = ArtistSerializer(read_only=True, allow_null=True)
+    artist_name = serializers.CharField(source="artist.name", read_only=True, allow_null=True)
+    category = CategorySerializer(read_only=True, allow_null=True)
     category_slug = serializers.CharField(source="category.slug", read_only=True, allow_null=True)
     category_name = serializers.CharField(source="category.name", read_only=True, allow_null=True)
     vendor_id = serializers.SerializerMethodField()
+    vendor_slug = serializers.CharField(source="vendor.slug", read_only=True, allow_null=True)
+    vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True)
+    category_slug_input = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    artist_handle = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    image_url = serializers.URLField(write_only=True, required=False, allow_blank=True)
+    vendor_slug_input = serializers.CharField(write_only=True, required=False, allow_blank=True)
     images = ProductImageSerializer(many=True)
     variants = ProductVariantSerializer(many=True)
     sizes = serializers.SerializerMethodField()
@@ -100,10 +110,11 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         model = Product
         fields = (
             "id", "slug", "title", "artist", "artist_name", "category", "category_slug", "category_name",
-            "vendor_id", "images", "variants",
-            "base_price", "original_price", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "tags",
+            "vendor_id", "vendor_slug", "vendor_name", "images", "variants",
+            "base_price", "original_price", "regional_prices", "rating", "review_count",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "status", "tags",
             "sizes", "finishes", "frames", "created_at",
+            "category_slug_input", "artist_handle", "image_url", "vendor_slug_input",
         )
 
     def get_vendor_id(self, obj):
@@ -121,6 +132,79 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
     def get_frames(self, obj):
         return PosterFrameSerializer(PosterFrame.objects.all(), many=True).data
+
+    def _resolve_vendor(self, validated_data):
+        request = self.context.get("request")
+        if request and not request.user.is_staff and hasattr(request.user, "vendor_profile"):
+            return request.user.vendor_profile
+        v_slug = validated_data.pop("vendor_slug_input", "").strip()
+        if not v_slug:
+            return None
+        return Vendor.objects.filter(slug=v_slug).first()
+
+    def _resolve_category(self, validated_data):
+        slug = validated_data.pop("category_slug_input", "").strip()
+        if not slug:
+            return None
+        return Category.objects.filter(slug=slug).first()
+
+    def _resolve_artist(self, validated_data):
+        handle = validated_data.pop("artist_handle", "").strip()
+        if not handle:
+            return None
+        return Artist.objects.filter(handle=handle).first()
+
+    def create(self, validated_data):
+        image_url = validated_data.pop("image_url", "").strip()
+        category = self._resolve_category(validated_data)
+        artist = self._resolve_artist(validated_data)
+        vendor = self._resolve_vendor(validated_data)
+        tags = validated_data.get("tags")
+        if isinstance(tags, str):
+            validated_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+        product = Product.objects.create(
+            category=category,
+            artist=artist,
+            vendor=vendor,
+            **validated_data,
+        )
+        if image_url:
+            ProductImage.objects.create(product=product, url=image_url, order=0)
+        try:
+            default_size = PosterSize.objects.get(id="m")
+            default_finish = PosterFinish.objects.get(id="matte")
+            default_frame = PosterFrame.objects.get(id="none")
+            ProductVariant.objects.get_or_create(
+                product=product,
+                size=default_size,
+                finish=default_finish,
+                frame=default_frame,
+                defaults={"stock": 100},
+            )
+        except Exception:
+            pass
+        return product
+
+    def update(self, instance, validated_data):
+        image_url = validated_data.pop("image_url", None)
+        if "category_slug_input" in validated_data:
+            instance.category = self._resolve_category(validated_data)
+        if "artist_handle" in validated_data:
+            instance.artist = self._resolve_artist(validated_data)
+        if "vendor_slug_input" in validated_data:
+            instance.vendor = self._resolve_vendor(validated_data)
+        tags = validated_data.get("tags")
+        if isinstance(tags, str):
+            validated_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+        instance.save()
+        if isinstance(image_url, str):
+            image_url = image_url.strip()
+            ProductImage.objects.filter(product=instance).delete()
+            if image_url:
+                ProductImage.objects.create(product=instance, url=image_url, order=0)
+        return instance
 
 
 class ReviewSerializer(serializers.ModelSerializer):

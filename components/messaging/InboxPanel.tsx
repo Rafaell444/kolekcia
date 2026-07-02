@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
 import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
+import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, ChevronLeft, Loader2 } from "lucide-react"
 
 export type InboxMessage = { id: string; from_role: string; text: string; sent_at: string; read: boolean }
@@ -176,6 +177,9 @@ export default function InboxPanel({
   const [convs, setConvs] = useState<InboxConversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const activeIdRef = useRef<string | null>(null)
+
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
 
   const loadList = useCallback(async () => {
     try {
@@ -218,11 +222,34 @@ export default function InboxPanel({
     return () => { cancelled = true }
   }, [loadList, initialConvId, autoSelectFirst])
 
+  useEffect(() => {
+    const id = setInterval(() => {
+      void loadList().then((data) => {
+        const currentActiveId = activeIdRef.current
+        if (!currentActiveId) {
+          setConvs(data)
+          return
+        }
+        setConvs((prev) => {
+          const prevActive = prev.find((c) => String(c.id) === String(currentActiveId))
+          return data.map((c) => {
+            if (String(c.id) === String(currentActiveId) && prevActive?.messages?.length) {
+              return { ...prevActive, unread_count: 0 }
+            }
+            return c
+          })
+        })
+      })
+    }, 10000)
+    return () => clearInterval(id)
+  }, [loadList])
+
   async function openConv(id: string) {
     setActiveId(id)
     try {
       const full = await authFetch<InboxConversation>(`/messaging/conversations/${id}/`)
       setConvs((prev) => prev.map((c) => String(c.id) === String(id) ? { ...full, unread_count: 0 } : c))
+      notifyInboxRead()
     } catch { /* noop */ }
   }
 

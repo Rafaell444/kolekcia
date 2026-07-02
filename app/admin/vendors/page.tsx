@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react"
 import { adminFetch } from "@/lib/admin-auth"
-import { Store, DollarSign, Package, Users, TrendingUp } from "lucide-react"
+import { Store, DollarSign, Package, Users, TrendingUp, Pencil, X } from "lucide-react"
+import { VendorStorefrontForm } from "@/app/admin/settings/VendorStorefrontForm"
 
 type Vendor = {
   id: number; name: string; slug: string; logo_url: string
@@ -14,7 +15,7 @@ type VendorStats = {
   total_revenue: string; total_orders: number; total_products: number; unique_customers: number
 }
 
-function VendorCard({ vendor }: { vendor: Vendor }) {
+function VendorCard({ vendor, onEdit }: { vendor: Vendor; onEdit: () => void }) {
   const [stats, setStats] = useState<VendorStats | null>(null)
 
   useEffect(() => {
@@ -35,6 +36,13 @@ function VendorCard({ vendor }: { vendor: Vendor }) {
         <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-sm border border-dp-accent-cta/30 text-dp-accent-cta bg-dp-accent-cta/5">
           Vendor
         </span>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex items-center gap-1 text-[11px] font-semibold text-dp-text-secondary hover:text-dp-accent-cta transition-colors"
+        >
+          <Pencil size={12} /> Edit storefront
+        </button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 divide-x divide-y divide-dp-border">
@@ -63,6 +71,7 @@ function VendorCard({ vendor }: { vendor: Vendor }) {
 export default function AdminVendorsPage(): React.ReactElement {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
+  const [editingSlug, setEditingSlug] = useState<string | null>(null)
 
   useEffect(() => {
     adminFetch<Vendor[]>("/vendors/me/")
@@ -89,7 +98,23 @@ export default function AdminVendorsPage(): React.ReactElement {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          {vendors.map((v) => <VendorCard key={v.id} vendor={v} />)}
+          {vendors.map((v) => <VendorCard key={v.id} vendor={v} onEdit={() => setEditingSlug(v.slug)} />)}
+        </div>
+      )}
+
+      {editingSlug && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center overflow-y-auto py-8 px-4">
+          <div className="w-full max-w-2xl bg-dp-bg-surface border border-dp-border rounded-sm shadow-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dp-border">
+              <h2 className="font-display text-2xl text-dp-text-primary">Edit storefront — @{editingSlug}</h2>
+              <button onClick={() => setEditingSlug(null)} className="text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6">
+              <VendorStorefrontForm vendorSlug={editingSlug} allowCategory onSaved={() => setEditingSlug(null)} />
+            </div>
+          </div>
         </div>
       )}
 

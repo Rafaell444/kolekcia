@@ -11,7 +11,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework import generics
 
 from .models import Vendor
-from .serializers import VendorSerializer, VendorPublicSerializer
+from .serializers import VendorSerializer, VendorPublicSerializer, VendorStorefrontSerializer
 
 
 class IsVendorOrAdmin(BasePermission):
@@ -37,6 +37,19 @@ def get_vendor_for_request(request):
 
 # ── Vendor profile ─────────────────────────────────────────────────────────────
 
+def _apply_vendor_fields(vendor, data, staff=False):
+    fields = (
+        "name", "logo_url", "banner_url", "description", "payment_email",
+        "social_website", "social_instagram", "social_facebook", "social_twitter", "social_tiktok", "social_youtube",
+    )
+    if staff:
+        fields = fields + ("catalog_category_slug",)
+    for field in fields:
+        if field in data:
+            setattr(vendor, field, data[field])
+    vendor.save()
+
+
 class VendorMeView(APIView):
     permission_classes = [IsVendorOrAdmin]
 
@@ -53,10 +66,21 @@ class VendorMeView(APIView):
         vendor = getattr(request.user, "vendor_profile", None)
         if not vendor:
             return Response({"detail": "Not a vendor."}, status=403)
-        for field in ("name", "logo_url", "description", "payment_email"):
-            if field in request.data:
-                setattr(vendor, field, request.data[field])
-        vendor.save()
+        _apply_vendor_fields(vendor, request.data, staff=False)
+        return Response(VendorSerializer(vendor).data)
+
+
+class VendorAdminDetailView(APIView):
+    permission_classes = [IsVendorOrAdmin]
+
+    def patch(self, request, slug):
+        if not request.user.is_staff:
+            return Response({"detail": "Forbidden."}, status=403)
+        try:
+            vendor = Vendor.objects.get(slug=slug)
+        except Vendor.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+        _apply_vendor_fields(vendor, request.data, staff=True)
         return Response(VendorSerializer(vendor).data)
 
 
@@ -130,13 +154,18 @@ class VendorProductListView(APIView):
             category=category,
             base_price=data.get("base_price", "0"),
             original_price=data.get("original_price") or None,
+            regional_prices=data.get("regional_prices") or {},
             is_limited=bool(data.get("is_limited", False)),
             is_sale=bool(data.get("is_sale", False)),
             is_new=bool(data.get("is_new", True)),
             is_exclusive=bool(data.get("is_exclusive", False)),
+            status=data.get("status", "active") or "active",
             tags=tags,
             vendor=vendor,
         )
+        # Ensure DecimalFields are materialized as Decimal on the instance
+        # before nested variant price serialization.
+        product.refresh_from_db()
 
         if data.get("image_url"):
             ProductImage.objects.create(product=product, url=data["image_url"], order=0)
@@ -176,10 +205,13 @@ class VendorProductDetailView(APIView):
         if not product:
             return Response({"detail": "Not found."}, status=404)
         data = request.data
-        for field in ("title", "base_price", "original_price", "is_limited", "is_sale", "is_new", "is_exclusive", "tags"):
+        for field in ("title", "base_price", "original_price", "is_limited", "is_sale", "is_new", "is_exclusive", "status", "tags", "regional_prices"):
             if field in data:
                 setattr(product, field, data[field])
         product.save()
+        # When values come from raw request data, DecimalFields may remain
+        # string-typed on the in-memory instance until refreshed.
+        product.refresh_from_db()
         if data.get("image_url"):
             ProductImage.objects.filter(product=product).delete()
             ProductImage.objects.create(product=product, url=data["image_url"], order=0)
@@ -277,6 +309,16 @@ class VendorPublicListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Vendor.objects.filter(custom_product_type__isnull=False).exclude(custom_product_type="")
+
+
+class VendorPublicByCategoryView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, category_slug):
+        vendor = Vendor.objects.filter(catalog_category_slug=category_slug).first()
+        if not vendor:
+            return Response({"detail": "Not found."}, status=404)
+        return Response(VendorStorefrontSerializer(vendor).data)
 
 
 # -- Vendor-scoped custom orders -------------------------------------------------

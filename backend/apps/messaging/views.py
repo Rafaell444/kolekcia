@@ -67,6 +67,21 @@ class ConversationDetailView(generics.RetrieveAPIView):
             return qs.filter(vendor=self.request.user.vendor_profile)
         return qs.filter(customer=self.request.user)
 
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if request.user.is_staff or _is_vendor(request.user):
+            Message.objects.filter(
+                conversation=instance, from_role="customer", read=False
+            ).update(read=True)
+        else:
+            Message.objects.filter(
+                conversation=instance, from_role="admin", read=False
+            ).update(read=True)
+        if getattr(instance, "_prefetched_objects_cache", None):
+            instance._prefetched_objects_cache.pop("messages", None)
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
 
 class SendMessageView(APIView):
     permission_classes = [IsAuthenticated]

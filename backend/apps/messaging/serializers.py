@@ -11,7 +11,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class ConversationSerializer(serializers.ModelSerializer):
     messages = MessageSerializer(many=True, read_only=True)
-    unread_count = serializers.IntegerField(read_only=True)
+    unread_count = serializers.SerializerMethodField()
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     customer_email = serializers.CharField(source="customer.email", read_only=True)
     customer_avatar = serializers.CharField(source="customer.avatar", read_only=True)
@@ -39,3 +39,15 @@ class ConversationSerializer(serializers.ModelSerializer):
             return None
         image = obj.product.images.first()
         return image.url if image else None
+
+    def get_unread_count(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return 0
+        user = request.user
+        is_admin_side = user.is_staff or (
+            hasattr(user, "vendor_profile") and user.vendor_profile is not None
+        )
+        if is_admin_side:
+            return obj.messages.filter(read=False, from_role="customer").count()
+        return obj.messages.filter(read=False, from_role="admin").count()

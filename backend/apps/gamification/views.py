@@ -25,9 +25,10 @@ class BadgeListView(generics.ListAPIView):
 class XPLogListView(generics.ListAPIView):
     serializer_class = XPLogSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None
 
     def get_queryset(self):
-        return XPLog.objects.filter(user=self.request.user)
+        return XPLog.objects.filter(user=self.request.user).order_by("-created_at")
 
 
 class LeaderboardView(APIView):

@@ -60,7 +60,7 @@ class ProductListView(generics.ListAPIView):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        qs = Product.objects.select_related("artist", "category").prefetch_related("images")
+        qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images")
         sort = self.request.query_params.get("sort")
         if sort == "featured":
             qs = qs.order_by("-review_count")
@@ -74,7 +74,7 @@ class ProductListView(generics.ListAPIView):
 
 
 class ProductDetailView(generics.RetrieveAPIView):
-    queryset = Product.objects.select_related("artist", "category").prefetch_related(
+    queryset = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related(
         "images", "variants__size", "variants__finish", "variants__frame"
     )
     serializer_class = ProductDetailSerializer

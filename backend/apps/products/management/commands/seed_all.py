@@ -21,6 +21,8 @@ class Command(BaseCommand):
         self._seed_vendors()
         self._seed_artists()
         self._seed_products()
+        self._sync_product_vendors()
+        self._sync_tenants()
         self._seed_reviews()
         self._seed_auctions()
         self._seed_gamification()
@@ -94,14 +96,14 @@ class Command(BaseCommand):
 
         # Staff / artist users
         staff = [
-            ("panel@kolekcia.com",  "Panel Studio",  "AdminPass123!", "staff", True,  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face"),
-            ("figure@kolekcia.com", "Figure Studio", "AdminPass123!", "staff", True,  "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=80&h=80&fit=crop&crop=face"),
+            ("vendor1@kolekcia.com", "Panel Studio",  "vendor12345",   "staff", True,  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face"),
+            ("vendor2@kolekcia.com", "Figure Studio", "vendor12345",   "staff", True,  "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=80&h=80&fit=crop&crop=face"),
             ("super@kolekcia.com",  "Superadmin",    "AdminPass123!", "staff", True,  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop&crop=face"),
         ]
         for email, name, pw, role, is_staff, avatar in staff:
             if not User.objects.filter(email=email).exists():
                 u = User.objects.create_user(email=email, password=pw, name=name, role=role, is_staff=is_staff, avatar=avatar)
-                if is_staff:
+                if email == "super@kolekcia.com":
                     u.is_superuser = True
                     u.save()
 
@@ -131,23 +133,23 @@ class Command(BaseCommand):
 
         vendors_data = [
             (
-                "panel@kolekcia.com",
+                "vendor1@kolekcia.com",
                 "Panel Studio",
                 "panel-studio",
                 "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=200&h=200&fit=crop",
                 "We craft ultra-high-definition 3D metal panel posters using our proprietary UV-cure layering process. Each panel is a sculptural art piece that transforms any wall.",
-                "panel@kolekcia.com",
+                "vendor1@kolekcia.com",
                 "3D Panel Poster",
                 "Hyper-realistic 3D relief metal panels — submit your image and we'll turn it into a stunning textured wall piece.",
                 "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&h=400&fit=crop",
             ),
             (
-                "figure@kolekcia.com",
+                "vendor2@kolekcia.com",
                 "Figure Studio",
                 "figure-studio",
                 "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=200&h=200&fit=crop",
                 "Precision-printed 3D collectible figures using resin SLA technology. From anime characters to custom portraits — we make the impossible tangible.",
-                "figure@kolekcia.com",
+                "vendor2@kolekcia.com",
                 "3D Figure",
                 "Send us a reference image and we'll sculpt a one-of-a-kind 3D printed figure, hand-painted and ready to display.",
                 "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=800&h=400&fit=crop",
@@ -181,14 +183,14 @@ class Command(BaseCommand):
                 "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face",
                 "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1200&h=400&fit=crop",
                 "Osaka sculptor specializing in premium 3D metal collectible figures — from anime icons to original characters.",
-                96, 12100, 22, "Gold", True, "figure@kolekcia.com", "figure-studio",
+                96, 12100, 22, "Gold", True, "vendor2@kolekcia.com", "figure-studio",
             ),
             (
                 "Alex Tanaka", "alex_tanaka",
                 "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200&h=200&fit=crop&crop=face",
                 "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=400&fit=crop",
                 "Berlin-based artist crafting ultra-HD 3D relief metal wallpanels with proprietary UV-cure layering.",
-                89, 9200, 18, "Gold", True, "panel@kolekcia.com", "panel-studio",
+                89, 9200, 18, "Gold", True, "vendor1@kolekcia.com", "panel-studio",
             ),
         ]
 
@@ -267,6 +269,7 @@ class Command(BaseCommand):
 
             product = Product.objects.create(
                 title=title, artist=artist, category=category,
+                vendor=artist.vendor,
                 base_price=price, original_price=orig_price,
                 is_limited=is_limited, is_sale=is_sale,
                 is_new=is_new, is_exclusive=is_exclusive,
@@ -300,6 +303,54 @@ class Command(BaseCommand):
             cat.save(update_fields=["count"])
 
         self.stdout.write(f"  ✓ Products ({created} created)")
+
+    def _sync_product_vendors(self):
+        from apps.products.models import Product
+        from apps.vendors.models import Vendor
+
+        panel_vendor = Vendor.objects.filter(slug="panel-studio").first()
+        figure_vendor = Vendor.objects.filter(slug="figure-studio").first()
+        updated = 0
+
+        for product in Product.objects.select_related("artist", "category", "vendor"):
+            target_vendor = product.vendor
+            if not target_vendor and product.artist and product.artist.vendor:
+                target_vendor = product.artist.vendor
+            if not target_vendor and product.category:
+                if product.category.slug == "wallpanels":
+                    target_vendor = panel_vendor
+                elif product.category.slug == "figures":
+                    target_vendor = figure_vendor
+            if target_vendor and product.vendor_id != target_vendor.id:
+                product.vendor = target_vendor
+                product.save(update_fields=["vendor"])
+                updated += 1
+
+        self.stdout.write(f"  ✓ Product vendors synced ({updated} updated)")
+
+    def _sync_tenants(self):
+        from apps.tenants.models import Tenant
+        from apps.users.models import User
+        from apps.vendors.models import Vendor
+
+        tenant_specs = [
+            ("wallpanels", "Wallpanels", "panel-studio", "vendor1@kolekcia.com"),
+            ("figures", "Figures", "figure-studio", "vendor2@kolekcia.com"),
+        ]
+
+        for tenant_id, tenant_name, vendor_slug, owner_email in tenant_specs:
+            owner = User.objects.filter(email=owner_email).first()
+            vendor = Vendor.objects.filter(slug=vendor_slug).first()
+            tenant, _ = Tenant.objects.get_or_create(id=tenant_id, defaults={"name": tenant_name, "owner": owner})
+            tenant.name = tenant_name
+            if owner:
+                tenant.owner = owner
+            tenant.save(update_fields=["name", "owner"])
+
+            if vendor:
+                tenant.products.set(vendor.products.all())
+
+        self.stdout.write("  ✓ Tenants synced")
 
     # ────────────────────────────────────────────────
     def _seed_reviews(self):
@@ -402,7 +453,7 @@ class Command(BaseCommand):
             })
 
         xp_rules = [
-            ("registration_bonus", 500, True),
+            ("registration_bonus", 5, True),
             ("first_purchase",     100, True),
             ("newsletter_signup",   25, True),
             ("profile_complete",    50, True),
@@ -416,7 +467,7 @@ class Command(BaseCommand):
             ("social_share_5",      50, True),
         ]
         for action_key, xp_amount, is_one_time in xp_rules:
-            XPRule.objects.get_or_create(
+            XPRule.objects.update_or_create(
                 action_key=action_key,
                 defaults={"xp_amount": xp_amount, "is_one_time": is_one_time},
             )

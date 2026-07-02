@@ -7,7 +7,18 @@ class Vendor(models.Model):
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     logo_url = models.URLField(blank=True)
+    banner_url = models.URLField(blank=True)
+    catalog_category_slug = models.SlugField(
+        blank=True,
+        help_text="Category slug this vendor owns (e.g. figures, wallpanels)",
+    )
     description = models.TextField(blank=True)
+    social_website = models.URLField(blank=True)
+    social_instagram = models.URLField(blank=True)
+    social_facebook = models.URLField(blank=True)
+    social_twitter = models.URLField(blank=True)
+    social_tiktok = models.URLField(blank=True)
+    social_youtube = models.URLField(blank=True)
     payment_email = models.EmailField(blank=True)
     # Human-readable label for what custom product type this vendor produces
     custom_product_type = models.CharField(max_length=100, blank=True,

@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     VendorMeView,
+    VendorAdminDetailView,
     VendorDashboardView,
     VendorProductListView,
     VendorProductDetailView,
@@ -8,12 +9,15 @@ from .views import (
     VendorCustomerListView,
     VendorAnalyticsView,
     VendorPublicListView,
+    VendorPublicByCategoryView,
     VendorCustomOrderListView,
 )
 
 urlpatterns = [
     path("public/", VendorPublicListView.as_view(), name="vendor-public-list"),
+    path("public/by-category/<slug:category_slug>/", VendorPublicByCategoryView.as_view(), name="vendor-public-by-category"),
     path("me/", VendorMeView.as_view(), name="vendor-me"),
+    path("<slug:slug>/", VendorAdminDetailView.as_view(), name="vendor-admin-detail"),
     path("me/dashboard/", VendorDashboardView.as_view(), name="vendor-dashboard"),
     path("me/products/", VendorProductListView.as_view(), name="vendor-products"),
     path("me/products/<int:pk>/", VendorProductDetailView.as_view(), name="vendor-product-detail"),

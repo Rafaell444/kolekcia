@@ -13,10 +13,12 @@ import {
 import { useAuth } from "@/contexts/auth-context"
 import { useGamification } from "@/contexts/gamification-context"
 import { useRouter } from "next/navigation"
-import { authFetch, apiFetch } from "@/lib/api"
+import { authFetch, apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
 import { productHref } from "@/lib/product-url"
 import InboxPanel from "@/components/messaging/InboxPanel"
+import { UnreadBadge } from "@/components/messaging/UnreadBadge"
+import { useInboxUnreadCount } from "@/hooks/use-inbox-unread"
 
 type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count: number; tracking_code: string }
 type Badge = { id: string; name: string; icon: string; rarity: string; description: string }
@@ -73,7 +75,9 @@ function OverviewTab() {
     authFetch<{ results: Order[] }>("/orders/").then((d) => { if (!cancelled) setOrders(d.results.slice(0, 3)) }).catch(() => {})
     authFetch<EarnedBadge[]>("/gamification/my-badges/").then((d) => { if (!cancelled) setEarnedBadges(d.slice(0, 6)) }).catch(() => {})
     authFetch<ReferralStats>("/referrals/me/").then((d) => { if (!cancelled) setReferral(d) }).catch(() => {})
-    authFetch<XPLog[]>("/gamification/xp-log/").then((d) => { if (!cancelled) setXpLog((Array.isArray(d) ? d : []).slice(0, 4)) }).catch(() => {})
+    authFetch<XPLog[] | PaginatedResponse<XPLog>>("/gamification/xp-log/")
+      .then((d) => { if (!cancelled) setXpLog(parseList(d).slice(0, 4)) })
+      .catch(() => {})
     apiFetch<XPRule[]>("/gamification/xp-rules/").then((d) => { if (!cancelled) setXpRules((Array.isArray(d) ? d : []).slice(0, 4)) }).catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -321,13 +325,13 @@ function BadgesTab() {
     Promise.all([
       apiFetch<Badge[]>("/gamification/badges/").catch(() => []),
       authFetch<EarnedBadge[]>("/gamification/my-badges/").then((d) => d.map((b) => b.badge.id)).catch(() => []),
-      authFetch<XPLog[]>("/gamification/xp-log/").catch(() => []),
+      authFetch<XPLog[] | PaginatedResponse<XPLog>>("/gamification/xp-log/").catch(() => []),
       apiFetch<XPRule[]>("/gamification/xp-rules/").catch(() => []),
     ]).then(([b, e, logs, rules]) => {
       if (!cancelled) {
         setBadges(b)
         setEarned(e)
-        setXpLog(Array.isArray(logs) ? logs.slice(0, 10) : [])
+        setXpLog(parseList(logs).slice(0, 10))
         setXpRules(Array.isArray(rules) ? rules.slice(0, 10) : [])
       }
     }).finally(() => { if (!cancelled) setLoading(false) })
@@ -773,6 +777,7 @@ export default function AccountPage(): React.ReactElement {
   const { user, logout } = useAuth()
   const { profile } = useGamification()
   const router = useRouter()
+  const inboxUnread = useInboxUnreadCount()
 
   async function handleLogout() {
     await logout()
@@ -809,11 +814,16 @@ export default function AccountPage(): React.ReactElement {
                 <p className="text-[12px] text-dp-text-tertiary mt-0.5">Level {profile?.level ?? 1} · {(profile?.xp ?? 0).toLocaleString()} XP</p>
               </div>
               <Link
-                href="/account/notifications"
-                className="shrink-0 flex items-center justify-center w-9 h-9 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-accent-cta hover:border-dp-border-hover transition-colors"
-                aria-label="Notifications"
+                href={inboxUnread > 0 ? "/inbox" : "/account/notifications"}
+                className="relative shrink-0 flex items-center justify-center w-9 h-9 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-accent-cta hover:border-dp-border-hover transition-colors"
+                aria-label={inboxUnread > 0 ? `${inboxUnread} unread messages` : "Notifications"}
               >
                 <BellRing size={16} strokeWidth={1.75} />
+                {inboxUnread > 0 && (
+                  <span className="absolute -top-1 -right-1">
+                    <UnreadBadge count={inboxUnread} />
+                  </span>
+                )}
               </Link>
             </div>
           </div>
@@ -827,8 +837,9 @@ export default function AccountPage(): React.ReactElement {
         <div className="md:hidden w-full overflow-x-auto flex gap-2 pb-1 -mx-1 px-1">
           {ACCOUNT_TABS.map(({ id, label }) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`shrink-0 px-3 py-1.5 rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors whitespace-nowrap ${activeTab === id ? "bg-dp-accent-cta text-white" : "bg-dp-bg-surface border border-dp-border text-dp-text-secondary hover:text-dp-text-primary"}`}>
+              className={`shrink-0 px-3 py-1.5 rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors whitespace-nowrap flex items-center gap-1.5 ${activeTab === id ? "bg-dp-accent-cta text-white" : "bg-dp-bg-surface border border-dp-border text-dp-text-secondary hover:text-dp-text-primary"}`}>
               {label}
+              {id === "inbox" && <UnreadBadge count={inboxUnread} />}
             </button>
           ))}
         </div>
@@ -836,10 +847,13 @@ export default function AccountPage(): React.ReactElement {
         <aside className="hidden md:flex flex-col w-52 shrink-0 gap-1" aria-label="Account navigation">
           {ACCOUNT_TABS.map(({ id, label, Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-sm text-[13px] font-medium text-left transition-colors w-full ${activeTab === id ? "bg-dp-bg-elevated text-dp-text-primary" : "text-dp-text-secondary hover:bg-dp-bg-elevated hover:text-dp-text-primary"}`}
+              className={`flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-sm text-[13px] font-medium text-left transition-colors w-full ${activeTab === id ? "bg-dp-bg-elevated text-dp-text-primary" : "text-dp-text-secondary hover:bg-dp-bg-elevated hover:text-dp-text-primary"}`}
               aria-current={activeTab === id ? "page" : undefined}>
-              <Icon size={14} className={activeTab === id ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
-              {label}
+              <span className="flex items-center gap-2.5 min-w-0">
+                <Icon size={14} className={activeTab === id ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
+                {label}
+              </span>
+              {id === "inbox" && <UnreadBadge count={inboxUnread} />}
             </button>
           ))}
         </aside>

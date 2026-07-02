@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
+import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 import { useCart } from "@/contexts/cart-context"
 import { clearPendingCartIntent, getPendingCartIntent } from "@/lib/pending-cart"
 
@@ -66,6 +67,14 @@ function LoginPageInner(): React.ReactElement {
           </div>
 
           <form onSubmit={handleSubmit} className="bg-dp-bg-surface border border-dp-border rounded-sm p-8 flex flex-col gap-5" noValidate>
+            <GoogleAuthButton label="Sign in with Google" />
+
+            <div className="relative flex items-center gap-3">
+              <div className="flex-1 border-t border-dp-border" />
+              <span className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">or</span>
+              <div className="flex-1 border-t border-dp-border" />
+            </div>
+
             {error && (
               <div className="px-4 py-3 bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm text-[12px] text-dp-accent-cta font-semibold">
                 {error}
@@ -149,13 +158,6 @@ function LoginPageInner(): React.ReactElement {
                 <>Sign In <ArrowRight size={14} /></>
               )}
             </button>
-
-            {/* Divider */}
-            <div className="relative flex items-center gap-3">
-              <div className="flex-1 border-t border-dp-border" />
-              <span className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">or</span>
-              <div className="flex-1 border-t border-dp-border" />
-            </div>
 
             {/* Register link */}
             <p className="text-center text-[13px] text-dp-text-secondary">

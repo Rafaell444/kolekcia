@@ -8,6 +8,7 @@ import { Eye, EyeOff, Mail, Lock, User, ArrowRight, CheckCircle2, Gift } from "l
 import { apiFetch } from "@/lib/api"
 import { storeTokens, storeUser } from "@/lib/auth-storage"
 import { useAuth } from "@/contexts/auth-context"
+import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 
 const PERKS = [
   "Free shipping on your first order",
@@ -220,6 +221,14 @@ export default function RegisterPage(): React.ReactElement {
               )}
             </button>
 
+            <div className="relative flex items-center gap-3">
+              <div className="flex-1 border-t border-dp-border" />
+              <span className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">or</span>
+              <div className="flex-1 border-t border-dp-border" />
+            </div>
+
+            <GoogleAuthButton label="Sign up with Google" />
+
             <p className="text-center text-[13px] text-dp-text-secondary">
               Already have an account?{" "}
               <Link href="/login" className="font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors">
@@ -248,7 +257,7 @@ export default function RegisterPage(): React.ReactElement {
               <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-gold">New member bonus</p>
             </div>
             <p className="text-[13px] text-dp-text-secondary leading-relaxed">
-              Sign up today and get <strong className="text-dp-text-primary">500 XP</strong> instantly — plus a{" "}
+              Sign up today and get <strong className="text-dp-text-primary">5 XP</strong> instantly — plus a{" "}
               <strong className="text-dp-text-primary">10% off</strong> welcome coupon in your inbox.
             </p>
           </div>
