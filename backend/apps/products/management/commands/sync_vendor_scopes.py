@@ -136,6 +136,7 @@ class Command(BaseCommand):
         storefront_defaults = {
             "panel-studio": {
                 "catalog_category_slug": "wallpanels",
+                "logo_url": "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=200&h=200&fit=crop",
                 "banner_url": "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1600&h=600&fit=crop",
                 "description": "Ultra-HD 3D relief metal wallpanels with proprietary UV-cure layering — sculptural art for every wall.",
                 "social_facebook": "https://facebook.com",
@@ -145,6 +146,7 @@ class Command(BaseCommand):
             },
             "figure-studio": {
                 "catalog_category_slug": "figures",
+                "logo_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200&h=200&fit=crop",
                 "banner_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&h=600&fit=crop",
                 "description": "Precision-printed 3D collectible figures — from anime icons to original characters, crafted for collectors.",
                 "social_facebook": "https://facebook.com",
@@ -169,8 +171,8 @@ class Command(BaseCommand):
             for field, value in defaults.items():
                 if field == "catalog_category_slug":
                     continue
-                if field == "banner_url" and value:
-                    vendor.banner_url = value
+                if field in ("banner_url", "logo_url") and value:
+                    setattr(vendor, field, value)
                 elif value and not getattr(vendor, field, None):
                     setattr(vendor, field, value)
             if not vendor.description and defaults.get("description"):
