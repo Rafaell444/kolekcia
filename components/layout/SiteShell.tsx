@@ -332,12 +332,15 @@ function AccountMenu() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center justify-center w-8 h-8 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
-        aria-label="Account menu"
+        className="relative flex items-center justify-center w-8 h-8 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
+        aria-label={`Account menu${inboxUnread > 0 ? ` (${inboxUnread} unread)` : ""}`}
         aria-expanded={open}
         aria-haspopup="menu"
       >
         <User size={15} aria-hidden />
+        {inboxUnread > 0 && (
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-dp-bg-base" aria-hidden />
+        )}
       </button>
       {open && (
         <div

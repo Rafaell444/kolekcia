@@ -9,6 +9,7 @@ from .views import (
     WishlistListView,
     WishlistItemDeleteView,
     PosterOptionsView,
+    ProductFilterOptionsView,
 )
 
 urlpatterns = [
@@ -19,6 +20,7 @@ urlpatterns = [
     path("wishlist/", WishlistListView.as_view(), name="wishlist-list"),
     path("wishlist/<int:product_id>/", WishlistItemDeleteView.as_view(), name="wishlist-delete"),
     path("poster-options/", PosterOptionsView.as_view(), name="poster-options"),
+    path("filter-options/", ProductFilterOptionsView.as_view(), name="product-filter-options"),
     path("<int:product_pk>/reviews/", ReviewListCreateView.as_view(), name="product-reviews"),
     path("<str:lookup>/", ProductDetailView.as_view(), name="product-detail"),
 ]

@@ -1,26 +1,60 @@
 from rest_framework import serializers
-from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder
-from apps.products.serializers import ProductVariantSerializer
+from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption
+from apps.products.serializers import ProductVariantSerializer, SizeVariantSerializer
 
 
 class CartItemSerializer(serializers.ModelSerializer):
-    variant = ProductVariantSerializer(read_only=True)
-    variant_id = serializers.PrimaryKeyRelatedField(
-        queryset=__import__("apps.products.models", fromlist=["ProductVariant"]).ProductVariant.objects.all(),
-        source="variant",
-        write_only=True,
-    )
+    variant = ProductVariantSerializer(read_only=True, allow_null=True)
+    size_variant = SizeVariantSerializer(read_only=True, allow_null=True)
     line_total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    product_title = serializers.CharField(source="variant.product.title", read_only=True)
+    product_title = serializers.SerializerMethodField()
     product_image = serializers.SerializerMethodField()
+    size_label = serializers.SerializerMethodField()
 
     class Meta:
         model = CartItem
-        fields = ("id", "variant", "variant_id", "quantity", "line_total", "product_title", "product_image")
+        fields = (
+            "id", "variant", "size_variant", "quantity", "line_total",
+            "product_title", "product_image", "size_label",
+            "gift_wrap", "gift_wrap_price", "delivery_type", "processing_option",
+        )
+
+    def get_product_title(self, obj):
+        if obj.size_variant_id:
+            return obj.size_variant.product.title
+        if obj.variant_id:
+            return obj.variant.product.title
+        return ""
 
     def get_product_image(self, obj):
-        img = obj.variant.product.images.first()
-        return img.url if img else ""
+        product = None
+        if obj.size_variant_id:
+            product = obj.size_variant.product
+        elif obj.variant_id:
+            product = obj.variant.product
+        if product:
+            img = product.images.first()
+            return img.url if img else ""
+        return ""
+
+    def get_size_label(self, obj):
+        if obj.size_variant_id:
+            return obj.size_variant.label
+        if obj.variant_id:
+            return obj.variant.size.label if obj.variant.size_id else ""
+        return ""
+
+
+class DeliveryOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryOption
+        fields = ("id", "slug", "label", "price_gel", "price_usd", "est_days_min", "est_days_max", "sort_order", "is_active")
+
+
+class ProcessingOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProcessingOption
+        fields = ("id", "slug", "label", "est_days_min", "est_days_max", "price_usd", "price_gel", "sort_order", "is_active")
 
 
 class CartSerializer(serializers.ModelSerializer):
@@ -34,8 +68,17 @@ class CartSerializer(serializers.ModelSerializer):
 
 
 class AddToCartSerializer(serializers.Serializer):
-    variant_id = serializers.IntegerField()
+    variant_id = serializers.IntegerField(required=False, allow_null=True)
+    size_variant_id = serializers.IntegerField(required=False, allow_null=True)
     quantity = serializers.IntegerField(min_value=1, default=1)
+    gift_wrap = serializers.BooleanField(default=False, required=False)
+    delivery_type = serializers.CharField(max_length=20, default="standard", required=False)
+    processing_option = serializers.CharField(max_length=50, default="", required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if not attrs.get("variant_id") and not attrs.get("size_variant_id"):
+            raise serializers.ValidationError("Either variant_id or size_variant_id is required.")
+        return attrs
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -43,7 +86,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderItem
-        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total")
+        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "processing_option")
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
@@ -66,8 +109,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "shipping_name", "shipping_line1", "shipping_line2",
             "shipping_city", "shipping_state", "shipping_zip", "shipping_country",
             "shipping_email", "shipping_phone",
-            "subtotal", "discount", "total", "promo_code_str",
-            "tracking_code", "created_at",
+            "subtotal", "discount", "delivery_type", "delivery_price", "gift_wrap_total", "currency", "total",
+            "promo_code_str", "tracking_code", "created_at",
         )
         read_only_fields = ("id", "order_number", "status", "subtotal", "discount", "total", "created_at")
 
@@ -83,6 +126,8 @@ class CheckoutSerializer(serializers.Serializer):
     shipping_email = serializers.EmailField()
     shipping_phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
     promo_code = serializers.CharField(required=False, allow_blank=True)
+    currency = serializers.CharField(max_length=10, required=False, default="USD")
+    delivery_type = serializers.CharField(max_length=20, required=False, default="standard")
 
 
 class CustomOrderSerializer(serializers.ModelSerializer):

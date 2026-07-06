@@ -1,7 +1,7 @@
 import uuid
 from django.db import models
 from apps.users.models import User
-from apps.products.models import Product, ProductVariant
+from apps.products.models import Product, ProductVariant, SizeVariant
 
 
 class Cart(models.Model):
@@ -23,19 +23,32 @@ class Cart(models.Model):
 
 class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
-    variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
+    variant = models.ForeignKey(ProductVariant, null=True, blank=True, on_delete=models.CASCADE)
+    size_variant = models.ForeignKey(SizeVariant, null=True, blank=True, on_delete=models.SET_NULL, related_name="cart_items")
     quantity = models.PositiveIntegerField(default=1)
+    gift_wrap = models.BooleanField(default=False)
+    gift_wrap_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    delivery_type = models.CharField(max_length=20, default="standard")
+    processing_option = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:
         db_table = "cart_items"
-        unique_together = ("cart", "variant")
 
     @property
     def line_total(self):
-        return self.variant.price * self.quantity
+        from decimal import Decimal
+        if self.size_variant_id:
+            base = Decimal(self.size_variant.price_usd) * self.quantity
+        elif self.variant_id:
+            base = self.variant.price * self.quantity
+        else:
+            base = Decimal("0")
+        wrap = Decimal(self.gift_wrap_price) if self.gift_wrap else Decimal("0")
+        return base + wrap
 
     def __str__(self):
-        return f"{self.cart} × {self.variant}"
+        label = self.size_variant.label if self.size_variant_id else str(self.variant)
+        return f"{self.cart} × {label}"
 
 
 class Order(models.Model):
@@ -65,6 +78,10 @@ class Order(models.Model):
 
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    delivery_type = models.CharField(max_length=20, default="standard")
+    delivery_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    gift_wrap_total = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    currency = models.CharField(max_length=10, default="USD")
     total = models.DecimalField(max_digits=10, decimal_places=2)
     tracking_code = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -83,6 +100,42 @@ class Order(models.Model):
         return self.order_number
 
 
+class DeliveryOption(models.Model):
+    slug = models.CharField(max_length=20, unique=True)
+    label = models.CharField(max_length=50)
+    price_gel = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    price_usd = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    est_days_min = models.PositiveIntegerField(default=1)
+    est_days_max = models.PositiveIntegerField(default=5)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "delivery_options"
+        ordering = ["sort_order"]
+
+    def __str__(self):
+        return self.label
+
+
+class ProcessingOption(models.Model):
+    slug = models.SlugField(unique=True)
+    label = models.CharField(max_length=100)
+    est_days_min = models.PositiveSmallIntegerField(default=1)
+    est_days_max = models.PositiveSmallIntegerField(default=5)
+    price_usd = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    price_gel = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "processing_options"
+        ordering = ["sort_order"]
+
+    def __str__(self):
+        return self.label
+
+
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="order_items")
@@ -94,6 +147,8 @@ class OrderItem(models.Model):
     frame_label = models.CharField(max_length=50)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=1)
+    gift_wrap = models.BooleanField(default=False)
+    processing_option = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:
         db_table = "order_items"

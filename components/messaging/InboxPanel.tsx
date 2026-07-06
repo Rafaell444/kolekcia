@@ -5,9 +5,11 @@ import Link from "next/link"
 import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
-import { Send, MessageSquare, ChevronLeft, Loader2 } from "lucide-react"
+import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play } from "lucide-react"
+import { getAccessToken } from "@/lib/auth-storage"
 
-export type InboxMessage = { id: string; from_role: string; text: string; sent_at: string; read: boolean }
+export type InboxAttachment = { id: string; url: string; media_type: string; original_name: string }
+export type InboxMessage = { id: string; from_role: string; text: string; sent_at: string; read: boolean; attachments: InboxAttachment[] }
 export type InboxConversation = {
   id: string
   subject: string
@@ -22,7 +24,8 @@ export type InboxConversation = {
   messages: InboxMessage[]
 }
 
-const POLL_INTERVAL = 3000
+const CHAT_POLL_MS = 8000   // active conversation — pause when tab hidden
+const LIST_POLL_MS = 30000  // sidebar unread counts
 
 function relTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000
@@ -30,6 +33,32 @@ function relTime(iso: string) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   return `${Math.floor(diff / 86400)}d ago`
+}
+
+function AttachmentPreview({ att }: { att: InboxAttachment }) {
+  if (att.media_type === "image") {
+    return (
+      <a href={att.url} target="_blank" rel="noopener noreferrer" className="block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={att.url} alt={att.original_name} className="max-w-[200px] max-h-[200px] rounded-sm object-cover border border-white/20" />
+      </a>
+    )
+  }
+  if (att.media_type === "video") {
+    return (
+      <video
+        src={att.url}
+        controls
+        className="max-w-[240px] max-h-[180px] rounded-sm"
+      />
+    )
+  }
+  return (
+    <a href={att.url} target="_blank" rel="noopener noreferrer"
+      className="flex items-center gap-2 px-3 py-2 bg-black/20 rounded-sm text-[12px] underline">
+      <Paperclip size={12} /> {att.original_name}
+    </a>
+  )
 }
 
 function ChatWindow({
@@ -42,16 +71,19 @@ function ChatWindow({
   onNewMessages: (msgs: InboxMessage[], id: string) => void
 }) {
   const [draft, setDraft] = useState("")
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const lastMsgCount = useRef(conv.messages.length)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     lastMsgCount.current = conv.messages.length
   }, [conv.id])
 
   const poll = useCallback(async () => {
+    if (document.hidden) return   // skip when tab not visible
     try {
       const full = await authFetch<InboxConversation>(`/messaging/conversations/${conv.id}/`)
       if (full.messages.length > lastMsgCount.current) {
@@ -63,25 +95,57 @@ function ChatWindow({
 
   useEffect(() => {
     lastMsgCount.current = conv.messages.length
-    pollRef.current = setInterval(() => { void poll() }, POLL_INTERVAL)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    // Guard against React StrictMode double-mount creating two intervals
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(() => { void poll() }, CHAT_POLL_MS)
+
+    // Immediately fire when tab becomes visible again so users don't wait 8s
+    const onVisible = () => { if (!document.hidden) void poll() }
+    document.addEventListener("visibilitychange", onVisible)
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
   }, [conv.id, poll])
 
   async function send() {
     const text = draft.trim()
-    if (!text) return
+    if (!text && pendingFiles.length === 0) return
     setSending(true)
     try {
-      const msg = await authFetch<InboxMessage>(`/messaging/conversations/${conv.id}/messages/`, {
-        method: "POST",
-        body: JSON.stringify({ text }),
-      })
+      let msg: InboxMessage
+      if (pendingFiles.length > 0) {
+        const token = getAccessToken()
+        const form = new FormData()
+        form.append("text", text)
+        pendingFiles.forEach((f) => form.append("files", f))
+        const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+        const res = await fetch(`${base}/messaging/conversations/${conv.id}/messages/`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: form,
+        })
+        msg = await res.json() as InboxMessage
+      } else {
+        msg = await authFetch<InboxMessage>(`/messaging/conversations/${conv.id}/messages/`, {
+          method: "POST",
+          body: JSON.stringify({ text }),
+        })
+      }
       onNewMessages([...conv.messages, msg], conv.id)
       lastMsgCount.current = conv.messages.length + 1
       setDraft("")
+      setPendingFiles([])
       requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: "smooth" }))
     } catch { /* noop */ }
     finally { setSending(false) }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    setPendingFiles((prev) => [...prev, ...files])
+    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   return (
@@ -132,7 +196,14 @@ function ChatWindow({
                 {!isOwn && conv.vendor_name && (
                   <p className="text-[10px] font-bold text-dp-text-tertiary mb-1 uppercase tracking-wider">{conv.vendor_name}</p>
                 )}
-                <p>{m.text}</p>
+                {m.text && <p>{m.text}</p>}
+                {(m.attachments ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {m.attachments.map((att) => (
+                      <AttachmentPreview key={att.id} att={att} />
+                    ))}
+                  </div>
+                )}
                 <p className={`text-[10px] mt-1 opacity-60 ${isOwn ? "text-right" : ""}`}>{relTime(m.sent_at)}</p>
               </div>
             </div>
@@ -142,7 +213,36 @@ function ChatWindow({
       </div>
 
       <div className="px-3 sm:px-4 py-3 border-t border-dp-border bg-dp-bg-surface shrink-0">
+        {pendingFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {pendingFiles.map((f, i) => (
+              <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-dp-text-secondary">
+                {f.type.startsWith("video/") ? <Play size={10} /> : <Paperclip size={10} />}
+                <span className="max-w-[120px] truncate">{f.name}</span>
+                <button type="button" onClick={() => setPendingFiles((prev) => prev.filter((_, j) => j !== i))} className="text-dp-text-tertiary hover:text-red-400 transition-colors">
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <form onSubmit={(e) => { e.preventDefault(); void send() }} className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="shrink-0 w-9 h-9 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-tertiary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
+            aria-label="Attach file"
+          >
+            <Paperclip size={15} />
+          </button>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -153,7 +253,7 @@ function ChatWindow({
           />
           <button
             type="submit"
-            disabled={!draft.trim() || sending}
+            disabled={(!draft.trim() && pendingFiles.length === 0) || sending}
             className="shrink-0 w-10 h-10 flex items-center justify-center bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white rounded-sm transition-colors"
             aria-label="Send"
           >
@@ -223,13 +323,11 @@ export default function InboxPanel({
   }, [loadList, initialConvId, autoSelectFirst])
 
   useEffect(() => {
-    const id = setInterval(() => {
+    const tick = () => {
+      if (document.hidden) return   // skip when tab not visible
       void loadList().then((data) => {
         const currentActiveId = activeIdRef.current
-        if (!currentActiveId) {
-          setConvs(data)
-          return
-        }
+        if (!currentActiveId) { setConvs(data); return }
         setConvs((prev) => {
           const prevActive = prev.find((c) => String(c.id) === String(currentActiveId))
           return data.map((c) => {
@@ -240,8 +338,15 @@ export default function InboxPanel({
           })
         })
       })
-    }, 10000)
-    return () => clearInterval(id)
+    }
+    const id = setInterval(tick, LIST_POLL_MS)
+    // Fire immediately when the user returns to the tab
+    const onVisible = () => { if (!document.hidden) tick() }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
   }, [loadList])
 
   async function openConv(id: string) {

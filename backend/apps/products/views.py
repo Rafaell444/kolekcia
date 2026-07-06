@@ -142,3 +142,82 @@ class PosterOptionsView(generics.GenericAPIView):
             "finishes": PosterFinishSerializer(PosterFinish.objects.all(), many=True).data,
             "frames": PosterFrameSerializer(PosterFrame.objects.all(), many=True).data,
         })
+
+
+class ProductFilterOptionsView(generics.GenericAPIView):
+    """Returns distinct filter values for the given category/context."""
+    permission_classes = [AllowAny]
+
+    # Tags to always suppress — they duplicate the locked category or reflect product status flags
+    _SUPPRESS_TAGS = {
+        "Figure", "Figures", "Wallpanel", "Wallpanels", "Panel", "Panels",
+        "Sale", "Exclusive", "Limited", "New", "New Arrival",
+    }
+
+    def get(self, request):
+        from django.db.models import Min, Max
+        from .models import SizeVariant
+        category = (request.query_params.get("category") or "").strip().lower()
+
+        qs = Product.objects.filter(status="active")
+        if category in {"figures", "figure"}:
+            qs = qs.filter(category__slug="figures")
+        elif category in {"wallpanels", "wallpanel", "panels"}:
+            qs = qs.filter(category__slug="wallpanels")
+
+        product_ids = list(qs.values_list("id", flat=True))
+
+        # Distinct non-empty materials
+        raw_materials = (
+            qs.exclude(material="")
+              .values_list("material", flat=True)
+              .distinct()
+        )
+        materials = sorted(set(m.strip() for m in raw_materials if m.strip()))
+
+        # Distinct size variant labels for these products
+        size_labels = list(
+            SizeVariant.objects.filter(product_id__in=product_ids, is_active=True)
+              .values_list("label", flat=True)
+              .distinct()
+              .order_by("label")
+        )
+
+        # Themes — gather all tags from products, deduplicate, sort, and exclude generic ones
+        all_tags_qs = qs.values_list("tags", flat=True)
+        theme_set: set[str] = set()
+        for tag_list in all_tags_qs:
+            if isinstance(tag_list, list):
+                for t in tag_list:
+                    cleaned = (t or "").strip()
+                    if cleaned and cleaned not in self._SUPPRESS_TAGS:
+                        theme_set.add(cleaned)
+        themes = sorted(theme_set)
+
+        # Artists
+        artists = list(
+            qs.exclude(artist=None)
+              .select_related("artist")
+              .values("artist__handle", "artist__name")
+              .distinct()
+              .order_by("artist__name")
+        )
+
+        # Price range — use size variant prices when available, else base_price
+        sv_agg = SizeVariant.objects.filter(
+            product_id__in=product_ids, is_active=True
+        ).aggregate(min_p=Min("price_usd"), max_p=Max("price_usd"))
+        bp_agg = qs.aggregate(min_bp=Min("base_price"), max_bp=Max("base_price"))
+
+        candidates_min = [v for v in [sv_agg["min_p"], bp_agg["min_bp"]] if v is not None]
+        candidates_max = [v for v in [sv_agg["max_p"], bp_agg["max_bp"]] if v is not None]
+        price_min = float(min(candidates_min)) if candidates_min else 0
+        price_max = float(max(candidates_max)) if candidates_max else 250
+
+        return Response({
+            "materials": materials,
+            "sizes": size_labels,
+            "themes": themes,
+            "artists": [{"handle": a["artist__handle"], "name": a["artist__name"]} for a in artists],
+            "price_range": {"min": price_min, "max": price_max},
+        })

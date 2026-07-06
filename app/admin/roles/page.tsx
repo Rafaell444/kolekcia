@@ -27,9 +27,9 @@ const PERM_LABELS = ["orders", "users", "artists", "products", "auctions", "sett
 
 export default function AdminRolesPage() {
   return (
-    <div className="p-8 flex flex-col gap-6">
+    <div className="p-4 sm:p-8 flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-4xl text-dp-text-primary">Roles & Permissions</h1>
+        <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">Roles & Permissions</h1>
         <p className="text-[13px] text-dp-text-tertiary mt-1">Define what each admin role can access on the platform.</p>
       </div>
       <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-x-auto">

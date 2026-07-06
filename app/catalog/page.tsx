@@ -17,6 +17,7 @@ type ApiProduct = {
   slug?: string
   title: string
   artist_name: string
+  artist_handle?: string
   category_slug: string
   image_url: string
   base_price: string
@@ -30,6 +31,7 @@ type ApiProduct = {
   is_exclusive: boolean
   tags: string[]
   default_variant_id: number | null
+  material?: string
 }
 
 type PaginatedProducts = {
@@ -39,23 +41,41 @@ type PaginatedProducts = {
   results: ApiProduct[]
 }
 
+type FilterOptions = {
+  materials: string[]
+  sizes: string[]
+  themes: string[]
+  artists: { handle: string; name: string }[]
+  price_range: { min: number; max: number }
+}
+
 // ─── Filter state type ─────────────────────────────────────
 type Filters = {
   categories: string[]
+  priceMin: number
   priceMax: number
   isLimited: boolean
   isSale: boolean
   isNew: boolean
   isExclusive: boolean
+  materials: string[]
+  sizes: string[]
+  themes: string[]
+  artistHandles: string[]
 }
 
 const DEFAULT_FILTERS: Filters = {
   categories: [],
-  priceMax: 100,
+  priceMin: 0,
+  priceMax: 999,
   isLimited: false,
   isSale: false,
   isNew: false,
   isExclusive: false,
+  materials: [],
+  sizes: [],
+  themes: [],
+  artistHandles: [],
 }
 
 const SORT_OPTIONS = [
@@ -64,12 +84,11 @@ const SORT_OPTIONS = [
   { value: "bestsellers", label: "Best Sellers" },
   { value: "price_asc",   label: "Price: Low to High" },
   { value: "price_desc",  label: "Price: High to Low" },
-  { value: "rating",      label: "Top Rated" },
 ]
 
 // ─── Collapsible filter group ──────────────────────────────
-function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(true)
+function FilterGroup({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="border-b border-dp-border pb-4 mb-4">
       <button
@@ -90,6 +109,128 @@ function FilterGroup({ title, children }: { title: string; children: React.React
   )
 }
 
+// ─── Price range slider ────────────────────────────────────
+function PriceRangeSlider({
+  absMin, absMax, min, max, currency,
+  onChange,
+}: {
+  absMin: number; absMax: number; min: number; max: number
+  currency: string
+  onChange: (min: number, max: number) => void
+}) {
+  const step = absMax <= 100 ? 1 : absMax <= 500 ? 5 : 10
+  const pct = (v: number) => absMax === absMin ? 0 : ((v - absMin) / (absMax - absMin)) * 100
+  const sym = currency === "GEL" ? "₾" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "$"
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
+
+  // Local draft state so the number inputs feel responsive while typing
+  const [draftMin, setDraftMin] = useState(String(min))
+  const [draftMax, setDraftMax] = useState(String(max))
+
+  // Keep drafts in sync when sliders move
+  useEffect(() => { setDraftMin(String(min)) }, [min])
+  useEffect(() => { setDraftMax(String(max)) }, [max])
+
+  const commitMin = () => {
+    const v = clamp(Number(draftMin) || absMin, absMin, max)
+    setDraftMin(String(v))
+    onChange(v, max)
+  }
+  const commitMax = () => {
+    const v = clamp(Number(draftMax) || absMax, min, absMax)
+    setDraftMax(String(v))
+    onChange(min, v)
+  }
+
+  const fillLeft  = pct(min)
+  const fillWidth = pct(max) - pct(min)
+
+  return (
+    <div className="px-1">
+      {/* Selected range badge */}
+      <div className="flex items-center justify-center gap-1.5 mb-4 bg-dp-bg-elevated rounded px-3 py-2">
+        <span className="text-[11px] text-dp-text-tertiary">{sym}</span>
+        <input
+          type="number"
+          min={absMin} max={max} step={step}
+          value={draftMin}
+          onChange={(e) => setDraftMin(e.target.value)}
+          onBlur={commitMin}
+          onKeyDown={(e) => e.key === "Enter" && commitMin()}
+          className="w-12 text-[13px] font-bold text-dp-text-primary bg-transparent focus:outline-none text-center"
+          aria-label="Minimum price"
+        />
+        <span className="text-dp-text-tertiary text-[11px]">—</span>
+        <span className="text-[11px] text-dp-text-tertiary">{sym}</span>
+        <input
+          type="number"
+          min={min} max={absMax} step={step}
+          value={draftMax}
+          onChange={(e) => setDraftMax(e.target.value)}
+          onBlur={commitMax}
+          onKeyDown={(e) => e.key === "Enter" && commitMax()}
+          className="w-12 text-[13px] font-bold text-dp-text-primary bg-transparent focus:outline-none text-center"
+          aria-label="Maximum price"
+        />
+      </div>
+
+      {/* Shared visual track — sits between the two sliders */}
+      <div className="relative h-1.5 bg-dp-bg-elevated rounded-full mx-0.5 mb-4">
+        <div
+          className="absolute h-full bg-dp-accent-cta rounded-full transition-all duration-75"
+          style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
+        />
+      </div>
+
+      {/* Min slider */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] text-dp-text-tertiary uppercase tracking-wide">From</span>
+          <span className="text-[11px] font-semibold text-dp-text-primary">{sym}{min}</span>
+        </div>
+        <input
+          type="range"
+          min={absMin} max={absMax} step={step}
+          value={min}
+          onChange={(e) => {
+            const v = Number(e.target.value)
+            onChange(v, Math.max(v, max))
+          }}
+          className="w-full h-1.5 rounded-full appearance-none bg-transparent cursor-pointer accent-dp-accent-cta"
+          style={{ accentColor: "var(--dp-accent-cta, #6366f1)" }}
+          aria-label={`Min price: ${sym}${min}`}
+        />
+      </div>
+
+      {/* Max slider */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] text-dp-text-tertiary uppercase tracking-wide">To</span>
+          <span className="text-[11px] font-semibold text-dp-text-primary">{sym}{max}</span>
+        </div>
+        <input
+          type="range"
+          min={absMin} max={absMax} step={step}
+          value={max}
+          onChange={(e) => {
+            const v = Number(e.target.value)
+            onChange(Math.min(min, v), v)
+          }}
+          className="w-full h-1.5 rounded-full appearance-none bg-transparent cursor-pointer accent-dp-accent-cta"
+          style={{ accentColor: "var(--dp-accent-cta, #6366f1)" }}
+          aria-label={`Max price: ${sym}${max}`}
+        />
+      </div>
+
+      {/* Absolute range labels */}
+      <div className="flex justify-between mt-2">
+        <span className="text-[10px] text-dp-text-tertiary">{sym}{absMin}</span>
+        <span className="text-[10px] text-dp-text-tertiary">{sym}{absMax}</span>
+      </div>
+    </div>
+  )
+}
+
 function filtersForPage(lockedCategory: string): Filters {
   return {
     ...DEFAULT_FILTERS,
@@ -103,21 +244,28 @@ function FilterSidebar({
   onChange,
   onReset,
   categories,
+  filterOptions,
   hideCategoryFilter = false,
+  currency,
 }: {
   filters: Filters
   onChange: (f: Filters) => void
   onReset: () => void
   categories: ApiCategory[]
+  filterOptions: FilterOptions | null
   hideCategoryFilter?: boolean
+  currency: string
 }) {
-  const toggle = (key: keyof Filters, value: string) => {
-    const arr = filters[key] as string[]
+  const toggleArr = (key: "categories" | "materials" | "sizes" | "themes" | "artistHandles", value: string) => {
+    const arr = filters[key]
     onChange({
       ...filters,
       [key]: arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value],
     })
   }
+
+  const absMin = Math.floor((filterOptions?.price_range.min ?? 0))
+  const absMax = Math.ceil((filterOptions?.price_range.max ?? 250) / 10) * 10
 
   const activeCount =
     (hideCategoryFilter ? 0 : filters.categories.length) +
@@ -125,7 +273,12 @@ function FilterSidebar({
     (filters.isSale ? 1 : 0) +
     (filters.isNew ? 1 : 0) +
     (filters.isExclusive ? 1 : 0) +
-    (filters.priceMax < 100 ? 1 : 0)
+    (filters.priceMin > absMin ? 1 : 0) +
+    (filters.priceMax < absMax ? 1 : 0) +
+    filters.materials.length +
+    filters.sizes.length +
+    filters.themes.length +
+    filters.artistHandles.length
 
   return (
     <aside className="w-full lg:w-56 xl:w-64 shrink-0" aria-label="Product filters">
@@ -150,52 +303,145 @@ function FilterSidebar({
         )}
       </div>
 
-      {/* Category */}
-      {!hideCategoryFilter && (
-      <FilterGroup title="Category">
-        <ul className="flex flex-col gap-1.5">
-          {categories.map((cat) => (
-            <li key={cat.id}>
-              <label className="flex items-center gap-2.5 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={filters.categories.includes(cat.slug)}
-                  onChange={() => toggle("categories", cat.slug)}
-                  className="w-3.5 h-3.5 accent-dp-accent-cta"
-                />
-                <span className="text-[13px] text-dp-text-secondary group-hover:text-dp-text-primary transition-colors">
-                  {cat.name}
-                </span>
-                <span className="ml-auto text-[11px] text-dp-text-tertiary">
-                  {cat.count}
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      </FilterGroup>
+      {/* Category — hidden on locked category pages */}
+      {!hideCategoryFilter && categories.length > 0 && (
+        <FilterGroup title="Category">
+          <ul className="flex flex-col gap-1.5">
+            {categories.map((cat) => {
+              const active = filters.categories.includes(cat.slug)
+              return (
+                <li key={cat.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleArr("categories", cat.slug)}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[13px] transition-colors ${
+                      active
+                        ? "bg-dp-accent-cta/10 text-dp-accent-cta font-semibold"
+                        : "text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated"
+                    }`}
+                  >
+                    <span>{cat.name}</span>
+                    <span className={`text-[11px] ${active ? "text-dp-accent-cta" : "text-dp-text-tertiary"}`}>{cat.count}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </FilterGroup>
       )}
 
-      {/* Price */}
-      <FilterGroup title="Max Price">
-        <div className="px-1">
-          <input
-            type="range"
-            min={10}
-            max={100}
-            step={5}
-            value={filters.priceMax}
-            onChange={(e) => onChange({ ...filters, priceMax: Number(e.target.value) })}
-            className="w-full accent-dp-accent-cta"
-            aria-label={`Max price: $${filters.priceMax}`}
+      {/* Price Range */}
+      {filterOptions && (
+        <FilterGroup title="Price Range">
+          <PriceRangeSlider
+            absMin={absMin}
+            absMax={absMax}
+            min={Math.max(filters.priceMin, absMin)}
+            max={Math.min(filters.priceMax < 999 ? filters.priceMax : absMax, absMax)}
+            currency={currency}
+            onChange={(lo, hi) => onChange({ ...filters, priceMin: lo, priceMax: hi })}
           />
-          <div className="flex justify-between mt-1">
-            <span className="text-[11px] text-dp-text-tertiary">$10</span>
-            <span className="text-[12px] font-bold text-dp-text-primary">${filters.priceMax}</span>
-            <span className="text-[11px] text-dp-text-tertiary">$100</span>
+        </FilterGroup>
+      )}
+
+      {/* Size */}
+      {filterOptions && filterOptions.sizes.length > 0 && (
+        <FilterGroup title="Size">
+          <div className="flex flex-wrap gap-2">
+            {filterOptions.sizes.map((sz) => {
+              const active = filters.sizes.includes(sz)
+              return (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => toggleArr("sizes", sz)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
+                    active
+                      ? "bg-dp-accent-cta text-white border-dp-accent-cta"
+                      : "border-dp-border text-dp-text-secondary hover:border-dp-accent-cta hover:text-dp-accent-cta"
+                  }`}
+                >
+                  {sz}
+                </button>
+              )
+            })}
           </div>
-        </div>
-      </FilterGroup>
+        </FilterGroup>
+      )}
+
+      {/* Themes — derived from product tags (Forest, Nature, Cyberpunk, etc.) */}
+      {filterOptions && filterOptions.themes.length > 0 && (
+        <FilterGroup title="Theme / Collection">
+          <div className="flex flex-wrap gap-2">
+            {filterOptions.themes.map((theme) => {
+              const active = filters.themes.includes(theme)
+              return (
+                <button
+                  key={theme}
+                  type="button"
+                  onClick={() => toggleArr("themes", theme)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
+                    active
+                      ? "bg-dp-accent-cta text-white border-dp-accent-cta"
+                      : "border-dp-border text-dp-text-secondary hover:border-dp-accent-cta hover:text-dp-accent-cta"
+                  }`}
+                >
+                  {theme}
+                </button>
+              )
+            })}
+          </div>
+        </FilterGroup>
+      )}
+
+      {/* Material */}
+      {filterOptions && filterOptions.materials.length > 0 && (
+        <FilterGroup title="Material" defaultOpen={false}>
+          <ul className="flex flex-col gap-1.5">
+            {filterOptions.materials.map((mat) => (
+              <li key={mat}>
+                <label className="flex items-center gap-2.5 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={filters.materials.includes(mat)}
+                    onChange={() => toggleArr("materials", mat)}
+                    className="w-3.5 h-3.5 accent-dp-accent-cta shrink-0"
+                  />
+                  <span className="text-[12px] text-dp-text-secondary group-hover:text-dp-text-primary transition-colors leading-tight">
+                    {mat}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </FilterGroup>
+      )}
+
+      {/* Artist */}
+      {filterOptions && filterOptions.artists.length > 1 && (
+        <FilterGroup title="Artist" defaultOpen={false}>
+          <ul className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+            {filterOptions.artists.map((a) => {
+              const active = filters.artistHandles.includes(a.handle)
+              return (
+                <li key={a.handle}>
+                  <button
+                    type="button"
+                    onClick={() => toggleArr("artistHandles", a.handle)}
+                    className={`w-full flex items-center px-2.5 py-1.5 rounded text-[13px] transition-colors ${
+                      active
+                        ? "bg-dp-accent-cta/10 text-dp-accent-cta font-semibold"
+                        : "text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated"
+                    }`}
+                  >
+                    {a.name}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </FilterGroup>
+      )}
 
       {/* Availability */}
       <FilterGroup title="Availability">
@@ -241,7 +487,6 @@ const SORT_MAP: Record<string, string> = {
   bestsellers: "featured",
   price_asc:   "price-low",
   price_desc:  "price-high",
-  rating:      "featured",
 }
 
 const CATEGORY_VENDOR_SLUGS = new Set(["figures", "wallpanels"])
@@ -267,6 +512,7 @@ function CatalogPageInner(): React.ReactElement {
   const [view, setView]         = useState<"grid" | "list">("grid")
   const [mobileOpen, setMobileOpen] = useState(false)
   const [categories, setCategories] = useState<ApiCategory[]>([])
+  const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
 
   const [products, setProducts] = useState<ApiProduct[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -281,6 +527,28 @@ function CatalogPageInner(): React.ReactElement {
     return () => { cancelled = true }
   }, [])
 
+  // Fetch filter options (materials, artists, price range) for current context
+  useEffect(() => {
+    let cancelled = false
+    const qs = lockedCategory ? `?category=${lockedCategory}` : ""
+    apiFetch<FilterOptions>(`/products/filter-options/${qs}`)
+      .then((d) => {
+        if (!cancelled) {
+          setFilterOptions(d)
+          // Initialise price bounds to the real data range on first load
+          const realMin = Math.floor(d.price_range.min)
+          const realMax = Math.ceil(d.price_range.max / 10) * 10
+          setFilters((prev) => ({
+            ...prev,
+            priceMin: prev.priceMin === 0 ? realMin : prev.priceMin,
+            priceMax: prev.priceMax === 999 ? realMax : prev.priceMax,
+          }))
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [lockedCategory])
+
   useEffect(() => {
     setFilters((prev) => {
       if (lockedCategory) {
@@ -294,23 +562,34 @@ function CatalogPageInner(): React.ReactElement {
   }, [urlCategory, lockedCategory])
 
   const resetFilters = useCallback(() => {
-    setFilters(filtersForPage(lockedCategory))
-  }, [lockedCategory])
+    setFilters((prev) => ({
+      ...filtersForPage(lockedCategory),
+      priceMin: filterOptions ? Math.floor(filterOptions.price_range.min) : 0,
+      priceMax: filterOptions ? Math.ceil(filterOptions.price_range.max / 10) * 10 : prev.priceMax,
+    }))
+  }, [lockedCategory, filterOptions])
 
   const buildQueryString = useCallback(() => {
     const params = new URLSearchParams()
     if (urlSearch) params.set("search", urlSearch)
     const effectiveCategory = lockedCategory || (filters.categories.length === 1 ? filters.categories[0] : "")
     if (effectiveCategory) params.set("category", effectiveCategory)
-    if (filters.priceMax < 100) params.set("max_price", String(filters.priceMax))
+    const absMin = filterOptions ? Math.floor(filterOptions.price_range.min) : 0
+    const absMax = filterOptions ? Math.ceil(filterOptions.price_range.max / 10) * 10 : 999
+    if (filters.priceMin > absMin) params.set("min_price", String(filters.priceMin))
+    if (filters.priceMax < absMax && filters.priceMax < 999) params.set("max_price", String(filters.priceMax))
     if (filters.isLimited) params.set("limited", "true")
     if (filters.isSale) params.set("sale", "true")
     if (filters.isNew) params.set("new", "true")
     if (filters.isExclusive) params.set("exclusive", "true")
+    if (filters.materials.length > 0) params.set("material", filters.materials.join(","))
+    if (filters.sizes.length > 0) params.set("size", filters.sizes.join(","))
+    if (filters.themes.length > 0) params.set("tag", filters.themes.join(","))
+    if (filters.artistHandles.length > 0) params.set("artist", filters.artistHandles.join(","))
     params.set("sort", SORT_MAP[sort] ?? "featured")
     params.set("page", String(page))
     return params.toString()
-  }, [filters, sort, page, urlSearch, lockedCategory])
+  }, [filters, sort, page, urlSearch, lockedCategory, filterOptions])
 
   useEffect(() => {
     let cancelled = false
@@ -344,8 +623,6 @@ function CatalogPageInner(): React.ReactElement {
 
   // Reset page on filter/sort change
   useEffect(() => { setPage(1) }, [filters, sort])
-
-  const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Sort"
 
   return (
     <SiteShell>
@@ -394,7 +671,9 @@ function CatalogPageInner(): React.ReactElement {
               onChange={setFilters}
               onReset={resetFilters}
               categories={categories}
+              filterOptions={filterOptions}
               hideCategoryFilter={hideCategoryFilter}
+              currency={currency}
             />
           </div>
 
@@ -540,7 +819,9 @@ function CatalogPageInner(): React.ReactElement {
               onChange={setFilters}
               onReset={() => { resetFilters(); setMobileOpen(false) }}
               categories={categories}
+              filterOptions={filterOptions}
               hideCategoryFilter={hideCategoryFilter}
+              currency={currency}
             />
             <button
               onClick={() => setMobileOpen(false)}

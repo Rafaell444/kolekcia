@@ -89,7 +89,8 @@ class Product(models.Model):
     title = models.CharField(max_length=255)
     slug = models.SlugField(unique=True, max_length=280, blank=True)
     artist = models.ForeignKey(Artist, on_delete=models.SET_NULL, null=True, related_name="products")
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name="products")
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
+    categories = models.ManyToManyField(Category, blank=True, related_name="all_products")
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -101,7 +102,10 @@ class Product(models.Model):
     is_sale = models.BooleanField(default=False)
     is_new = models.BooleanField(default=False)
     is_exclusive = models.BooleanField(default=False)
+    allow_custom_size = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
+    description = models.TextField(blank=True)
+    material = models.CharField(max_length=255, blank=True)
     tags = models.JSONField(default=list)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -125,13 +129,33 @@ class Product(models.Model):
 
 
 class ProductImage(models.Model):
+    MEDIA_CHOICES = [("image", "Image"), ("video", "Video")]
+
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")
-    url = models.URLField()
+    url = models.URLField(blank=True)
+    video_file = models.FileField(upload_to="products/videos/", null=True, blank=True)
+    media_type = models.CharField(max_length=10, choices=MEDIA_CHOICES, default="image")
     order = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
         db_table = "product_images"
         ordering = ["order"]
+
+
+class SizeVariant(models.Model):
+    """Simplified size variant with its own explicit USD price."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="size_variants")
+    label = models.CharField(max_length=50)
+    price_usd = models.DecimalField(max_digits=10, decimal_places=2)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "size_variants"
+        ordering = ["sort_order", "id"]
+
+    def __str__(self):
+        return f"{self.product.title} — {self.label} (${self.price_usd})"
 
 
 class ProductVariant(models.Model):

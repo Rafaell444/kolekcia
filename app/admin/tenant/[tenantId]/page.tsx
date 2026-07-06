@@ -66,13 +66,13 @@ export default function TenantDashboard(): React.ReactElement {
   const deliveredOrders = orders.filter((o) => o.status === "delivered").length
 
   return (
-    <div className="p-8 flex flex-col gap-8">
-      <div className="flex items-start justify-between">
+    <div className="p-4 sm:p-8 flex flex-col gap-8">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest mb-2 bg-dp-accent-cta/10 text-dp-accent-cta">
             Vendor Portal
           </div>
-          <h1 className="font-display text-4xl text-dp-text-primary capitalize">{tenantId}</h1>
+          <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary capitalize">{tenantId}</h1>
           <p className="text-[13px] text-dp-text-tertiary mt-1">Your private vendor dashboard — only your data is shown here.</p>
         </div>
       </div>

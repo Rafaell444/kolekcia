@@ -78,7 +78,7 @@ export default function AdminBlogPage(): React.ReactElement {
   }
 
   return (
-    <div className="p-8 grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
+    <div className="p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
       <section className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-dp-border flex items-center justify-between">
           <h1 className="font-display text-2xl text-dp-text-primary">Blog Posts</h1>

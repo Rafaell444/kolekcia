@@ -6,18 +6,24 @@ import { getAccessToken } from "@/lib/auth-storage"
 
 export type CartItemType = {
   id: number
-  variant: {
+  variant?: {
     id: number
     size: { id: string; label: string; surcharge: string }
     finish: { id: string; label: string; surcharge: string }
     frame: { id: string; label: string; surcharge: string }
     stock: number
     price: string
-  }
+  } | null
+  size_variant?: { id: number; label: string; price_usd: string } | null
   quantity: number
   line_total: string
   product_title: string
   product_image: string
+  size_label: string
+  gift_wrap: boolean
+  gift_wrap_price: string
+  delivery_type: string
+  processing_option: string
 }
 
 export type CartType = {
@@ -35,7 +41,7 @@ type CartContextValue = {
   openCart: () => void
   closeCart: () => void
   refresh: () => Promise<void>
-  addItem: (variantId: number, quantity?: number) => Promise<void>
+  addItem: (variantId: number | null, quantity?: number, options?: { gift_wrap?: boolean; processing_option?: string; size_variant_id?: number }) => Promise<void>
   removeItem: (itemId: number) => Promise<void>
   updateQuantity: (itemId: number, quantity: number) => Promise<void>
   applyPromo: (code: string) => Promise<void>
@@ -72,10 +78,20 @@ export function CartProvider({ children }: { children: React.ReactNode }): React
     refresh()
   }, [refresh])
 
-  const addItem = useCallback(async (variantId: number, quantity = 1) => {
+  const addItem = useCallback(async (variantId: number | null, quantity = 1, options?: { gift_wrap?: boolean; processing_option?: string; size_variant_id?: number }) => {
+    const body: Record<string, unknown> = {
+      quantity,
+      gift_wrap: options?.gift_wrap ?? false,
+      processing_option: options?.processing_option ?? "",
+    }
+    if (options?.size_variant_id) {
+      body.size_variant_id = options.size_variant_id
+    } else if (variantId) {
+      body.variant_id = variantId
+    }
     const data = await authFetch<CartType>("/orders/cart/items/", {
       method: "POST",
-      body: JSON.stringify({ variant_id: variantId, quantity }),
+      body: JSON.stringify(body),
     })
     setCart(data)
     setIsOpen(true)

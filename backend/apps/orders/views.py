@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder
+from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption
 from .serializers import (
     CartSerializer,
     AddToCartSerializer,
@@ -16,7 +16,7 @@ from .serializers import (
     CheckoutSerializer,
     CustomOrderSerializer,
 )
-from apps.products.models import ProductVariant
+from apps.products.models import ProductVariant, SizeVariant
 
 
 class CheckoutThrottle(ScopedRateThrottle):
@@ -32,6 +32,7 @@ class CartView(APIView):
             "items__variant__size",
             "items__variant__finish",
             "items__variant__frame",
+            "items__size_variant__product__images",
         ).get_or_create(user=request.user)
         return Response(CartSerializer(cart).data)
 
@@ -47,22 +48,70 @@ class CartItemView(APIView):
     def post(self, request):
         serializer = AddToCartSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        variant_id = serializer.validated_data["variant_id"]
+        variant_id = serializer.validated_data.get("variant_id")
+        size_variant_id = serializer.validated_data.get("size_variant_id")
         quantity = serializer.validated_data["quantity"]
+        gift_wrap = serializer.validated_data.get("gift_wrap", False)
+        delivery_type = serializer.validated_data.get("delivery_type", "standard")
+        processing_option = serializer.validated_data.get("processing_option", "")
 
-        try:
-            variant = ProductVariant.objects.select_related("product").get(pk=variant_id)
-        except ProductVariant.DoesNotExist:
-            return Response({"detail": "Variant not found."}, status=status.HTTP_404_NOT_FOUND)
+        variant = None
+        size_variant = None
 
-        if variant.stock < quantity:
-            return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
+        if size_variant_id:
+            try:
+                size_variant = SizeVariant.objects.select_related("product__images").get(pk=size_variant_id, is_active=True)
+            except SizeVariant.DoesNotExist:
+                return Response({"detail": "Size variant not found."}, status=status.HTTP_404_NOT_FOUND)
+        elif variant_id:
+            try:
+                variant = ProductVariant.objects.select_related("product").get(pk=variant_id)
+            except ProductVariant.DoesNotExist:
+                return Response({"detail": "Variant not found."}, status=status.HTTP_404_NOT_FOUND)
+            if variant.stock < quantity:
+                return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Resolve gift wrap price from SiteSettings
+        gift_wrap_price = Decimal("0")
+        if gift_wrap:
+            try:
+                from apps.cms.models import SiteSettings
+                setting = SiteSettings.objects.filter(key="gift_wrap_price").first()
+                if setting and setting.value:
+                    gift_wrap_price = Decimal(setting.value)
+            except Exception:
+                pass
 
         cart, _ = Cart.objects.get_or_create(user=request.user)
-        item, created = CartItem.objects.get_or_create(cart=cart, variant=variant, defaults={"quantity": quantity})
-        if not created:
-            item.quantity = F("quantity") + quantity
-            item.save(update_fields=["quantity"])
+
+        defaults = {
+            "quantity": quantity,
+            "gift_wrap": gift_wrap,
+            "gift_wrap_price": gift_wrap_price,
+            "delivery_type": delivery_type,
+            "processing_option": processing_option,
+        }
+
+        if size_variant:
+            item = CartItem.objects.filter(cart=cart, size_variant=size_variant).first()
+            if item:
+                item.quantity = F("quantity") + quantity
+                item.gift_wrap = gift_wrap
+                item.gift_wrap_price = gift_wrap_price
+                item.processing_option = processing_option
+                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "processing_option"])
+            else:
+                CartItem.objects.create(cart=cart, size_variant=size_variant, **defaults)
+        else:
+            item = CartItem.objects.filter(cart=cart, variant=variant).first()
+            if item:
+                item.quantity = F("quantity") + quantity
+                item.gift_wrap = gift_wrap
+                item.gift_wrap_price = gift_wrap_price
+                item.processing_option = processing_option
+                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "processing_option"])
+            else:
+                CartItem.objects.create(cart=cart, variant=variant, **defaults)
 
         cart.refresh_from_db()
         return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
@@ -167,7 +216,23 @@ class CheckoutView(APIView):
             from apps.promo.models import PromoCode
             discount = promo.calculate_discount(subtotal)
 
-        total = subtotal - discount
+        # Delivery price
+        currency = data.get("currency", "USD")
+        req_delivery_type = data.get("delivery_type", "standard")
+        delivery_price = Decimal("0")
+        try:
+            opt = DeliveryOption.objects.filter(slug=req_delivery_type, is_active=True).first()
+            if opt:
+                delivery_price = Decimal(opt.price_gel) if currency == "GEL" else Decimal(opt.price_usd)
+        except Exception:
+            pass
+
+        # Gift wrap total
+        gift_wrap_total = sum(
+            Decimal(item.gift_wrap_price) for item in items_to_process if item.gift_wrap
+        )
+
+        total = subtotal - discount + delivery_price + gift_wrap_total
 
         order = Order.objects.create(
             user=request.user,
@@ -184,6 +249,10 @@ class CheckoutView(APIView):
             promo_code=promo,
             subtotal=subtotal,
             discount=discount,
+            delivery_type=req_delivery_type,
+            delivery_price=delivery_price,
+            gift_wrap_total=gift_wrap_total,
+            currency=currency,
             total=total,
             status="pending",
         )
@@ -201,6 +270,8 @@ class CheckoutView(APIView):
                 frame_label=item.variant.frame.label,
                 price=item.variant.price,
                 quantity=item.quantity,
+                gift_wrap=item.gift_wrap,
+                processing_option=item.processing_option,
             )
 
         OrderStatusHistory.objects.create(order=order, status="pending", changed_by=request.user)
@@ -243,6 +314,44 @@ class OrderDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user).prefetch_related("items", "status_history")
+
+
+class DeliveryOptionListView(APIView):
+    """Public endpoint returning active delivery options."""
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request):
+        from .serializers import DeliveryOptionSerializer
+        opts = DeliveryOption.objects.filter(is_active=True)
+        return Response(DeliveryOptionSerializer(opts, many=True).data)
+
+
+class ShopSettingsPublicView(APIView):
+    """Public endpoint for non-sensitive shop settings (gift_wrap_price etc)."""
+    permission_classes = []
+    authentication_classes = []
+
+    ALLOWED_PUBLIC_KEYS = {"gift_wrap_price"}
+
+    def get(self, request):
+        try:
+            from apps.cms.models import SiteSettings
+            settings = SiteSettings.objects.filter(key__in=self.ALLOWED_PUBLIC_KEYS)
+            return Response({s.key: s.value for s in settings})
+        except Exception:
+            return Response({})
+
+
+class ProcessingOptionListView(APIView):
+    """Public endpoint returning active processing time options (wallpanels)."""
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request):
+        from .serializers import ProcessingOptionSerializer
+        opts = ProcessingOption.objects.filter(is_active=True)
+        return Response(ProcessingOptionSerializer(opts, many=True).data)
 
 
 class CustomOrderCreateView(generics.CreateAPIView):

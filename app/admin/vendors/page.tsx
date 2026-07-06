@@ -25,7 +25,7 @@ function VendorCard({ vendor, onEdit }: { vendor: Vendor; onEdit: () => void }) 
 
   return (
     <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
-      <div className="p-5 border-b border-dp-border flex items-center gap-3">
+      <div className="p-5 border-b border-dp-border flex flex-wrap items-center gap-3">
         <div className="w-10 h-10 rounded-sm bg-dp-accent-cta/10 border border-dp-accent-cta/30 flex items-center justify-center shrink-0">
           <Store size={18} className="text-dp-accent-cta" />
         </div>
@@ -33,16 +33,18 @@ function VendorCard({ vendor, onEdit }: { vendor: Vendor; onEdit: () => void }) 
           <p className="font-display text-lg text-dp-text-primary truncate">{vendor.name}</p>
           <p className="text-[11px] text-dp-text-tertiary">@{vendor.slug} · {vendor.owner_email}</p>
         </div>
-        <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-sm border border-dp-accent-cta/30 text-dp-accent-cta bg-dp-accent-cta/5">
-          Vendor
-        </span>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex items-center gap-1 text-[11px] font-semibold text-dp-text-secondary hover:text-dp-accent-cta transition-colors"
-        >
-          <Pencil size={12} /> Edit storefront
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-sm border border-dp-accent-cta/30 text-dp-accent-cta bg-dp-accent-cta/5">
+            Vendor
+          </span>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1 text-[11px] font-semibold text-dp-text-secondary hover:text-dp-accent-cta transition-colors"
+          >
+            <Pencil size={12} /> Edit storefront
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 divide-x divide-y divide-dp-border">
@@ -81,9 +83,9 @@ export default function AdminVendorsPage(): React.ReactElement {
   }, [])
 
   return (
-    <div className="p-8 flex flex-col gap-6">
+    <div className="p-4 sm:p-8 flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-4xl text-dp-text-primary">Vendors</h1>
+        <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">Vendors</h1>
         <p className="text-[13px] text-dp-text-tertiary mt-1">Manage vendor accounts and view their individual performance.</p>
       </div>
 

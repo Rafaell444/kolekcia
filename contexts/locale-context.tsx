@@ -148,31 +148,26 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
   const [detectedCountry, setDetectedCountry] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
 
-  // On mount: restore saved prefs, fetch live rates, detect from IP
+  // On mount: restore saved language pref, always geo-detect currency from IP
   useEffect(() => {
     const savedLang = localStorage.getItem(LS_LANG_KEY) as Language | null
-    const savedCur  = localStorage.getItem(LS_CUR_KEY) as Currency | null
 
     if (savedLang && LANGUAGES.some((l) => l.code === savedLang)) {
       setLangState(savedLang)
-    }
-    if (savedCur && CURRENCIES.some((c) => c.code === savedCur)) {
-      setCurState(savedCur)
     }
 
     // Fetch live rates (uses cache if fresh, falls back to static if no URL set)
     fetchLiveRates().then(setRates)
 
-    // Only run geo-detection on truly first visit (no stored prefs)
-    if (!savedLang && !savedCur) {
-      const browserLang = navigator.language ?? "en"
-      detectFromIp(browserLang)
-    }
+    // Always geo-detect currency — users cannot override it manually
+    const browserLang = navigator.language ?? "en"
+    detectFromIp(browserLang, savedLang !== null)
 
     setHydrated(true)
   }, [])
 
-  async function detectFromIp(browserLang: string) {
+  // skipLang = true when user has already saved a language preference
+  async function detectFromIp(browserLang: string, skipLang = false) {
     try {
       const res = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(4000) })
       if (!res.ok) throw new Error("geo failed")
@@ -180,16 +175,18 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
       const cc: string = (data.country_code ?? "").toUpperCase()
       const apiCur: string = (data.currency ?? "").toUpperCase()
       setDetectedCountry(cc)
-      const lang = detectLanguage(cc, browserLang)
-      const cur  = detectCurrency(cc, apiCur)
-      setLangState(lang)
+      if (!skipLang) {
+        const lang = detectLanguage(cc, browserLang)
+        setLangState(lang)
+      }
+      const cur = detectCurrency(cc, apiCur)
       setCurState(cur)
-      // Don't persist — user hasn't explicitly chosen yet, so next visit re-detects
     } catch {
-      // Fallback: use browser language
-      const browserLang2 = navigator.language ?? "en"
-      if (browserLang2.startsWith("ka")) setLangState("ka")
-      else if (browserLang2.startsWith("ru")) setLangState("ru")
+      if (!skipLang) {
+        const bl = navigator.language ?? "en"
+        if (bl.startsWith("ka")) setLangState("ka")
+        else if (bl.startsWith("ru")) setLangState("ru")
+      }
     }
   }
 
@@ -198,9 +195,10 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(LS_LANG_KEY, lang)
   }, [])
 
+  // Currency is set programmatically (e.g. forced by checkout shipping country).
+  // It is intentionally NOT saved to localStorage so the next session re-geo-detects.
   const setCurrency = useCallback((cur: Currency) => {
     setCurState(cur)
-    localStorage.setItem(LS_CUR_KEY, cur)
   }, [])
 
   const formatPrice = useCallback(

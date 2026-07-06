@@ -41,13 +41,13 @@ export default function AdminUsersPage(): React.ReactElement {
   )
 
   return (
-    <div className="p-8 flex flex-col gap-6">
+    <div className="p-4 sm:p-8 flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-4xl text-dp-text-primary">{pageTitle}</h1>
+        <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">{pageTitle}</h1>
         <p className="text-[13px] text-dp-text-tertiary mt-1">{pageDesc}</p>
       </div>
 
-      <div className="relative w-72">
+      <div className="relative w-full sm:w-72">
         <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary" />
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search users…"
           className="w-full pl-8 pr-4 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors" />

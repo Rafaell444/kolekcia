@@ -60,9 +60,9 @@ export default function AdminDashboard(): React.ReactElement {
   const title = isVendor ? adminUser?.vendor?.name ?? "My Store" : "Platform Overview"
 
   return (
-    <div className="p-8 flex flex-col gap-8">
+    <div className="p-4 sm:p-8 flex flex-col gap-8">
       <div>
-        <h1 className="font-display text-4xl text-dp-text-primary">{title}</h1>
+        <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">{title}</h1>
         <p className="text-[13px] text-dp-text-tertiary mt-1">
           {isVendor ? "Your store's performance at a glance." : "All vendors' data combined."}
         </p>

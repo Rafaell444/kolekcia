@@ -1,11 +1,27 @@
 from rest_framework import serializers
-from .models import Conversation, Message
+from .models import Conversation, Message, MessageAttachment
+
+
+class MessageAttachmentSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MessageAttachment
+        fields = ("id", "url", "media_type", "original_name")
+
+    def get_url(self, obj):
+        request = self.context.get("request")
+        if request and obj.file:
+            return request.build_absolute_uri(obj.file.url)
+        return obj.file.url if obj.file else ""
 
 
 class MessageSerializer(serializers.ModelSerializer):
+    attachments = MessageAttachmentSerializer(many=True, read_only=True)
+
     class Meta:
         model = Message
-        fields = ("id", "from_role", "text", "sent_at", "read")
+        fields = ("id", "from_role", "text", "sent_at", "read", "attachments")
         read_only_fields = ("id", "from_role", "sent_at", "read")
 
 

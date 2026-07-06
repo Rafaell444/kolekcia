@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Conversation, Message
+from .models import Conversation, Message, MessageAttachment
 from .serializers import ConversationSerializer, MessageSerializer
 
 
@@ -16,7 +16,9 @@ class ConversationListView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Conversation.objects.prefetch_related("messages", "product__images").select_related("vendor", "product")
+        qs = Conversation.objects.prefetch_related(
+            "messages__attachments", "product__images"
+        ).select_related("vendor", "product")
         if self.request.user.is_staff:
             return qs.all()
         if _is_vendor(self.request.user):
@@ -60,7 +62,9 @@ class ConversationDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Conversation.objects.prefetch_related("messages", "product__images").select_related("vendor", "product")
+        qs = Conversation.objects.prefetch_related(
+            "messages__attachments", "product__images"
+        ).select_related("vendor", "product")
         if self.request.user.is_staff:
             return qs.all()
         if _is_vendor(self.request.user):
@@ -101,9 +105,27 @@ class SendMessageView(APIView):
 
         from_role = "admin" if is_admin_side else "customer"
         text = request.data.get("text", "").strip()
-        if not text:
-            return Response({"detail": "Message text is required."}, status=status.HTTP_400_BAD_REQUEST)
+        files = request.FILES.getlist("files")
+
+        if not text and not files:
+            return Response({"detail": "Message text or attachment is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         msg = Message.objects.create(conversation=conv, from_role=from_role, text=text)
+
+        for f in files:
+            mime = f.content_type or ""
+            if mime.startswith("image/"):
+                media_type = "image"
+            elif mime.startswith("video/"):
+                media_type = "video"
+            else:
+                media_type = "file"
+            MessageAttachment.objects.create(
+                message=msg,
+                file=f,
+                media_type=media_type,
+                original_name=f.name,
+            )
+
         conv.save()
-        return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+        return Response(MessageSerializer(msg, context={"request": request}).data, status=status.HTTP_201_CREATED)

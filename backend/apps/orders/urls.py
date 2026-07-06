@@ -7,6 +7,9 @@ from .views import (
     OrderListView,
     OrderDetailView,
     CustomOrderCreateView,
+    DeliveryOptionListView,
+    ProcessingOptionListView,
+    ShopSettingsPublicView,
 )
 
 urlpatterns = [
@@ -18,4 +21,7 @@ urlpatterns = [
     path("", OrderListView.as_view(), name="order-list"),
     path("<uuid:pk>/", OrderDetailView.as_view(), name="order-detail"),
     path("custom/", CustomOrderCreateView.as_view(), name="custom-order"),
+    path("delivery-options/", DeliveryOptionListView.as_view(), name="delivery-options"),
+    path("processing-options/", ProcessingOptionListView.as_view(), name="processing-options"),
+    path("shop-settings/", ShopSettingsPublicView.as_view(), name="shop-settings-public"),
 ]

@@ -33,6 +33,14 @@ from .views import (
     AdminAuditLogView,
     AdminBlogPostListView,
     AdminBlogPostDetailView,
+    AdminDeliveryOptionListView,
+    AdminDeliveryOptionDetailView,
+    AdminProcessingOptionListView,
+    AdminProcessingOptionDetailView,
+    AdminProductMediaView,
+    AdminSizeVariantView,
+    AdminProductExportView,
+    AdminProductImportView,
 )
 
 urlpatterns = [
@@ -45,6 +53,8 @@ urlpatterns = [
     path("products/", AdminProductListView.as_view(), name="admin-products"),
     path("products/<int:pk>/", AdminProductDetailView.as_view(), name="admin-product-detail"),
     path("products/variants/<int:pk>/stock/", AdminProductStockView.as_view(), name="admin-product-stock"),
+    path("products/media/", AdminProductMediaView.as_view(), name="admin-product-media"),
+    path("products/media/<int:image_id>/", AdminProductMediaView.as_view(), name="admin-product-media-detail"),
     path("categories/", AdminCategoryListView.as_view(), name="admin-categories"),
     path("categories/<int:pk>/", AdminCategoryDetailView.as_view(), name="admin-category-detail"),
     path("artists/", AdminArtistListView.as_view(), name="admin-artists"),
@@ -69,4 +79,12 @@ urlpatterns = [
     path("blog/", AdminBlogPostListView.as_view(), name="admin-blog"),
     path("blog/<int:pk>/", AdminBlogPostDetailView.as_view(), name="admin-blog-detail"),
     path("audit-log/", AdminAuditLogView.as_view(), name="admin-audit-log"),
+    path("delivery-options/", AdminDeliveryOptionListView.as_view(), name="admin-delivery-options"),
+    path("delivery-options/<int:pk>/", AdminDeliveryOptionDetailView.as_view(), name="admin-delivery-option-detail"),
+    path("processing-options/", AdminProcessingOptionListView.as_view(), name="admin-processing-options"),
+    path("processing-options/<int:pk>/", AdminProcessingOptionDetailView.as_view(), name="admin-processing-option-detail"),
+    path("size-variants/", AdminSizeVariantView.as_view(), name="admin-size-variants"),
+    path("size-variants/<int:sv_id>/", AdminSizeVariantView.as_view(), name="admin-size-variant-detail"),
+    path("products/export/", AdminProductExportView.as_view(), name="admin-product-export"),
+    path("products/import/", AdminProductImportView.as_view(), name="admin-product-import"),
 ]

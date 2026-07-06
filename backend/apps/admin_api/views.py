@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .permissions import IsAdminUser
+from .permissions import IsAdminUser, IsAdminOrVendor
 from .models import AuditLog
 
 
@@ -284,14 +284,22 @@ class AdminOrderListView(AdminNoPaginationMixin, generics.ListAPIView):
 
 
 class AdminOrderUpdateView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
+
+    def _get_order_qs(self, request):
+        from apps.orders.models import Order
+        qs = Order.objects.prefetch_related("items__vendor", "status_history")
+        if not request.user.is_staff:
+            # Vendors can only see orders that contain at least one of their products
+            vendor = request.user.vendor_profile
+            qs = qs.filter(items__vendor=vendor).distinct()
+        return qs
 
     def get(self, request, pk):
-        from apps.orders.models import Order
         from apps.orders.serializers import OrderSerializer
         try:
-            order = Order.objects.prefetch_related("items", "status_history").get(pk=pk)
-        except Order.DoesNotExist:
+            order = self._get_order_qs(request).get(pk=pk)
+        except Exception:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(OrderSerializer(order).data)
 
@@ -299,15 +307,17 @@ class AdminOrderUpdateView(APIView):
         from apps.orders.models import Order, OrderStatusHistory
         from apps.orders.serializers import OrderSerializer
         try:
-            order = Order.objects.get(pk=pk)
-        except Order.DoesNotExist:
+            order = self._get_order_qs(request).get(pk=pk)
+        except Exception:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
         new_status = request.data.get("status")
         note = request.data.get("note", "")
         tracking = request.data.get("tracking_code")
 
-        if new_status:
+        prev_status = order.status
+
+        if new_status and new_status != prev_status:
             order.status = new_status
             OrderStatusHistory.objects.create(order=order, status=new_status, note=note, changed_by=request.user)
             log_action(request.user, "order_status_change", "Order", order.pk, {"new_status": new_status})
@@ -316,7 +326,49 @@ class AdminOrderUpdateView(APIView):
             order.tracking_code = tracking
 
         order.save()
+
+        # Send shipping confirmation email when status moves to "shipped"
+        if new_status == "shipped" and prev_status != "shipped":
+            _send_shipping_email(order)
+
         return Response(OrderSerializer(order).data)
+
+
+def _send_shipping_email(order):
+    """Send a shipping confirmation email to the customer."""
+    try:
+        from django.core.mail import send_mail
+        from django.conf import settings
+
+        tracking_info = (
+            f"\n\nTracking number: {order.tracking_code}"
+            if order.tracking_code else ""
+        )
+        items_list = "\n".join(
+            f"  • {item.product_title} × {item.quantity}"
+            for item in order.items.all()
+        )
+        body = (
+            f"Hi {order.shipping_name},\n\n"
+            f"Great news — your Kolekcia order {order.order_number} has been shipped!{tracking_info}\n\n"
+            f"Items in your order:\n{items_list}\n\n"
+            f"Shipping to:\n"
+            f"  {order.shipping_line1}"
+            + (f", {order.shipping_line2}" if order.shipping_line2 else "")
+            + f"\n  {order.shipping_city}, {order.shipping_state} {order.shipping_zip}\n"
+            f"  {order.shipping_country}\n\n"
+            f"Thank you for shopping with Kolekcia!\n"
+            f"— The Kolekcia Team"
+        )
+        send_mail(
+            subject=f"Your order {order.order_number} has shipped!",
+            message=body,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@kolekcia.com"),
+            recipient_list=[order.shipping_email],
+            fail_silently=True,
+        )
+    except Exception:
+        pass
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -363,17 +415,76 @@ class AdminProductStockView(APIView):
         except ProductVariant.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        update_fields = []
         new_stock = request.data.get("stock")
-        if new_stock is None:
-            return Response({"detail": "stock is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_stock is not None:
+            old_stock = variant.stock
+            variant.stock = int(new_stock)
+            update_fields.append("stock")
+            log_action(request.user, "stock_update", "ProductVariant", variant.pk, {
+                "product": variant.product.title, "old_stock": old_stock, "new_stock": variant.stock
+            })
+        new_surcharge = request.data.get("surcharge")
+        if new_surcharge is not None:
+            from decimal import Decimal
+            variant.surcharge = Decimal(str(new_surcharge))
+            update_fields.append("surcharge")
+        if not update_fields:
+            return Response({"detail": "stock or surcharge is required."}, status=status.HTTP_400_BAD_REQUEST)
+        variant.save(update_fields=update_fields)
+        return Response({"id": variant.pk, "stock": variant.stock, "surcharge": str(variant.surcharge)})
 
-        old_stock = variant.stock
-        variant.stock = int(new_stock)
-        variant.save(update_fields=["stock"])
-        log_action(request.user, "stock_update", "ProductVariant", variant.pk, {
-            "product": variant.product.title, "old_stock": old_stock, "new_stock": variant.stock
-        })
-        return Response({"id": variant.pk, "stock": variant.stock})
+
+class AdminProductMediaView(APIView):
+    """Upload a video (or image file) to a product's media gallery."""
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        from apps.products.models import Product, ProductImage
+        from apps.products.serializers import ProductImageSerializer
+        product_id = request.data.get("product_id")
+        uploaded_file = request.FILES.get("file")
+        media_type = request.data.get("media_type", "image")
+
+        if not product_id or not uploaded_file:
+            return Response({"detail": "product_id and file are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            product = Product.objects.get(pk=product_id)
+        except Product.DoesNotExist:
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        max_order = product.images.count()
+
+        if media_type == "video":
+            img = ProductImage.objects.create(
+                product=product,
+                video_file=uploaded_file,
+                media_type="video",
+                url="",
+                order=max_order,
+            )
+        else:
+            img = ProductImage.objects.create(
+                product=product,
+                url="",
+                video_file=uploaded_file,
+                media_type="image",
+                order=max_order,
+            )
+
+        return Response(ProductImageSerializer(img, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, image_id):
+        from apps.products.models import ProductImage
+        try:
+            img = ProductImage.objects.get(pk=image_id)
+            if img.video_file:
+                img.video_file.delete(save=False)
+            img.delete()
+        except ProductImage.DoesNotExist:
+            pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ── Categories ────────────────────────────────────────────────────────────────
@@ -760,3 +871,349 @@ class AdminBlogPostDetailView(APIView):
         post.delete()
         log_action(request.user, "delete", "blog_post", pk, {"title": title})
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Delivery options ──────────────────────────────────────────────────────────
+
+class AdminDeliveryOptionListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.orders.models import DeliveryOption
+        from apps.orders.serializers import DeliveryOptionSerializer
+        opts = DeliveryOption.objects.all()
+        return Response(DeliveryOptionSerializer(opts, many=True).data)
+
+    def post(self, request):
+        from apps.orders.models import DeliveryOption
+        from apps.orders.serializers import DeliveryOptionSerializer
+        ser = DeliveryOptionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        opt = ser.save()
+        return Response(DeliveryOptionSerializer(opt).data, status=status.HTTP_201_CREATED)
+
+
+class AdminDeliveryOptionDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        from apps.orders.models import DeliveryOption
+        from apps.orders.serializers import DeliveryOptionSerializer
+        try:
+            opt = DeliveryOption.objects.get(pk=pk)
+        except DeliveryOption.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        ser = DeliveryOptionSerializer(opt, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(DeliveryOptionSerializer(opt).data)
+
+    def delete(self, request, pk):
+        from apps.orders.models import DeliveryOption
+        try:
+            DeliveryOption.objects.get(pk=pk).delete()
+        except DeliveryOption.DoesNotExist:
+            pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Processing options ─────────────────────────────────────────────────────────
+
+class AdminProcessingOptionListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.orders.models import ProcessingOption
+        from apps.orders.serializers import ProcessingOptionSerializer
+        opts = ProcessingOption.objects.all()
+        return Response(ProcessingOptionSerializer(opts, many=True).data)
+
+    def post(self, request):
+        from apps.orders.models import ProcessingOption
+        from apps.orders.serializers import ProcessingOptionSerializer
+        ser = ProcessingOptionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        opt = ser.save()
+        return Response(ProcessingOptionSerializer(opt).data, status=status.HTTP_201_CREATED)
+
+
+class AdminProcessingOptionDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        from apps.orders.models import ProcessingOption
+        from apps.orders.serializers import ProcessingOptionSerializer
+        try:
+            opt = ProcessingOption.objects.get(pk=pk)
+        except ProcessingOption.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        ser = ProcessingOptionSerializer(opt, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ProcessingOptionSerializer(opt).data)
+
+    def delete(self, request, pk):
+        from apps.orders.models import ProcessingOption
+        try:
+            ProcessingOption.objects.get(pk=pk).delete()
+        except ProcessingOption.DoesNotExist:
+            pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Size variants ──────────────────────────────────────────────────────────────
+
+class AdminSizeVariantView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        from apps.products.models import Product, SizeVariant
+        from apps.products.serializers import SizeVariantSerializer
+        product_id = request.data.get("product_id")
+        if not product_id:
+            return Response({"detail": "product_id required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            product = Product.objects.get(pk=product_id)
+        except Product.DoesNotExist:
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+        ser = SizeVariantSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        sv = SizeVariant.objects.create(product=product, **ser.validated_data)
+        return Response(SizeVariantSerializer(sv).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, sv_id):
+        from apps.products.models import SizeVariant
+        try:
+            SizeVariant.objects.get(pk=sv_id).delete()
+        except SizeVariant.DoesNotExist:
+            pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Product export / import ────────────────────────────────────────────────────
+
+class AdminProductExportView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        try:
+            import openpyxl
+        except ImportError:
+            return Response({"detail": "openpyxl not installed."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        from apps.products.models import Product, SizeVariant
+        from django.http import HttpResponse
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Products"
+        headers = [
+            "id", "title", "description", "material",
+            "base_price_usd", "price_gel", "price_eur", "price_gbp",
+            "categories", "allow_custom_size",
+            "status", "is_limited", "is_sale", "is_new", "is_exclusive",
+            "tags", "vendor_slug",
+            "image_url_1", "image_url_2", "image_url_3",
+            "size_1_label", "size_1_price",
+            "size_2_label", "size_2_price",
+            "size_3_label", "size_3_price",
+            "size_4_label", "size_4_price",
+            "size_5_label", "size_5_price",
+        ]
+        ws.append(headers)
+
+        products = Product.objects.prefetch_related("images", "size_variants", "categories", "vendor").filter(status="active")
+        for p in products:
+            images = list(p.images.values_list("url", flat=True))[:3]
+            while len(images) < 3:
+                images.append("")
+            svs = list(p.size_variants.filter(is_active=True).values_list("label", "price_usd"))[:5]
+            while len(svs) < 5:
+                svs.append(("", ""))
+            flat_svs = []
+            for lbl, pr in svs:
+                flat_svs.extend([lbl, str(pr) if pr is not None else ""])
+            rp = p.regional_prices or {}
+            row = [
+                p.id, p.title, p.description, p.material,
+                str(p.base_price),
+                str(rp.get("GEL", {}).get("price", "") or ""),
+                str(rp.get("EUR", {}).get("price", "") or ""),
+                str(rp.get("GBP", {}).get("price", "") or ""),
+                ",".join(p.categories.values_list("slug", flat=True)),
+                "yes" if p.allow_custom_size else "no",
+                p.status,
+                "yes" if p.is_limited else "no",
+                "yes" if p.is_sale else "no",
+                "yes" if p.is_new else "no",
+                "yes" if p.is_exclusive else "no",
+                ",".join(p.tags or []),
+                p.vendor.slug if p.vendor else "",
+            ] + images + flat_svs
+            ws.append(row)
+
+        from io import BytesIO
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        response = HttpResponse(
+            buf.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="products_export.xlsx"'
+        return response
+
+
+class AdminProductImportView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        """Download blank template."""
+        try:
+            import openpyxl
+        except ImportError:
+            return Response({"detail": "openpyxl not installed."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        from django.http import HttpResponse
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Products"
+        headers = [
+            "title", "description", "material",
+            "base_price_usd", "price_gel", "price_eur", "price_gbp",
+            "categories", "allow_custom_size",
+            "status", "is_limited", "is_sale", "is_new", "is_exclusive",
+            "tags", "vendor_slug",
+            "image_url_1", "image_url_2", "image_url_3",
+            "size_1_label", "size_1_price",
+            "size_2_label", "size_2_price",
+            "size_3_label", "size_3_price",
+            "size_4_label", "size_4_price",
+            "size_5_label", "size_5_price",
+        ]
+        ws.append(headers)
+        # Add an example row
+        ws.append([
+            "Example Product", "A beautiful piece.", "Canvas",
+            "49.99", "135.00", "46.00", "39.50",
+            "figures", "no",
+            "active", "no", "no", "yes", "no",
+            "art,modern", "example-vendor",
+            "https://example.com/img1.jpg", "", "",
+            "S", "39.99", "M", "49.99", "L", "59.99", "", "", "", "",
+        ])
+        from io import BytesIO
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        response = HttpResponse(
+            buf.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="products_template.xlsx"'
+        return response
+
+    def post(self, request):
+        """Import products from uploaded xlsx."""
+        try:
+            import openpyxl
+        except ImportError:
+            return Response({"detail": "openpyxl not installed."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        from apps.products.models import Product, ProductImage, SizeVariant, Category
+        from apps.vendors.models import Vendor
+
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"detail": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            wb = openpyxl.load_workbook(file)
+        except Exception as e:
+            return Response({"detail": f"Invalid xlsx: {e}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return Response({"detail": "Empty file."}, status=status.HTTP_400_BAD_REQUEST)
+
+        headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+        data_rows = rows[1:]
+        created_count = 0
+        errors = []
+
+        def cell(row, name):
+            try:
+                idx = headers.index(name)
+                return row[idx] if idx < len(row) else None
+            except ValueError:
+                return None
+
+        def yn(val):
+            return str(val).strip().lower() in ("yes", "true", "1")
+
+        for i, row in enumerate(data_rows, start=2):
+            title = cell(row, "title")
+            if not title:
+                continue
+            try:
+                from decimal import Decimal as D
+                base_price = D(str(cell(row, "base_price_usd") or "0"))
+                regional_prices = {}
+                for cur, col in [("GEL", "price_gel"), ("EUR", "price_eur"), ("GBP", "price_gbp")]:
+                    v = cell(row, col)
+                    if v:
+                        regional_prices[cur] = {"price": str(v)}
+
+                tags_raw = cell(row, "tags") or ""
+                tags = [t.strip() for t in str(tags_raw).split(",") if str(t).strip()]
+
+                vendor_slug = cell(row, "vendor_slug")
+                vendor = Vendor.objects.filter(slug=vendor_slug).first() if vendor_slug else None
+
+                cat_raw = cell(row, "categories") or ""
+                cat_slugs = [s.strip() for s in str(cat_raw).split(",") if str(s).strip()]
+                cats = list(Category.objects.filter(slug__in=cat_slugs))
+                primary_cat = cats[0] if cats else None
+
+                product = Product.objects.create(
+                    title=str(title),
+                    description=str(cell(row, "description") or ""),
+                    material=str(cell(row, "material") or ""),
+                    base_price=base_price,
+                    regional_prices=regional_prices,
+                    allow_custom_size=yn(cell(row, "allow_custom_size")),
+                    status=str(cell(row, "status") or "active"),
+                    is_limited=yn(cell(row, "is_limited")),
+                    is_sale=yn(cell(row, "is_sale")),
+                    is_new=yn(cell(row, "is_new")),
+                    is_exclusive=yn(cell(row, "is_exclusive")),
+                    tags=tags,
+                    category=primary_cat,
+                    vendor=vendor,
+                )
+                if cats:
+                    product.categories.set(cats)
+
+                for n in range(1, 4):
+                    url = cell(row, f"image_url_{n}")
+                    if url:
+                        ProductImage.objects.create(product=product, url=str(url), order=n - 1)
+
+                for n in range(1, 6):
+                    lbl = cell(row, f"size_{n}_label")
+                    pr = cell(row, f"size_{n}_price")
+                    if lbl and pr:
+                        try:
+                            SizeVariant.objects.create(
+                                product=product,
+                                label=str(lbl),
+                                price_usd=D(str(pr)),
+                                sort_order=n - 1,
+                            )
+                        except Exception:
+                            pass
+
+                created_count += 1
+            except Exception as e:
+                errors.append({"row": i, "error": str(e)})
+
+        return Response({"created": created_count, "errors": errors}, status=status.HTTP_200_OK)

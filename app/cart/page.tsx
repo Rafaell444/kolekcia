@@ -9,6 +9,7 @@ import { useCart } from "@/contexts/cart-context"
 import { useAuth } from "@/contexts/auth-context"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
 import { useLocale } from "@/contexts/locale-context"
+import { CartItemExtras } from "@/components/cart/CartItemExtras"
 
 export default function CartPage(): React.ReactElement {
   useRequireAuth()
@@ -20,6 +21,10 @@ export default function CartPage(): React.ReactElement {
   const [promoLoading, setPromoLoading] = useState(false)
 
   const subtotal = cart ? parseFloat(cart.subtotal) : 0
+  const giftWrapTotal = cart?.items.reduce(
+    (sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0),
+    0,
+  ) ?? 0
   const shipping = subtotal >= 49 ? 0 : 7.99
   const total = subtotal + shipping
 
@@ -81,8 +86,11 @@ export default function CartPage(): React.ReactElement {
                   <div className="flex-1 min-w-0">
                     <p className="text-[14px] font-bold text-dp-text-primary">{item.product_title}</p>
                     <p className="text-[12px] text-dp-text-secondary mt-1">
-                      {item.variant.size.label} · {item.variant.finish.label} · {item.variant.frame.label}
+                      {item.size_label
+                        ? item.size_label
+                        : `${item.variant?.size?.label ?? ""} · ${item.variant?.finish?.label ?? ""} · ${item.variant?.frame?.label ?? ""}`}
                     </p>
+                    <CartItemExtras item={item} formatPrice={formatPrice} />
                     <div className="flex items-center gap-3 mt-3">
                       <div className="flex items-center border border-dp-border rounded-sm overflow-hidden text-[13px]">
                         <button
@@ -149,6 +157,11 @@ export default function CartPage(): React.ReactElement {
               <div className="flex justify-between text-[13px] text-dp-text-secondary">
                 <span>Subtotal</span><span>{formatPrice(subtotal)}</span>
               </div>
+              {giftWrapTotal > 0 && (
+                <div className="flex justify-between text-[13px] text-dp-text-secondary">
+                  <span>Gift wrapping</span><span>+{formatPrice(giftWrapTotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-[13px] text-dp-text-secondary">
                 <span>Shipping</span><span>{shipping === 0 ? "Free" : formatPrice(shipping)}</span>
               </div>

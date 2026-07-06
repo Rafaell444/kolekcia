@@ -5,6 +5,7 @@ import Link from "next/link"
 import { X, ShoppingCart, Minus, Plus, Trash2, ArrowRight, Package } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
 import { useLocale } from "@/contexts/locale-context"
+import { CartItemExtras } from "@/components/cart/CartItemExtras"
 
 export default function FastCart() {
   const { cart, isOpen, closeCart, removeItem, updateQuantity, loading } = useCart()
@@ -129,22 +130,30 @@ export default function FastCart() {
                       {item.product_title}
                     </p>
                     <div className="flex flex-wrap gap-1">
-                      {item.variant.size?.label && (
+                      {/* New size_variant label */}
+                      {item.size_label && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-tertiary">
+                          {item.size_label}
+                        </span>
+                      )}
+                      {!item.size_label && item.variant?.size?.label && (
                         <span className="text-[10px] px-1.5 py-0.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-tertiary">
                           {item.variant.size.label}
                         </span>
                       )}
-                      {item.variant.finish?.label && (
+                      {item.variant?.finish?.label && (
                         <span className="text-[10px] px-1.5 py-0.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-tertiary">
                           {item.variant.finish.label}
                         </span>
                       )}
-                      {item.variant.frame?.label && item.variant.frame.label !== "No Frame" && (
+                      {item.variant?.frame?.label && item.variant.frame.label !== "No Frame" && (
                         <span className="text-[10px] px-1.5 py-0.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-tertiary">
                           {item.variant.frame.label}
                         </span>
                       )}
                     </div>
+
+                    <CartItemExtras item={item} formatPrice={formatPrice} compact />
 
                     <div className="flex items-center justify-between mt-auto">
                       {/* Qty controls */}

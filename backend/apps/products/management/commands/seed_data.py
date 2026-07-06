@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from apps.products.models import Category, Artist, Product, ProductImage, ProductVariant, PosterSize, PosterFinish, PosterFrame
+from apps.products.models import Category, Artist, Product, ProductImage, ProductVariant, SizeVariant, PosterSize, PosterFinish, PosterFrame
 from apps.cms.models import HeroSlide, FAQ
 from apps.gamification.models import Badge, XPRule
 
@@ -13,6 +13,7 @@ class Command(BaseCommand):
         self._seed_categories()
         self._seed_artists()
         self._seed_products()
+        self._seed_processing_options()
         self._sync_product_vendors()
         self._sync_tenants()
         self._seed_cms()
@@ -23,6 +24,7 @@ class Command(BaseCommand):
         from apps.products.models import Review, WishlistItem
         WishlistItem.objects.all().delete()
         Review.objects.all().delete()
+        SizeVariant.objects.all().delete()
         ProductVariant.objects.all().delete()
         ProductImage.objects.all().delete()
         Product.objects.all().delete()
@@ -135,49 +137,173 @@ class Command(BaseCommand):
         self.stdout.write("  Artists seeded.")
 
     def _seed_products(self):
-        products_data = [
-            # Figures — Ryo Tanabe
-            ("Cyber Samurai", "ryo_tanabe", "figures", 39.99, None, True, False, False, False, 4.7, 987, ["Figure", "Samurai", "Cyberpunk"], "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop"),
-            ("Neon Ronin", "ryo_tanabe", "figures", 34.99, 44.99, False, True, True, False, 4.8, 654, ["Figure", "Ronin", "Neon"], "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop"),
-            ("Ghost Protocol", "ryo_tanabe", "figures", 44.99, None, False, False, False, True, 4.9, 432, ["Figure", "Ghost", "Limited"], "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop"),
-            ("Oni Guardian", "ryo_tanabe", "figures", 49.99, None, True, False, True, True, 5.0, 321, ["Figure", "Oni", "Exclusive"], "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop"),
-            # Wallpanels — Alex Tanaka
-            ("Midnight Circuit", "alex_tanaka", "wallpanels", 34.99, None, True, False, False, False, 4.6, 876, ["Wallpanel", "Circuit", "Cyberpunk"], "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop"),
-            ("Aurora Drift", "alex_tanaka", "wallpanels", 49.99, None, False, False, False, True, 4.9, 2108, ["Wallpanel", "Aurora", "Exclusive"], "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop"),
-            ("Void Horizon", "alex_tanaka", "wallpanels", 39.99, 49.99, False, True, True, False, 4.7, 765, ["Wallpanel", "Space", "Sale"], "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop"),
-            ("Crystal Forest", "alex_tanaka", "wallpanels", 29.99, 34.99, False, True, False, False, 4.5, 543, ["Wallpanel", "Forest", "Nature"], "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&h=840&fit=crop"),
+        from decimal import Decimal
+
+        figures_cat = Category.objects.get(slug="figures")
+        wallpanels_cat = Category.objects.get(slug="wallpanels")
+
+        # ── Figures (Ryo Tanabe) ───────────────────────────────────────────────
+        # Each tuple: (title, base_price_usd, orig_price, is_limited, is_sale, is_new, is_exclusive,
+        #              allow_custom_size, rating, review_count, tags, description, material,
+        #              image_url, regional_prices,
+        #              size_variants [(label, price_usd)])
+        figure_products = [
+            (
+                "Cyber Samurai",
+                39.99, None, True, False, False, False, True,
+                4.7, 987, ["Figure", "Samurai", "Cyberpunk"],
+                "A battle-hardened cyber-samurai cast in zinc alloy with chrome-plated armour details. Every panel edge is hand-filed for razor precision. Display on any flat surface — no stand required.",
+                "Zinc Alloy with Chrome Plating",
+                "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop",
+                {"GEL": {"price": "109.00"}, "EUR": {"price": "37.50"}, "GBP": {"price": "32.00"}},
+                [("S (15 cm)", "39.99"), ("M (22 cm)", "54.99"), ("L (30 cm)", "79.99"), ("XL (40 cm)", "109.99")],
+            ),
+            (
+                "Neon Ronin",
+                34.99, 44.99, False, True, True, False, True,
+                4.8, 654, ["Figure", "Ronin", "Neon"],
+                "Roaming the neon-lit ruins of a collapsed city, this ronin figure glows under UV light thanks to our phosphorescent resin inlay technique. A fan favourite since its debut drop.",
+                "Zinc Alloy with UV-reactive Resin Inlay",
+                "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop",
+                {"GEL": {"price": "95.00"}, "EUR": {"price": "32.50"}, "GBP": {"price": "27.50"}},
+                [("S (15 cm)", "34.99"), ("M (22 cm)", "49.99"), ("L (30 cm)", "69.99")],
+            ),
+            (
+                "Ghost Protocol",
+                44.99, None, False, False, False, True, True,
+                4.9, 432, ["Figure", "Ghost", "Exclusive"],
+                "An exclusive stealth operative rendered in matte black titanium finish. Micro-engraved tactical vest details visible under magnification. Only 200 units ever produced.",
+                "Titanium-coated Zinc Alloy",
+                "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop",
+                {"GEL": {"price": "122.00"}, "EUR": {"price": "41.50"}, "GBP": {"price": "35.50"}},
+                [("S (15 cm)", "44.99"), ("M (22 cm)", "64.99"), ("L (30 cm)", "89.99"), ("XL (40 cm)", "124.99")],
+            ),
+            (
+                "Oni Guardian",
+                49.99, None, True, False, True, True, False,
+                5.0, 321, ["Figure", "Oni", "Exclusive"],
+                "The guardian of the mountain gate — sculpted in hand-patinated brass alloy with real copper oxide weathering applied by the artist. A limited-run collector's centrepiece.",
+                "Brass Alloy with Copper Oxide Patina",
+                "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop",
+                {"GEL": {"price": "135.00"}, "EUR": {"price": "46.00"}, "GBP": {"price": "39.50"}},
+                [("S (18 cm)", "49.99"), ("M (25 cm)", "69.99"), ("L (35 cm)", "99.99")],
+            ),
         ]
 
-        default_size = PosterSize.objects.get(id="m")
-        default_finish = PosterFinish.objects.get(id="matte")
-        default_frame = PosterFrame.objects.get(id="none")
+        # ── Wallpanels (Alex Tanaka) ───────────────────────────────────────────
+        wallpanel_products = [
+            (
+                "Midnight Circuit",
+                34.99, None, True, False, False, False, False,
+                4.6, 876, ["Wallpanel", "Circuit", "Cyberpunk"],
+                "An intricate circuit-board relief etched at 0.3 mm depth across the full panel surface. UV-printed cyan traces glow under black light. Ships flat with hidden keyhole mounts.",
+                "Aluminium Composite, UV-cure Inks",
+                "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop",
+                {"GEL": {"price": "95.00"}, "EUR": {"price": "32.50"}, "GBP": {"price": "27.50"}},
+                [("40×60 cm", "34.99"), ("60×90 cm", "59.99"), ("80×120 cm", "89.99"), ("100×150 cm", "129.99")],
+            ),
+            (
+                "Aurora Drift",
+                49.99, None, False, False, False, True, False,
+                4.9, 2108, ["Wallpanel", "Aurora", "Exclusive"],
+                "Sweeping northern-lights gradient captured in 12-layer UV relief printing. The panel shifts colour as viewing angle changes — from emerald to violet — thanks to our iridescent base coat.",
+                "Aluminium Composite, Iridescent UV-cure Inks",
+                "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop",
+                {"GEL": {"price": "135.00"}, "EUR": {"price": "46.00"}, "GBP": {"price": "39.50"}},
+                [("40×60 cm", "49.99"), ("60×90 cm", "79.99"), ("80×120 cm", "119.99"), ("100×150 cm", "169.99")],
+            ),
+            (
+                "Void Horizon",
+                39.99, 49.99, False, True, True, False, True,
+                4.7, 765, ["Wallpanel", "Space", "Sale"],
+                "A deep-space panorama with raised planetary relief at the horizon line. Matte black background with mirror-polished planet surfaces creates a striking contrast even in low light.",
+                "Aluminium Composite, Mirror-polished Inlay",
+                "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop",
+                {"GEL": {"price": "108.00"}, "EUR": {"price": "36.50"}, "GBP": {"price": "31.50"}},
+                [("40×60 cm", "39.99"), ("60×90 cm", "64.99"), ("80×120 cm", "94.99")],
+            ),
+            (
+                "Crystal Forest",
+                29.99, 34.99, False, True, False, False, True,
+                4.5, 543, ["Wallpanel", "Forest", "Nature"],
+                "Crystalline tree canopy rendered in frosted acrylic over polished aluminium. Morning light refracts through the frosted layer, casting rainbow spectra across surrounding walls.",
+                "Aluminium Composite, Frosted Acrylic Overlay",
+                "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&h=840&fit=crop",
+                {"GEL": {"price": "81.00"}, "EUR": {"price": "27.50"}, "GBP": {"price": "23.50"}},
+                [("40×60 cm", "29.99"), ("60×90 cm", "49.99"), ("80×120 cm", "74.99")],
+            ),
+        ]
 
-        for (title, handle, cat_slug, price, orig_price, is_limited, is_sale, is_new, is_exclusive, rating, review_count, tags, img_url) in products_data:
-            artist = Artist.objects.get(handle=handle)
-            category = Category.objects.get(slug=cat_slug)
-            product = Product.objects.create(
-                title=title,
-                artist=artist,
-                category=category,
-                vendor=artist.vendor,
-                base_price=price,
-                original_price=orig_price,
-                is_limited=is_limited,
-                is_sale=is_sale,
-                is_new=is_new,
-                is_exclusive=is_exclusive,
-                rating=rating,
-                review_count=review_count,
-                tags=tags,
-            )
-            ProductImage.objects.create(product=product, url=img_url, order=0)
-            ProductVariant.objects.create(product=product, size=default_size, finish=default_finish, frame=default_frame, stock=100)
+        ryo = Artist.objects.get(handle="ryo_tanabe")
+        alex = Artist.objects.get(handle="alex_tanaka")
+
+        def create_products(products_list, artist, category):
+            for (title, price, orig_price, is_limited, is_sale, is_new, is_exclusive,
+                 allow_custom_size, rating, review_count, tags,
+                 description, material, img_url,
+                 regional_prices, size_variants) in products_list:
+
+                product = Product.objects.create(
+                    title=title,
+                    artist=artist,
+                    category=category,
+                    vendor=artist.vendor,
+                    base_price=Decimal(str(price)),
+                    original_price=Decimal(str(orig_price)) if orig_price else None,
+                    is_limited=is_limited,
+                    is_sale=is_sale,
+                    is_new=is_new,
+                    is_exclusive=is_exclusive,
+                    allow_custom_size=allow_custom_size,
+                    rating=Decimal(str(rating)),
+                    review_count=review_count,
+                    tags=tags,
+                    description=description,
+                    material=material,
+                    regional_prices=regional_prices,
+                )
+                product.categories.add(category)
+                ProductImage.objects.create(product=product, url=img_url, order=0)
+
+                for sort_order, (label, sv_price) in enumerate(size_variants):
+                    SizeVariant.objects.create(
+                        product=product,
+                        label=label,
+                        price_usd=Decimal(sv_price),
+                        sort_order=sort_order,
+                        is_active=True,
+                    )
+
+        create_products(figure_products, ryo, figures_cat)
+        create_products(wallpanel_products, alex, wallpanels_cat)
 
         for cat in Category.objects.all():
             cat.count = cat.products.count()
             cat.save(update_fields=["count"])
 
-        self.stdout.write("  Products seeded.")
+        self.stdout.write("  Products seeded with size variants, descriptions, materials, categories.")
+
+    def _seed_processing_options(self):
+        from apps.orders.models import ProcessingOption
+        opts = [
+            ("standard", "Standard", 15, 20, "0.00", "0.00", 0),
+            ("fast",     "Fast",     8,  12, "25.00", "68.00", 1),
+            ("express",  "Express",  4,  6,  "50.00", "135.00", 2),
+        ]
+        for slug, label, days_min, days_max, price_usd, price_gel, sort_order in opts:
+            ProcessingOption.objects.update_or_create(
+                slug=slug,
+                defaults={
+                    "label": label,
+                    "est_days_min": days_min,
+                    "est_days_max": days_max,
+                    "price_usd": price_usd,
+                    "price_gel": price_gel,
+                    "sort_order": sort_order,
+                    "is_active": True,
+                },
+            )
+        self.stdout.write("  Processing options seeded.")
 
     def _sync_product_vendors(self):
         from apps.vendors.models import Vendor

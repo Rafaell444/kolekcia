@@ -94,9 +94,9 @@ export default function AdminAnalyticsPage(): React.ReactElement {
   const maxRevenue = Math.max(...data.map((d) => parseFloat(d.revenue || "0")), 1)
 
   return (
-    <div className="p-8 flex flex-col gap-8">
+    <div className="p-4 sm:p-8 flex flex-col gap-8">
       <div>
-        <h1 className="font-display text-4xl text-dp-text-primary">Analytics</h1>
+        <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">Analytics</h1>
         <p className="text-[13px] text-dp-text-tertiary mt-1">
           {isVendor ? "Your store's revenue over time." : "Platform-wide revenue and order trends."}
         </p>
@@ -265,10 +265,10 @@ export default function AdminAnalyticsPage(): React.ReactElement {
                 ${totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(2) : "0.00"}
               </p>
             </div>
-          </div>
+      </div>
 
-          {/* Bar chart */}
-          <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
+      {/* Bar chart */}
+      <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-5">Monthly Revenue</h2>
             <div className="flex items-end gap-2 h-48 overflow-x-auto">
               {data.map((d) => {
@@ -286,8 +286,8 @@ export default function AdminAnalyticsPage(): React.ReactElement {
                   </div>
                 )
               })}
-            </div>
-          </div>
+        </div>
+      </div>
 
           {/* Table */}
           <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-x-auto">
@@ -313,7 +313,7 @@ export default function AdminAnalyticsPage(): React.ReactElement {
                 ))}
               </tbody>
             </table>
-          </div>
+      </div>
         </>
       )}
     </div>

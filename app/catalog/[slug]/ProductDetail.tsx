@@ -16,8 +16,9 @@ import {
   ChevronLeft, ShoppingCart, Heart, Share2, Shield, Truck,
   RotateCcw, Check, Zap, ArrowRight, Award, Package,
   Sparkles, Clock, ChevronDown, ChevronUp, Loader2,
-  MessageSquare, X, Send, Layers, Box, Palette,
+  MessageSquare, X, Send, Layers, Box, Palette, Gift, Play,
 } from "lucide-react"
+import { resolveProductPrices } from "@/lib/product-pricing"
 
 // ── Variant selector ──────────────────────────────────────
 function VariantSelector<T extends { id: string; label: string; surcharge: number }>({
@@ -88,17 +89,25 @@ type ApiVariant = {
   frame: { id: string; label: string; surcharge: number }
   stock: number
 }
+type SizeVariant = { id: number; label: string; price_usd: string; sort_order: number; is_active: boolean }
+type ProcessingOpt = { id: number; slug: string; label: string; price_usd: string; price_gel: string; est_days_min: number; est_days_max: number }
 type ApiProduct = {
   id: number; slug?: string; title: string; artist_name: string
   artist?: { id: number; name: string; handle: string; vendor_id?: number | null }
   category_slug?: string; category_name?: string
   category?: { slug: string; name: string } | null
+  categories_data?: { slug: string; name: string }[]
   vendor_id?: number | null
-  base_price: string; original_price: string | null; rating: string; review_count: number
+  base_price: string; original_price: string | null
+  regional_prices?: Record<string, { price?: string | number | null; original?: string | number | null }>
+  description?: string; material?: string
+  rating: string; review_count: number
   is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean
-  images: { url: string }[]; tags: string[]
+  allow_custom_size?: boolean
+  images: { url: string; src?: string; media_type?: string }[]; tags: string[]
   sizes: ApiVariantOption[]; finishes: ApiVariantOption[]; frames: ApiVariantOption[]
   variants: ApiVariant[]
+  size_variants?: SizeVariant[]
 }
 type RelatedProduct = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
 
@@ -106,13 +115,17 @@ function ProductContactModal({
   product,
   vendorId,
   onClose,
+  initialSubject,
+  initialMessage,
 }: {
   product: ApiProduct
   vendorId: number
   onClose: () => void
+  initialSubject?: string
+  initialMessage?: string
 }) {
   const router = useRouter()
-  const defaultMessage = "Hi, I'm interested in this product. Could you tell me more about availability, sizing, or custom options?"
+  const defaultMessage = initialMessage ?? "Hi, I'm interested in this product. Could you tell me more about availability, sizing, or custom options?"
   const [message, setMessage] = useState(defaultMessage)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState("")
@@ -129,7 +142,7 @@ function ProductContactModal({
       const conv = await authFetch<{ id: number }>("/messaging/conversations/", {
         method: "POST",
         body: JSON.stringify({
-          subject: `Regarding "${product.title}"`,
+          subject: initialSubject ?? `Regarding "${product.title}"`,
           vendor_id: vendorId,
           product_id: product.id,
           initial_message: message.trim(),
@@ -185,7 +198,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const router = useRouter()
   const { addItem } = useCart()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()
-  const { formatPrice } = useLocale()
+  const { formatPrice, currency, rates, detectedCountry } = useLocale()
+  const isGeoGE = detectedCountry === "GE" || currency === "GEL"
   const categorySlug = product.category_slug ?? product.category?.slug ?? ""
   const categoryName = product.category_name ?? product.category?.name ?? ""
   const artistHandle = product.artist?.handle
@@ -196,6 +210,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const wallpanelSlugs = new Set(["wallpanels", "wallpanel", "panels", "panel"])
   const isFigure = figureSlugs.has(normalizedContext) || figureSlugs.has(normalizedCategory)
   const isWallpanel = wallpanelSlugs.has(normalizedContext) || wallpanelSlugs.has(normalizedCategory)
+  const activeSizeVariants = (product.size_variants ?? []).filter((sv) => sv.is_active)
+  const [selectedSizeVariantId, setSelectedSizeVariantId] = useState<number | null>(activeSizeVariants[0]?.id ?? null)
+  // Legacy poster variant selectors (kept for products that still use old variant system)
   const [selectedSize,   setSelectedSize]   = useState(product.sizes?.[0]?.id ?? "")
   const [selectedFinish, setSelectedFinish] = useState(product.finishes?.[0]?.id ?? "")
   const [selectedFrame,  setSelectedFrame]  = useState(product.frames?.[0]?.id ?? "")
@@ -207,7 +224,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const [activeImage,    setActiveImage]    = useState(0)
   const [related, setRelated] = useState<RelatedProduct[]>([])
   const [showContact, setShowContact] = useState(false)
+  const [contactSubject, setContactSubject] = useState("")
+  const [contactMessage, setContactMessage] = useState("")
   const [shareCopied, setShareCopied] = useState(false)
+  const [giftWrap, setGiftWrap] = useState(false)
+  const [giftWrapPrice, setGiftWrapPrice] = useState(0)
+  const [processingOption, setProcessingOption] = useState("standard")
+  const [processingOptions, setProcessingOptions] = useState<ProcessingOpt[]>([])
 
   const wishlisted = isWishlisted(product.id)
 
@@ -219,43 +242,105 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     return () => { cancelled = true }
   }, [product.id, categorySlug])
 
+  // Load gift wrap price
+  useEffect(() => {
+    apiFetch<Record<string, string>>("/orders/shop-settings/")
+      .then((d) => { if (d.gift_wrap_price) setGiftWrapPrice(parseFloat(d.gift_wrap_price) || 0) })
+      .catch(() => {})
+  }, [])
+
+  // Load processing options for wallpanel products
+  useEffect(() => {
+    if (!isWallpanel) return
+    apiFetch<ProcessingOpt[]>("/orders/processing-options/")
+      .then((d) => {
+        if (Array.isArray(d) && d.length > 0) {
+          setProcessingOptions(d)
+          setProcessingOption(d[0].slug)
+        }
+      })
+      .catch(() => {})
+  }, [isWallpanel])
+
+
+  // New size variant system
+  const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
+  const hasSizeVariants = activeSizeVariants.length > 0
+
+  // Legacy poster variant selectors
   const size    = product.sizes?.find((s) => s.id === selectedSize)
   const finish  = product.finishes?.find((f) => f.id === selectedFinish)
   const frame   = product.frames?.find((fr) => fr.id === selectedFrame)
   const surcharge = (opt?: ApiVariantOption) => Number(opt?.surcharge ?? 0)
-  const basePrice = parseFloat(product.base_price)
-  const price   = basePrice + surcharge(size) + surcharge(finish) + surcharge(frame)
-  const discount = product.original_price
-    ? Math.round(((parseFloat(product.original_price) - basePrice) / parseFloat(product.original_price)) * 100)
+  const variantSurcharge = surcharge(size) + surcharge(finish) + surcharge(frame)
+
+  // Resolve geo-targeted base price
+  const resolved = resolveProductPrices(
+    parseFloat(product.base_price),
+    product.original_price ? parseFloat(product.original_price) : null,
+    product.regional_prices ?? {},
+    currency,
+    rates,
+  )
+  // If new size variant selected, its price_usd overrides the base price (converted to current currency)
+  const basePrice = hasSizeVariants && selectedSizeVariant
+    ? parseFloat(selectedSizeVariant.price_usd) * (rates[currency] ?? 1)
+    : resolved.price + variantSurcharge
+  const originalPrice = hasSizeVariants
+    ? null
+    : (resolved.original != null ? resolved.original + variantSurcharge : null)
+  const selectedProcessing = processingOptions.find((o) => o.slug === processingOption)
+  const processingPrice = selectedProcessing
+    ? parseFloat(currency === "GEL" ? selectedProcessing.price_gel : selectedProcessing.price_usd)
+    : 0
+  const price = basePrice + (giftWrap ? giftWrapPrice : 0) + processingPrice
+  const discount = originalPrice != null && originalPrice > basePrice
+    ? Math.round(((originalPrice - basePrice) / originalPrice) * 100)
     : null
 
   async function handleAddToCart() {
-    const variant = product.variants?.find(
-      // eslint-disable-next-line eqeqeq
-      (v) => v.size?.id == selectedSize && v.finish?.id == selectedFinish && v.frame?.id == selectedFrame,
-    )
-
     if (!getAccessToken()) {
-      if (variant) {
-        savePendingCartIntent({
-          variantId: variant.id,
-          quantity: qty,
-          returnTo: selfHref,
-        })
-      }
       router.push(`/login?next=${encodeURIComponent(selfHref)}`)
       return
     }
 
+    // New size-variant path
+    if (hasSizeVariants) {
+      if (!selectedSizeVariantId) {
+        setAddError("Please select a size.")
+        return
+      }
+      setAdding(true)
+      setAddError("")
+      try {
+        await addItem(null, qty, {
+          gift_wrap: giftWrap,
+          processing_option: isWallpanel ? processingOption : "",
+          size_variant_id: selectedSizeVariantId,
+        })
+        setAdded(true)
+        setTimeout(() => setAdded(false), 2200)
+      } catch {
+        setAddError("Could not add to cart. Please try again.")
+      } finally {
+        setAdding(false)
+      }
+      return
+    }
+
+    // Legacy variant path
+    const variant = product.variants?.find(
+      // eslint-disable-next-line eqeqeq
+      (v) => v.size?.id == selectedSize && v.finish?.id == selectedFinish && v.frame?.id == selectedFrame,
+    )
     if (!variant) {
       setAddError("This combination is unavailable. Please try a different option.")
       return
     }
-
     setAdding(true)
     setAddError("")
     try {
-      await addItem(variant.id, qty)
+      await addItem(variant.id, qty, { gift_wrap: giftWrap, processing_option: isWallpanel ? processingOption : "" })
       setAdded(true)
       setTimeout(() => setAdded(false), 2200)
     } catch {
@@ -294,7 +379,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     }
   }
 
-  const thumbImages = product.images?.length ? product.images.map((i) => i.url) : []
+  const thumbMedia = product.images?.length
+    ? product.images.map((i) => ({ src: i.src ?? i.url, media_type: i.media_type ?? "image" }))
+    : []
 
   return (
     <SiteShell>
@@ -325,14 +412,27 @@ export default function ProductDetail({ product, categoryContext }: { product: A
           {/* Left: image gallery */}
           <div className="space-y-3">
             <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-dp-bg-elevated">
-              <Image
-                src={thumbImages[activeImage]}
-                alt={product.title}
-                fill
-                className="object-cover transition-opacity duration-300"
-                sizes="(max-width: 1024px) 100vw, 50vw"
-                priority
-              />
+              {thumbMedia.length > 0 && thumbMedia[activeImage]?.media_type === "video" ? (
+                <video
+                  key={thumbMedia[activeImage].src}
+                  src={thumbMedia[activeImage].src}
+                  autoPlay
+                  muted
+                  loop
+                  controls
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+              ) : thumbMedia.length > 0 ? (
+                <Image
+                  src={thumbMedia[activeImage]?.src || ""}
+                  alt={product.title}
+                  fill
+                  className="object-cover transition-opacity duration-300"
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                  priority
+                />
+              ) : null}
               <div className="absolute top-4 left-4 flex flex-col gap-2">
                 {product.is_limited   && <span className="badge-limited">Limited</span>}
                 {product.is_sale && discount && <span className="badge-sale">-{discount}%</span>}
@@ -341,15 +441,21 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               </div>
             </div>
             <div className="flex gap-2">
-              {thumbImages.map((src, i) => (
+              {thumbMedia.map((media, i) => (
                 <button
                   key={i}
                   onClick={() => setActiveImage(i)}
                   className={`relative w-16 h-20 rounded-md overflow-hidden border-2 transition-colors ${activeImage === i ? "border-dp-accent-cta" : "border-dp-border hover:border-dp-border-hover"}`}
-                  aria-label={`View angle ${i + 1}`}
+                  aria-label={`View item ${i + 1}`}
                   aria-pressed={activeImage === i}
                 >
-                  <Image src={src} alt="" fill className="object-cover" sizes="64px" />
+                  {media.media_type === "video" ? (
+                    <div className="w-full h-full bg-dp-bg-elevated flex items-center justify-center">
+                      <Play size={18} className="text-dp-text-tertiary" />
+                    </div>
+                  ) : (
+                    <Image src={media.src} alt="" fill className="object-cover" sizes="64px" />
+                  )}
                 </button>
               ))}
             </div>
@@ -380,19 +486,25 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
             <div className="flex items-baseline gap-3">
               <span className="font-display text-4xl text-dp-text-primary">{formatPrice(price)}</span>
-              {product.original_price && (
+              {originalPrice != null && originalPrice > basePrice && (
                 <span className="text-lg text-dp-text-tertiary line-through">
-                  {formatPrice(parseFloat(product.original_price) + surcharge(size) + surcharge(finish) + surcharge(frame))}
+                  {formatPrice(originalPrice)}
                 </span>
               )}
-              {discount && <span className="text-sm font-bold text-dp-accent-cta">Save {discount}%</span>}
+              {discount != null && discount > 0 && <span className="text-sm font-bold text-dp-accent-cta">Save {discount}%</span>}
             </div>
 
             <p className="text-[14px] text-dp-text-secondary leading-relaxed">
-              A high-quality metal print featuring <strong className="text-dp-text-primary">{product.title}</strong> by {product.artist_name}.
-              Printed on durable, damage-resistant aluminium with vibrant, UV-stable inks.
-              Comes with our tool-free magnetic mounting system — hang it in seconds, rearrange anytime.
+              {product.description
+                ? product.description
+                : `A high-quality metal print featuring ${product.title} by ${product.artist_name}. Printed on durable, damage-resistant aluminium with vibrant, UV-stable inks. Comes with our tool-free magnetic mounting system — hang it in seconds, rearrange anytime.`}
             </p>
+
+            {product.material && (
+              <p className="text-[12px] text-dp-text-tertiary">
+                <span className="font-bold uppercase tracking-widest">Material:</span> {product.material}
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {(product.tags ?? []).map((tag) => (
@@ -403,9 +515,136 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               ))}
             </div>
 
-            {(product.sizes?.length ?? 0) > 0 && <VariantSelector label="Size"   options={product.sizes}    selected={selectedSize}   onSelect={setSelectedSize} />}
-            {(product.finishes?.length ?? 0) > 0 && <VariantSelector label="Finish" options={product.finishes} selected={selectedFinish} onSelect={setSelectedFinish} />}
-            {(product.frames?.length ?? 0) > 0 && <VariantSelector label="Frame"  options={product.frames}   selected={selectedFrame}  onSelect={setSelectedFrame} />}
+            {/* New size variants selector — card style */}
+            {hasSizeVariants && (
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2.5">Select Size</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {activeSizeVariants.map((sv) => {
+                    const svPrice = parseFloat(sv.price_usd) * (rates[currency] ?? 1)
+                    const isSelected = selectedSizeVariantId === sv.id
+                    return (
+                      <button
+                        key={sv.id}
+                        onClick={() => setSelectedSizeVariantId(sv.id)}
+                        aria-pressed={isSelected}
+                        className={`relative flex flex-col items-center justify-center gap-0.5 px-3 py-3 rounded-sm border-2 transition-all duration-150 ${
+                          isSelected
+                            ? "border-dp-accent-cta bg-dp-accent-cta/8 shadow-sm shadow-dp-accent-cta/20"
+                            : "border-dp-border bg-dp-bg-elevated hover:border-dp-border-hover hover:bg-dp-bg-surface"
+                        }`}
+                      >
+                        {isSelected && (
+                          <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full bg-dp-accent-cta flex items-center justify-center">
+                            <Check size={8} className="text-white" strokeWidth={3} />
+                          </span>
+                        )}
+                        <span className={`text-[12px] font-bold leading-tight ${isSelected ? "text-dp-accent-cta" : "text-dp-text-primary"}`}>
+                          {sv.label}
+                        </span>
+                        <span className={`text-[13px] font-black tabular-nums ${isSelected ? "text-dp-text-primary" : "text-dp-text-secondary"}`}>
+                          {formatPrice(svPrice)}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Legacy variant selectors for products without size_variants */}
+            {!hasSizeVariants && (product.sizes?.length ?? 0) > 0 && <VariantSelector label="Size" options={product.sizes} selected={selectedSize} onSelect={setSelectedSize} />}
+            {!hasSizeVariants && (product.finishes?.length ?? 0) > 0 && <VariantSelector label="Finish" options={product.finishes} selected={selectedFinish} onSelect={setSelectedFinish} />}
+            {!hasSizeVariants && (product.frames?.length ?? 0) > 0 && <VariantSelector label="Frame" options={product.frames} selected={selectedFrame} onSelect={setSelectedFrame} />}
+
+            {/* Contact for custom size — eye-catching banner */}
+            {product.allow_custom_size && vendorId && (
+              <button
+                onClick={() => {
+                  setContactSubject(`Request for custom size — ${product.title}`)
+                  setContactMessage(`Hi, I'm interested in a custom size for "${product.title}". Could you let me know what options are available and the pricing?\n\nThank you!`)
+                  if (!getAccessToken()) {
+                    router.push(`/login?next=${encodeURIComponent(selfHref)}`)
+                    return
+                  }
+                  setShowContact(true)
+                }}
+                className="group relative overflow-hidden flex items-center justify-between gap-3 w-full px-4 py-3.5 rounded-sm border border-dp-accent-cta/40 bg-dp-accent-cta/5 hover:bg-dp-accent-cta/10 hover:border-dp-accent-cta transition-all duration-200"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-dp-accent-cta/15 text-dp-accent-cta shrink-0">
+                    <Sparkles size={15} />
+                  </span>
+                  <div className="text-left">
+                    <p className="text-[13px] font-bold text-dp-text-primary leading-tight">Need a different size?</p>
+                    <p className="text-[11px] text-dp-text-tertiary mt-0.5">Contact us — we&apos;ll quote a custom size just for you</p>
+                  </div>
+                </div>
+                <ArrowRight size={15} className="text-dp-accent-cta shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            )}
+
+            {/* Processing time selector — wallpanel products only */}
+            {isWallpanel && processingOptions.length > 0 && (
+              <div>
+                <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2">Processing Time</p>
+                <div className="flex flex-col gap-2">
+                  {processingOptions.map((opt) => {
+                    const optPrice = parseFloat(currency === "GEL" ? opt.price_gel : opt.price_usd)
+                    return (
+                      <label
+                        key={opt.slug}
+                        className={`flex items-center justify-between gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${
+                          processingOption === opt.slug
+                            ? "border-dp-accent-cta bg-dp-accent-cta/5"
+                            : "border-dp-border hover:border-dp-border-hover"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="processing"
+                            value={opt.slug}
+                            checked={processingOption === opt.slug}
+                            onChange={() => setProcessingOption(opt.slug)}
+                            className="accent-dp-accent-cta"
+                          />
+                          <div>
+                            <p className="text-[13px] font-semibold text-dp-text-primary">{opt.label}</p>
+                            <p className="text-[11px] text-dp-text-tertiary">{opt.est_days_min}–{opt.est_days_max} business days to build</p>
+                          </div>
+                        </div>
+                        <span className="text-[13px] font-bold text-dp-text-primary">
+                          {optPrice === 0 ? "Included" : `+${formatPrice(optPrice)}`}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Gift wrap toggle */}
+            {giftWrapPrice > 0 && (
+              <label className="flex items-center justify-between gap-3 px-4 py-3 border border-dp-border rounded-sm cursor-pointer hover:border-dp-border-hover transition-colors">
+                <div className="flex items-center gap-3">
+                  <Gift size={16} className="text-dp-text-tertiary shrink-0" />
+                  <div>
+                    <p className="text-[13px] font-semibold text-dp-text-primary">Add gift wrapping</p>
+                    <p className="text-[11px] text-dp-text-tertiary">Beautifully wrapped with a handwritten card slot</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-bold text-dp-text-primary">+{formatPrice(giftWrapPrice)}</span>
+                  <input
+                    type="checkbox"
+                    checked={giftWrap}
+                    onChange={(e) => setGiftWrap(e.target.checked)}
+                    className="w-4 h-4 accent-dp-accent-cta"
+                  />
+                </div>
+              </label>
+            )}
 
             <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="flex items-stretch gap-2 w-full sm:flex-1 sm:min-w-0">
@@ -463,6 +702,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                     router.push(`/login?next=${encodeURIComponent(selfHref)}`)
                     return
                   }
+                  setContactSubject("")
+                  setContactMessage("")
                   setShowContact(true)
                 }}
                 className="flex items-center justify-center gap-2 w-full py-2.5 border border-dp-border rounded-sm text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
@@ -503,7 +744,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                     <li>UV-resistant inks preserve colour and detail for years</li>
                     <li>Lightweight aluminium — easy to display on shelves or walls</li>
                     <li>Scratch-resistant finish built for collectors</li>
-                    <li>Made to order — produced within 3 business days</li>
+                  </ul>
+                ) : isWallpanel ? (
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Printed on 0.045&quot; thick aluminium composite</li>
+                    <li>UV-resistant, fade-proof inks — no frame needed</li>
+                    <li>Comes with 4 magnetic mounting pins, no tools required</li>
+                    <li>Scratch and moisture resistant surface</li>
                   </ul>
                 ) : (
                   <ul className="list-disc list-inside space-y-1">
@@ -515,10 +762,67 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                   </ul>
                 )}
               </AccordionItem>
-              <AccordionItem title="Shipping & Returns">
-                Free standard shipping on orders over {formatPrice(49)}. Estimated delivery 5–8 business days.
-                Not happy? Return within 100 days for a full refund — no questions asked.
-              </AccordionItem>
+
+              {/* Figure-specific processing & shipping */}
+              {isFigure && (
+                <AccordionItem title="Processing Time & Shipping">
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <Clock size={14} className="text-dp-accent-cta shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-dp-text-primary">Processing time: 20–25 business days</p>
+                        <p className="text-dp-text-tertiary text-[11px] mt-0.5">Each figure is hand-crafted and made to order.</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Truck size={14} className="text-dp-text-tertiary shrink-0 mt-0.5" />
+                      <div className="space-y-1.5 w-full">
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-dp-text-primary">Standard delivery</span>
+                          <span className="text-dp-text-secondary">approx. 2 weeks</span>
+                          <span className="text-emerald-400 font-bold text-[11px]">FREE</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-dp-text-primary">Express delivery</span>
+                          <span className="text-dp-text-secondary">approx. 1 week</span>
+                          <span className="font-bold text-dp-text-primary">+$35</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </AccordionItem>
+              )}
+
+              {/* Wallpanel-specific delivery */}
+              {isWallpanel && (
+                <AccordionItem title="Delivery Information">
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <Truck size={14} className="text-dp-accent-cta shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-dp-text-primary">Georgia 🇬🇪</p>
+                        <p className="text-dp-text-secondary text-[12px]">Within Tbilisi: 1–2 days</p>
+                        <p className="text-dp-text-secondary text-[12px]">Regions: 1–3 days</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Truck size={14} className="text-dp-text-tertiary shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-dp-text-primary">International</p>
+                        <p className="text-dp-text-secondary text-[12px]">Approx. 2 weeks worldwide</p>
+                      </div>
+                    </div>
+                  </div>
+                </AccordionItem>
+              )}
+
+              {/* Generic shipping for non-figure, non-wallpanel */}
+              {!isFigure && !isWallpanel && (
+                <AccordionItem title="Shipping & Returns">
+                  Free standard shipping on orders over {formatPrice(49)}. Estimated delivery 5–8 business days.
+                  Not happy? Return within 100 days for a full refund — no questions asked.
+                </AccordionItem>
+              )}
               <AccordionItem title="Size Guide">
                 <div className="grid grid-cols-3 gap-2 text-[12px]">
                   {(product.sizes ?? []).map((s) => (
@@ -803,7 +1107,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
       </section>
 
       {showContact && vendorId && (
-        <ProductContactModal product={product} vendorId={vendorId} onClose={() => setShowContact(false)} />
+        <ProductContactModal
+          product={product}
+          vendorId={vendorId}
+          onClose={() => setShowContact(false)}
+          initialSubject={contactSubject || undefined}
+          initialMessage={contactMessage || undefined}
+        />
       )}
     </SiteShell>
   )

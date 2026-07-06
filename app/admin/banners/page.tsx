@@ -30,10 +30,10 @@ export default function AdminBannersPage(): React.ReactElement {
   }
 
   return (
-    <div className="p-8 flex flex-col gap-6">
-      <div className="flex items-start justify-between">
+    <div className="p-4 sm:p-8 flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-4xl text-dp-text-primary">Promo Banners</h1>
+          <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">Promo Banners</h1>
           <p className="text-[13px] text-dp-text-tertiary mt-1">Control the rotating top-of-page promo strip messages.</p>
         </div>
         <button className="flex items-center gap-2 px-4 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
@@ -45,7 +45,7 @@ export default function AdminBannersPage(): React.ReactElement {
       ) : (
         <div className="flex flex-col gap-3">
           {banners.map((b) => (
-            <div key={b.id} className={`flex items-center gap-4 px-5 py-4 rounded-sm border ${b.is_active ? "bg-dp-accent-cta/5 border-dp-accent-cta/30" : "bg-dp-bg-surface border-dp-border opacity-60"}`}>
+            <div key={b.id} className={`flex flex-wrap items-center gap-3 px-4 py-4 rounded-sm border ${b.is_active ? "bg-dp-accent-cta/5 border-dp-accent-cta/30" : "bg-dp-bg-surface border-dp-border opacity-60"}`}>
               <Bell size={14} className={b.is_active ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
               <div className="flex-1">
                 <p className="text-[13px] font-semibold text-dp-text-primary">{b.title}</p>

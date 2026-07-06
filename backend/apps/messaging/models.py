@@ -31,7 +31,7 @@ class Message(models.Model):
 
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     from_role = models.CharField(max_length=10, choices=FROM_CHOICES)
-    text = models.TextField()
+    text = models.TextField(blank=True)
     sent_at = models.DateTimeField(auto_now_add=True)
     read = models.BooleanField(default=False)
 
@@ -41,3 +41,18 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.from_role} → {self.conversation.subject[:30]}"
+
+
+class MessageAttachment(models.Model):
+    MEDIA_CHOICES = [("image", "Image"), ("video", "Video"), ("file", "File")]
+
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to="messaging/%Y/%m/")
+    media_type = models.CharField(max_length=10, choices=MEDIA_CHOICES, default="file")
+    original_name = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        db_table = "message_attachments"
+
+    def __str__(self):
+        return f"{self.media_type}: {self.original_name}"

@@ -1,8 +1,277 @@
 "use client"
 import React, { useEffect, useState } from "react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { Save, Globe, Mail, CreditCard, Bell, Shield, Palette } from "lucide-react"
+import { Save, Globe, Mail, CreditCard, Bell, Shield, Palette, ShoppingBag, Truck, Plus, Trash2 } from "lucide-react"
 import { VendorStorefrontSection } from "./VendorStorefrontForm"
+
+type DeliveryOption = {
+  id?: number
+  slug: string
+  label: string
+  price_gel: string
+  price_usd: string
+  est_days_min: number
+  est_days_max: number
+  sort_order: number
+  is_active: boolean
+}
+
+function DeliveryOptionsManager() {
+  const [opts, setOpts] = useState<DeliveryOption[]>([])
+  const [saving, setSaving] = useState<Record<number | string, boolean>>({})
+
+  useEffect(() => {
+    adminFetch<DeliveryOption[]>("/admin/delivery-options/")
+      .then((d) => setOpts(Array.isArray(d) ? d : []))
+      .catch(() => {})
+  }, [])
+
+  async function saveOpt(opt: DeliveryOption, idx: number) {
+    setSaving((s) => ({ ...s, [idx]: true }))
+    try {
+      if (opt.id) {
+        const updated = await adminFetch<DeliveryOption>(`/admin/delivery-options/${opt.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(opt),
+        })
+        setOpts((prev) => prev.map((o) => o.id === updated.id ? updated : o))
+      } else {
+        const created = await adminFetch<DeliveryOption>("/admin/delivery-options/", {
+          method: "POST",
+          body: JSON.stringify(opt),
+        })
+        setOpts((prev) => prev.map((o, i) => i === idx ? created : o))
+      }
+    } catch { /* noop */ }
+    finally { setSaving((s) => ({ ...s, [idx]: false })) }
+  }
+
+  async function deleteOpt(id: number) {
+    await adminFetch(`/admin/delivery-options/${id}/`, { method: "DELETE" }).catch(() => {})
+    setOpts((prev) => prev.filter((o) => o.id !== id))
+  }
+
+  function updateOpt(idx: number, patch: Partial<DeliveryOption>) {
+    setOpts((prev) => prev.map((o, i) => i === idx ? { ...o, ...patch } : o))
+  }
+
+  const cls = "px-2.5 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover transition-colors"
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="border-b border-dp-border">
+              {["Slug","Label","Price ₾","Price $","Min days","Max days","Active",""].map((h) => (
+                <th key={h} className="text-left px-2 py-2 text-dp-text-tertiary font-semibold">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {opts.map((opt, idx) => (
+              <tr key={opt.id ?? idx} className="border-b border-dp-border/60 last:border-0">
+                <td className="px-2 py-2">
+                  <input value={opt.slug} onChange={(e) => updateOpt(idx, { slug: e.target.value })} className={`${cls} w-24`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input value={opt.label} onChange={(e) => updateOpt(idx, { label: e.target.value })} className={`${cls} w-28`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={0} step={0.01} value={opt.price_gel} onChange={(e) => updateOpt(idx, { price_gel: e.target.value })} className={`${cls} w-20`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={0} step={0.01} value={opt.price_usd} onChange={(e) => updateOpt(idx, { price_usd: e.target.value })} className={`${cls} w-20`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={1} value={opt.est_days_min} onChange={(e) => updateOpt(idx, { est_days_min: parseInt(e.target.value) || 1 })} className={`${cls} w-16`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={1} value={opt.est_days_max} onChange={(e) => updateOpt(idx, { est_days_max: parseInt(e.target.value) || 1 })} className={`${cls} w-16`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="checkbox" checked={opt.is_active} onChange={(e) => updateOpt(idx, { is_active: e.target.checked })} className="accent-dp-accent-cta w-4 h-4" />
+                </td>
+                <td className="px-2 py-2 flex items-center gap-1.5">
+                  <button onClick={() => void saveOpt(opt, idx)} disabled={!!saving[idx]}
+                    className="px-2.5 py-1 bg-dp-accent-cta text-white text-[10px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-50">
+                    {saving[idx] ? "…" : "Save"}
+                  </button>
+                  {opt.id && (
+                    <button onClick={() => opt.id && void deleteOpt(opt.id)} className="p-1 text-dp-text-tertiary hover:text-red-400 transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button
+        onClick={() => setOpts((prev) => [...prev, { slug: "", label: "", price_gel: "0", price_usd: "0", est_days_min: 1, est_days_max: 5, sort_order: prev.length, is_active: true }])}
+        className="self-start flex items-center gap-1.5 text-[12px] text-dp-text-secondary hover:text-dp-accent-cta transition-colors"
+      >
+        <Plus size={13} /> Add option
+      </button>
+    </div>
+  )
+}
+
+type ProcessingOption = {
+  id?: number
+  slug: string
+  label: string
+  price_gel: string
+  price_usd: string
+  est_days_min: number
+  est_days_max: number
+  sort_order: number
+  is_active: boolean
+}
+
+function ProcessingOptionsManager() {
+  const [opts, setOpts] = useState<ProcessingOption[]>([])
+  const [saving, setSaving] = useState<Record<number | string, boolean>>({})
+
+  useEffect(() => {
+    adminFetch<ProcessingOption[]>("/admin/processing-options/")
+      .then((d) => setOpts(Array.isArray(d) ? d : []))
+      .catch(() => {})
+  }, [])
+
+  async function saveOpt(opt: ProcessingOption, idx: number) {
+    setSaving((s) => ({ ...s, [idx]: true }))
+    try {
+      if (opt.id) {
+        const updated = await adminFetch<ProcessingOption>(`/admin/processing-options/${opt.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(opt),
+        })
+        setOpts((prev) => prev.map((o) => o.id === updated.id ? updated : o))
+      } else {
+        const created = await adminFetch<ProcessingOption>("/admin/processing-options/", {
+          method: "POST",
+          body: JSON.stringify(opt),
+        })
+        setOpts((prev) => prev.map((o, i) => i === idx ? created : o))
+      }
+    } catch { /* noop */ }
+    finally { setSaving((s) => ({ ...s, [idx]: false })) }
+  }
+
+  async function deleteOpt(id: number) {
+    await adminFetch(`/admin/processing-options/${id}/`, { method: "DELETE" }).catch(() => {})
+    setOpts((prev) => prev.filter((o) => o.id !== id))
+  }
+
+  function updateOpt(idx: number, patch: Partial<ProcessingOption>) {
+    setOpts((prev) => prev.map((o, i) => i === idx ? { ...o, ...patch } : o))
+  }
+
+  const cls = "px-2.5 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover transition-colors"
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="border-b border-dp-border">
+              {["Slug","Label","Surcharge ₾","Surcharge $","Min days","Max days","Active",""].map((h) => (
+                <th key={h} className="text-left px-2 py-2 text-dp-text-tertiary font-semibold">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {opts.map((opt, idx) => (
+              <tr key={opt.id ?? idx} className="border-b border-dp-border/60 last:border-0">
+                <td className="px-2 py-2">
+                  <input value={opt.slug} onChange={(e) => updateOpt(idx, { slug: e.target.value })} className={`${cls} w-24`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input value={opt.label} onChange={(e) => updateOpt(idx, { label: e.target.value })} className={`${cls} w-28`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={0} step={0.01} value={opt.price_gel} onChange={(e) => updateOpt(idx, { price_gel: e.target.value })} className={`${cls} w-20`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={0} step={0.01} value={opt.price_usd} onChange={(e) => updateOpt(idx, { price_usd: e.target.value })} className={`${cls} w-20`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={1} value={opt.est_days_min} onChange={(e) => updateOpt(idx, { est_days_min: parseInt(e.target.value) || 1 })} className={`${cls} w-16`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="number" min={1} value={opt.est_days_max} onChange={(e) => updateOpt(idx, { est_days_max: parseInt(e.target.value) || 1 })} className={`${cls} w-16`} />
+                </td>
+                <td className="px-2 py-2">
+                  <input type="checkbox" checked={opt.is_active} onChange={(e) => updateOpt(idx, { is_active: e.target.checked })} className="accent-dp-accent-cta w-4 h-4" />
+                </td>
+                <td className="px-2 py-2 flex items-center gap-1.5">
+                  <button onClick={() => void saveOpt(opt, idx)} disabled={!!saving[idx]}
+                    className="px-2.5 py-1 bg-dp-accent-cta text-white text-[10px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-50">
+                    {saving[idx] ? "…" : "Save"}
+                  </button>
+                  {opt.id && (
+                    <button onClick={() => opt.id && void deleteOpt(opt.id)} className="p-1 text-dp-text-tertiary hover:text-red-400 transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button
+        onClick={() => setOpts((prev) => [...prev, { slug: "", label: "", price_gel: "0", price_usd: "0", est_days_min: 1, est_days_max: 5, sort_order: prev.length, is_active: true }])}
+        className="self-start flex items-center gap-1.5 text-[12px] text-dp-text-secondary hover:text-dp-accent-cta transition-colors"
+      >
+        <Plus size={13} /> Add option
+      </button>
+    </div>
+  )
+}
+
+function ShopSettingsCard() {
+  const [giftWrapPrice, setGiftWrapPrice] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    adminFetch<Record<string, string>>("/admin/settings/")
+      .then((d) => { if (d.gift_wrap_price) setGiftWrapPrice(d.gift_wrap_price) })
+      .catch(() => {})
+  }, [])
+
+  async function save() {
+    setSaving(true)
+    try {
+      await adminFetch("/admin/settings/", { method: "PATCH", body: JSON.stringify({ gift_wrap_price: giftWrapPrice }) })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch { /* noop */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1 max-w-xs">
+        <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">Gift Wrap Price (USD)</label>
+        <input
+          type="number" min={0} step={0.01} value={giftWrapPrice}
+          onChange={(e) => setGiftWrapPrice(e.target.value)}
+          placeholder="5.00"
+          className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover transition-colors"
+        />
+        <p className="text-[11px] text-dp-text-tertiary">Added per item when customer selects gift wrapping on the product page.</p>
+      </div>
+      <button onClick={() => void save()} disabled={saving}
+        className="self-start flex items-center gap-2 px-5 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50">
+        <Save size={14} /> {saved ? "Saved!" : saving ? "Saving…" : "Save"}
+      </button>
+    </div>
+  )
+}
 
 function Section({ title, icon: Icon, children }: { title: string; icon: React.FC<{size?:number;className?:string}>; children: React.ReactNode }) {
   return (
@@ -87,9 +356,9 @@ export default function AdminSettingsPage(): React.ReactElement {
   }
 
   return (
-    <div className="p-8 flex flex-col gap-6">
+    <div className="p-4 sm:p-8 flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-4xl text-dp-text-primary">Settings</h1>
+        <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">Settings</h1>
         <p className="text-[13px] text-dp-text-tertiary mt-1">
           {isVendor ? "Manage your store settings." : "Configure platform-wide settings for Kolekcia."}
         </p>
@@ -103,6 +372,30 @@ export default function AdminSettingsPage(): React.ReactElement {
       </Section>
 
       <VendorStorefrontSection isVendor={isVendor} />
+
+      {!isVendor && (
+        <Section title="Shop Settings" icon={ShoppingBag}>
+          <ShopSettingsCard />
+        </Section>
+      )}
+
+      {!isVendor && (
+        <Section title="Delivery Options" icon={Truck}>
+          <p className="text-[13px] text-dp-text-tertiary -mt-1">
+            Delivery options shown at checkout. Georgian market can select between standard, fast, and express.
+          </p>
+          <DeliveryOptionsManager />
+        </Section>
+      )}
+
+      {!isVendor && (
+        <Section title="Wallpanel Processing Time" icon={Truck}>
+          <p className="text-[13px] text-dp-text-tertiary -mt-1">
+            Processing time packages shown on wallpanel product pages. Customers choose how quickly their panel is built before adding to cart.
+          </p>
+          <ProcessingOptionsManager />
+        </Section>
+      )}
 
       <Section title="Email & Notifications" icon={Mail}>
         <Field label="Shipping Email From"   defaultValue="noreply@kolekcia.com" hint="This address will appear as the sender for shipping confirmations." />
@@ -146,11 +439,11 @@ export default function AdminSettingsPage(): React.ReactElement {
         </Section>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex justify-start sm:justify-end">
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50"
         >
           <Save size={14} /> {saved ? "Saved!" : saving ? "Saving…" : "Save Changes"}
         </button>
