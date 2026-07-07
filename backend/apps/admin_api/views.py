@@ -460,22 +460,12 @@ class AdminProductMediaView(APIView):
 
         max_order = product.images.count()
 
-        if media_type == "video":
-            img = ProductImage.objects.create(
-                product=product,
-                video_file=uploaded_file,
-                media_type="video",
-                url="",
-                order=max_order,
-            )
-        else:
-            img = ProductImage.objects.create(
-                product=product,
-                url="",
-                video_file=uploaded_file,
-                media_type="image",
-                order=max_order,
-            )
+        img = ProductImage.objects.create(
+            product=product,
+            video_file=uploaded_file,
+            media_type=media_type,
+            order=max_order,
+        )
 
         return Response(ProductImageSerializer(img, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
