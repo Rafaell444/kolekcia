@@ -113,13 +113,19 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     >
       {/* ── Image ── */}
       <div className="relative aspect-poster overflow-hidden bg-dp-bg-elevated">
-        <Image
-          src={p.imageUrl}
-          alt={p.title}
-          fill
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-        />
+        {p.imageUrl ? (
+          <Image
+            src={p.imageUrl}
+            alt={p.title}
+            fill
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-dp-text-tertiary text-[11px] uppercase tracking-widest">
+            No image
+          </div>
+        )}
 
         {/* Badges */}
         <div className="absolute top-2 left-2 flex flex-col gap-1" aria-label="Product badges">

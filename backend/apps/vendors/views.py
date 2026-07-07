@@ -119,69 +119,35 @@ class VendorDashboardView(APIView):
 
 # ── Vendor products ─────────────────────────────────────────────────────────────
 
+def _vendor_product_queryset(request):
+    from apps.products.models import Product
+    vendor = get_vendor_for_request(request)
+    qs = Product.objects.select_related("artist", "category", "vendor").prefetch_related(
+        "images", "variants__size", "variants__finish", "variants__frame",
+        "size_variants", "categories",
+    )
+    if vendor:
+        qs = qs.filter(vendor=vendor)
+    return qs
+
+
 class VendorProductListView(APIView):
     permission_classes = [IsVendorOrAdmin]
 
     def get(self, request):
-        from apps.products.models import Product
-        from apps.products.serializers import ProductListSerializer
-        vendor = get_vendor_for_request(request)
-        qs = Product.objects.select_related("artist", "category").prefetch_related("images", "variants")
-        if vendor:
-            qs = qs.filter(vendor=vendor)
-        return Response(ProductListSerializer(qs, many=True).data)
+        from apps.products.serializers import ProductDetailSerializer
+        qs = _vendor_product_queryset(request)
+        return Response(ProductDetailSerializer(qs, many=True, context={"request": request}).data)
 
     def post(self, request):
-        from apps.products.models import (
-            Product, ProductImage, ProductVariant,
-            Category, Artist, PosterSize, PosterFinish, PosterFrame,
-        )
         from apps.products.serializers import ProductDetailSerializer
-        vendor = get_vendor_for_request(request)
-        data = request.data
-
-        category = Category.objects.filter(slug=data.get("category_slug", "")).first()
-        artist_handle = data.get("artist_handle", "")
-        artist = Artist.objects.filter(handle=artist_handle).first() if artist_handle else None
-
-        tags = data.get("tags", [])
-        if isinstance(tags, str):
-            tags = [t.strip() for t in tags.split(",") if t.strip()]
-
-        product = Product.objects.create(
-            title=data.get("title", "Untitled"),
-            artist=artist,
-            category=category,
-            base_price=data.get("base_price", "0"),
-            original_price=data.get("original_price") or None,
-            regional_prices=data.get("regional_prices") or {},
-            is_limited=bool(data.get("is_limited", False)),
-            is_sale=bool(data.get("is_sale", False)),
-            is_new=bool(data.get("is_new", True)),
-            is_exclusive=bool(data.get("is_exclusive", False)),
-            status=data.get("status", "active") or "active",
-            tags=tags,
-            vendor=vendor,
+        ser = ProductDetailSerializer(data=request.data, context={"request": request})
+        ser.is_valid(raise_exception=True)
+        product = ser.save()
+        return Response(
+            ProductDetailSerializer(product, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
         )
-        # Ensure DecimalFields are materialized as Decimal on the instance
-        # before nested variant price serialization.
-        product.refresh_from_db()
-
-        if data.get("image_url"):
-            ProductImage.objects.create(product=product, url=data["image_url"], order=0)
-
-        try:
-            default_size = PosterSize.objects.get(id="m")
-            default_finish = PosterFinish.objects.get(id="matte")
-            default_frame = PosterFrame.objects.get(id="none")
-            ProductVariant.objects.create(
-                product=product, size=default_size, finish=default_finish,
-                frame=default_frame, stock=100,
-            )
-        except Exception:
-            pass
-
-        return Response(ProductDetailSerializer(product).data, status=status.HTTP_201_CREATED)
 
 
 class VendorProductDetailView(APIView):
@@ -189,38 +155,34 @@ class VendorProductDetailView(APIView):
 
     def _get_product(self, request, pk):
         from apps.products.models import Product
-        vendor = get_vendor_for_request(request)
-        qs = Product.objects.select_related("vendor")
-        if vendor:
-            qs = qs.filter(vendor=vendor)
         try:
-            return qs.get(pk=pk)
+            return _vendor_product_queryset(request).get(pk=pk)
         except Product.DoesNotExist:
             return None
 
-    def patch(self, request, pk):
-        from apps.products.models import Product, ProductImage
+    def get(self, request, pk):
         from apps.products.serializers import ProductDetailSerializer
         product = self._get_product(request, pk)
         if not product:
-            return Response({"detail": "Not found."}, status=404)
-        data = request.data
-        for field in ("title", "base_price", "original_price", "is_limited", "is_sale", "is_new", "is_exclusive", "status", "tags", "regional_prices"):
-            if field in data:
-                setattr(product, field, data[field])
-        product.save()
-        # When values come from raw request data, DecimalFields may remain
-        # string-typed on the in-memory instance until refreshed.
-        product.refresh_from_db()
-        if data.get("image_url"):
-            ProductImage.objects.filter(product=product).delete()
-            ProductImage.objects.create(product=product, url=data["image_url"], order=0)
-        return Response(ProductDetailSerializer(product).data)
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ProductDetailSerializer(product, context={"request": request}).data)
+
+    def patch(self, request, pk):
+        from apps.products.serializers import ProductDetailSerializer
+        product = self._get_product(request, pk)
+        if not product:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        ser = ProductDetailSerializer(
+            product, data=request.data, partial=True, context={"request": request},
+        )
+        ser.is_valid(raise_exception=True)
+        product = ser.save()
+        return Response(ProductDetailSerializer(product, context={"request": request}).data)
 
     def delete(self, request, pk):
         product = self._get_product(request, pk)
         if not product:
-            return Response({"detail": "Not found."}, status=404)
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         product.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

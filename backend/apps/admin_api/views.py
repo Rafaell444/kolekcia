@@ -378,7 +378,7 @@ def _send_shipping_email(order):
 # ── Products ──────────────────────────────────────────────────────────────────
 
 class AdminProductListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def get_serializer_class(self):
         from apps.products.serializers import ProductDetailSerializer
@@ -386,11 +386,14 @@ class AdminProductListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
 
     def get_queryset(self):
         from apps.products.models import Product
-        return Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
+        qs = Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
+        if not self.request.user.is_staff and hasattr(self.request.user, "vendor_profile"):
+            qs = qs.filter(vendor=self.request.user.vendor_profile)
+        return qs
 
 
 class AdminProductDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def get_serializer_class(self):
         from apps.products.serializers import ProductDetailSerializer
@@ -398,7 +401,10 @@ class AdminProductDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         from apps.products.models import Product
-        return Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
+        qs = Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
+        if not self.request.user.is_staff and hasattr(self.request.user, "vendor_profile"):
+            qs = qs.filter(vendor=self.request.user.vendor_profile)
+        return qs
 
     def perform_update(self, serializer):
         instance = serializer.save()
@@ -441,7 +447,7 @@ class AdminProductStockView(APIView):
 
 class AdminProductMediaView(APIView):
     """Upload a video (or image file) to a product's media gallery."""
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def post(self, request):
         from apps.products.models import Product, ProductImage
@@ -457,6 +463,10 @@ class AdminProductMediaView(APIView):
             product = Product.objects.get(pk=product_id)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not request.user.is_staff and hasattr(request.user, "vendor_profile"):
+            if product.vendor_id != request.user.vendor_profile.id:
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
         max_order = product.images.count()
 
@@ -970,6 +980,9 @@ class AdminSizeVariantView(APIView):
             product = Product.objects.get(pk=product_id)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not request.user.is_staff and hasattr(request.user, "vendor_profile"):
+            if product.vendor_id != request.user.vendor_profile.id:
+                return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
         ser = SizeVariantSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         sv = SizeVariant.objects.create(product=product, **ser.validated_data)

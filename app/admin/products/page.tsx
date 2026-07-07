@@ -177,9 +177,10 @@ function ProductModal({
   const [error, setError] = useState("")
 
   // Load full product detail when editing (list endpoint may lack tags, description, etc.)
+  const detailBase = endpoint.endsWith("/") ? endpoint : endpoint + "/"
   useEffect(() => {
     if (!editProduct) return
-    adminFetch<AdminProduct>(`/admin/products/${editProduct.id}/`)
+    adminFetch<AdminProduct>(`${detailBase}${editProduct.id}/`)
       .then((p) => {
         if (p.size_variants) setSizeVariants(p.size_variants)
         if (p.images) setMediaItems(p.images.map((i) => ({ id: i.id, src: i.src ?? i.url, media_type: i.media_type ?? "image" })))
@@ -283,6 +284,10 @@ function ProductModal({
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: form,
     })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as { detail?: string }
+      throw new Error(err.detail ?? `Media upload failed (${res.status})`)
+    }
     return res.json()
   }
 
@@ -348,7 +353,7 @@ function ProductModal({
       if (pendingFiles.length > 0) {
         setSavingStep(`Uploading ${pendingFiles.length} media file${pendingFiles.length > 1 ? "s" : ""}…`)
         for (const item of pendingFiles) {
-          await uploadFile(productId, item).catch(() => {})
+          await uploadFile(productId, item)
         }
       }
 
@@ -365,21 +370,34 @@ function ProductModal({
               price_gel: v.priceGel || null,
               price_eur: null,
               price_gbp: null,
-              sort_order: sizeVariants.length,
+              sort_order: sizeVariants.length + pendingVariants.indexOf(v),
             }),
-          }).catch(() => {})
+          })
         }
       }
 
       // Reload full product to get updated media + variants
-      const fresh = await adminFetch<AdminProduct>(`/admin/products/${productId}/`).catch(() => saved)
+      const fresh = await adminFetch<AdminProduct>(`${detailBase}${productId}/`)
+      if (fresh.size_variants) setSizeVariants(fresh.size_variants)
+      if (fresh.images) {
+        setMediaItems(fresh.images.map((i) => ({ id: i.id, src: i.src ?? i.url, media_type: i.media_type ?? "image" })))
+      }
+      setPendingVariants([])
+      setPendingFiles([])
       onSaved(fresh)
       onClose()
     } catch (err: unknown) {
-      const e = err as { data?: { detail?: string; [key: string]: unknown } }
-      const detail = e?.data?.detail
-      if (typeof detail === "string" && detail.trim()) {
-        setError(detail)
+      const e = err as { data?: Record<string, unknown> }
+      if (e?.data) {
+        const detail = e.data.detail
+        if (typeof detail === "string" && detail.trim()) {
+          setError(detail)
+        } else {
+          const fieldErrors = Object.entries(e.data)
+            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+            .join("; ")
+          setError(fieldErrors || "Save failed.")
+        }
       } else {
         setError(err instanceof Error ? err.message : "Save failed.")
       }
@@ -918,7 +936,8 @@ export default function AdminProductsPage(): React.ReactElement {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
             {filtered.map((p) => {
-              const thumb = p.images?.[0]?.url ?? p.image_url ?? ""
+              const firstImg = p.images?.find((i) => (i.media_type ?? "image") === "image") ?? p.images?.[0]
+              const thumb = firstImg?.src ?? firstImg?.url ?? p.image_url ?? ""
               return (
                 <div key={p.id} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
                   <div className="aspect-[3/4] relative bg-dp-bg-elevated">

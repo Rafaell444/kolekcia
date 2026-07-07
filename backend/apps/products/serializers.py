@@ -96,8 +96,20 @@ class ProductListSerializer(serializers.ModelSerializer):
         )
 
     def get_image_url(self, obj):
-        first = obj.images.first()
-        return first.url if first else ""
+        # Prefer an actual image; fall back to any media. Uploaded files live in
+        # video_file (url is blank), so resolve that when present.
+        images = list(obj.images.all())
+        first = next((i for i in images if i.media_type == "image"), None) or (images[0] if images else None)
+        if not first:
+            return ""
+        if first.url:
+            return first.url
+        if first.video_file:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(first.video_file.url)
+            return first.video_file.url
+        return ""
 
     def get_default_variant_id(self, obj):
         first = obj.variants.first()
