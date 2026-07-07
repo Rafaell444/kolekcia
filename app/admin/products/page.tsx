@@ -46,8 +46,6 @@ type PendingVariant = {
   label: string
   priceUsd: string
   priceGel: string
-  priceEur: string
-  priceGbp: string
 }
 
 type ProductDraft = {
@@ -160,14 +158,18 @@ function ProductModal({
   // Size variants - existing (saved) and pending (to be created on save)
   const [sizeVariants, setSizeVariants] = useState<SizeVariantItem[]>(editProduct?.size_variants ?? [])
   const [pendingVariants, setPendingVariants] = useState<PendingVariant[]>([])
-  const newVarRef = useRef({ label: "", priceUsd: "", priceGel: "", priceEur: "", priceGbp: "" })
-  const [newVarDraft, setNewVarDraft] = useState({ label: "", priceUsd: "", priceGel: "", priceEur: "", priceGbp: "" })
+  const newVarRef = useRef({ label: "", priceUsd: "", priceGel: "" })
+  const [newVarDraft, setNewVarDraft] = useState({ label: "", priceUsd: "", priceGel: "" })
 
   // Categories
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [showNewCat, setShowNewCat] = useState(false)
   const [newCatName, setNewCatName] = useState("")
   const [creatingCat, setCreatingCat] = useState(false)
+  const [catError, setCatError] = useState("")
+
+  // Available tags (fetched from filter-options)
+  const [availableTags, setAvailableTags] = useState<string[]>([])
 
   const [saving, setSaving] = useState(false)
   const [savingStep, setSavingStep] = useState("")
@@ -191,6 +193,11 @@ function ProductModal({
         setCategories(list)
       })
       .catch(() => {})
+    // Fetch available tags for pill selector
+    fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"}/products/filter-options/`)
+      .then((r) => r.json())
+      .then((d: { themes?: string[] }) => { if (Array.isArray(d.themes)) setAvailableTags(d.themes) })
+      .catch(() => {})
   }, [])
 
   function set<K extends keyof ProductDraft>(k: K, v: ProductDraft[K]) {
@@ -207,16 +214,21 @@ function ProductModal({
   async function createCategory() {
     if (!newCatName.trim()) return
     setCreatingCat(true)
+    setCatError("")
     try {
+      const slug = newCatName.trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/[^a-z0-9-]/g, "")
       const cat = await adminFetch<CategoryOption>("/admin/categories/", {
         method: "POST",
-        body: JSON.stringify({ name: newCatName.trim(), slug: newCatName.trim().toLowerCase().replace(/\s+/g, "-") }),
+        body: JSON.stringify({ name: newCatName.trim(), slug }),
       })
       setCategories((prev) => [...prev, cat])
       toggleCategory(cat.slug)
       setNewCatName("")
       setShowNewCat(false)
-    } catch { /* noop */ }
+    } catch (err: unknown) {
+      const e = err as { data?: { detail?: string; slug?: string[] } }
+      setCatError(e?.data?.detail ?? (e?.data?.slug?.[0]) ?? "Failed to create category.")
+    }
     finally { setCreatingCat(false) }
   }
 
@@ -264,7 +276,7 @@ function ProductModal({
       ...prev,
       { _key: `${Date.now()}-${Math.random()}`, ...newVarDraft },
     ])
-    setNewVarDraft({ label: "", priceUsd: "", priceGel: "", priceEur: "", priceGbp: "" })
+    setNewVarDraft({ label: "", priceUsd: "", priceGel: "" })
   }
 
   function removePendingVariant(key: string) {
@@ -335,8 +347,8 @@ function ProductModal({
               label: v.label,
               price_usd: v.priceUsd,
               price_gel: v.priceGel || null,
-              price_eur: v.priceEur || null,
-              price_gbp: v.priceGbp || null,
+              price_eur: null,
+              price_gbp: null,
               sort_order: sizeVariants.length,
             }),
           }).catch(() => {})
@@ -393,15 +405,36 @@ function ProductModal({
                   className={`${INPUT_CLS} resize-none`} />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL_CLS}>Material</label>
-                  <input value={draft.material} onChange={(e) => set("material", e.target.value)} placeholder="e.g. Aluminium + UV ink" className={INPUT_CLS} />
+              <div>
+                <label className={LABEL_CLS}>Material</label>
+                <input value={draft.material} onChange={(e) => set("material", e.target.value)} placeholder="e.g. Aluminium + UV ink" className={INPUT_CLS} />
+              </div>
+
+              {/* Tags as pill selector */}
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <label className={LABEL_CLS + " mb-0"}>Tags / Themes</label>
                 </div>
-                <div>
-                  <label className={LABEL_CLS}>Tags (comma-separated)</label>
-                  <input value={draft.tags} onChange={(e) => set("tags", e.target.value)} placeholder="Forest, Nature" className={INPUT_CLS} />
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  {availableTags.map((tag) => {
+                    const selected = draft.tags.split(",").map((t) => t.trim().toLowerCase()).includes(tag.toLowerCase())
+                    return (
+                      <button key={tag} type="button"
+                        onClick={() => {
+                          const cur = draft.tags.split(",").map((t) => t.trim()).filter(Boolean)
+                          const next = selected ? cur.filter((t) => t.toLowerCase() !== tag.toLowerCase()) : [...cur, tag]
+                          set("tags", next.join(", "))
+                        }}
+                        className={`px-2.5 py-1 rounded-sm border text-[11px] font-semibold transition-colors ${
+                          selected ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
+                        }`}>
+                        {tag}
+                      </button>
+                    )
+                  })}
                 </div>
+                <input value={draft.tags} onChange={(e) => set("tags", e.target.value)}
+                  placeholder="Or type custom tags, comma-separated…" className={INPUT_CLS} />
               </div>
 
               {/* Flags */}
@@ -498,34 +531,35 @@ function ProductModal({
                   </button>
                 </div>
                 {showNewCat && (
-                  <div className="flex gap-2 mb-2">
-                    <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Category name…"
-                      className={`${INPUT_CLS} flex-1`}
-                      onKeyDown={(e) => { if (e.key === "Enter") void createCategory() }} />
-                    <button type="button" onClick={() => void createCategory()} disabled={creatingCat || !newCatName.trim()}
-                      className="px-3 py-2 bg-dp-accent-cta text-white text-[10px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-50">
-                      {creatingCat ? "…" : "Create"}
-                    </button>
+                  <div className="mb-2 flex flex-col gap-1">
+                    <div className="flex gap-2">
+                      <input value={newCatName} onChange={(e) => { setNewCatName(e.target.value); setCatError("") }} placeholder="Category name…"
+                        className={`${INPUT_CLS} flex-1`}
+                        onKeyDown={(e) => { if (e.key === "Enter") void createCategory() }} />
+                      <button type="button" onClick={() => void createCategory()} disabled={creatingCat || !newCatName.trim()}
+                        className="px-3 py-2 bg-dp-accent-cta text-white text-[10px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-50">
+                        {creatingCat ? "…" : "Create"}
+                      </button>
+                    </div>
+                    {catError && <p className="text-[10px] text-red-400">{catError}</p>}
                   </div>
                 )}
-                {categories.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {categories.map((cat) => {
-                      const sel = selectedCatSlugs.includes(cat.slug)
-                      return (
-                        <button key={cat.id} type="button" onClick={() => toggleCategory(cat.slug)}
-                          className={`px-2.5 py-1 rounded-sm border text-[11px] font-semibold transition-colors ${
-                            sel ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
-                          }`}>
-                          {cat.name}
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <input value={draft.categories} onChange={(e) => set("categories", e.target.value)}
-                    placeholder="figures,wallpanels" className={INPUT_CLS} />
-                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {categories.map((cat) => {
+                    const sel = selectedCatSlugs.includes(cat.slug)
+                    return (
+                      <button key={cat.id} type="button" onClick={() => toggleCategory(cat.slug)}
+                        className={`px-2.5 py-1 rounded-sm border text-[11px] font-semibold transition-colors ${
+                          sel ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
+                        }`}>
+                        {cat.name}
+                      </button>
+                    )
+                  })}
+                  {categories.length === 0 && (
+                    <p className="text-[11px] text-dp-text-tertiary">No categories yet — create one above.</p>
+                  )}
+                </div>
               </div>
 
               {/* Status + vendor */}
@@ -560,14 +594,12 @@ function ProductModal({
             {/* Existing variants table */}
             {sizeVariants.length > 0 && (
               <div className="border border-dp-border rounded-sm overflow-x-auto mb-3">
-                <table className="w-full text-[12px] min-w-[500px]">
+                <table className="w-full text-[12px]">
                   <thead>
                     <tr className="bg-dp-bg-elevated border-b border-dp-border text-dp-text-tertiary text-[10px] font-semibold uppercase tracking-wide">
                       <th className="text-left px-3 py-2">Label</th>
-                      <th className="text-right px-3 py-2">USD $</th>
-                      <th className="text-right px-3 py-2">GEL ₾</th>
-                      <th className="text-right px-3 py-2">EUR €</th>
-                      <th className="text-right px-3 py-2">GBP £</th>
+                      <th className="text-right px-3 py-2">Other market (USD $)</th>
+                      <th className="text-right px-3 py-2">Georgian market (GEL ₾)</th>
                       <th className="px-3 py-2 w-8" />
                     </tr>
                   </thead>
@@ -577,8 +609,6 @@ function ProductModal({
                         <td className="px-3 py-2 font-semibold text-dp-text-primary">{sv.label}</td>
                         <td className="px-3 py-2 text-right text-dp-text-primary">${parseFloat(sv.price_usd).toFixed(2)}</td>
                         <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.price_gel ? `₾${parseFloat(sv.price_gel).toFixed(2)}` : <span className="text-dp-text-tertiary">—</span>}</td>
-                        <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.price_eur ? `€${parseFloat(sv.price_eur).toFixed(2)}` : <span className="text-dp-text-tertiary">—</span>}</td>
-                        <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.price_gbp ? `£${parseFloat(sv.price_gbp).toFixed(2)}` : <span className="text-dp-text-tertiary">—</span>}</td>
                         <td className="px-3 py-2 text-right">
                           <button type="button" onClick={() => void handleDeleteSizeVariant(sv.id)}
                             className="text-dp-text-tertiary hover:text-red-400 transition-colors" aria-label="Delete">
@@ -592,17 +622,15 @@ function ProductModal({
               </div>
             )}
 
-            {/* Pending variants (not yet saved) */}
+            {/* Pending variants */}
             {pendingVariants.length > 0 && (
               <div className="border border-dp-accent-cta/30 rounded-sm overflow-x-auto mb-3 bg-dp-accent-cta/5">
-                <table className="w-full text-[12px] min-w-[500px]">
+                <table className="w-full text-[12px]">
                   <thead>
                     <tr className="border-b border-dp-accent-cta/20 text-dp-text-tertiary text-[10px] font-semibold uppercase tracking-wide">
                       <th className="text-left px-3 py-1.5 text-dp-accent-cta">Pending (saved on submit)</th>
                       <th className="text-right px-3 py-1.5">USD $</th>
                       <th className="text-right px-3 py-1.5">GEL ₾</th>
-                      <th className="text-right px-3 py-1.5">EUR €</th>
-                      <th className="text-right px-3 py-1.5">GBP £</th>
                       <th className="px-3 py-1.5 w-8" />
                     </tr>
                   </thead>
@@ -612,8 +640,6 @@ function ProductModal({
                         <td className="px-3 py-1.5 font-semibold text-dp-text-primary">{v.label}</td>
                         <td className="px-3 py-1.5 text-right">{v.priceUsd ? `$${v.priceUsd}` : "—"}</td>
                         <td className="px-3 py-1.5 text-right">{v.priceGel ? `₾${v.priceGel}` : "—"}</td>
-                        <td className="px-3 py-1.5 text-right">{v.priceEur ? `€${v.priceEur}` : "—"}</td>
-                        <td className="px-3 py-1.5 text-right">{v.priceGbp ? `£${v.priceGbp}` : "—"}</td>
                         <td className="px-3 py-1.5 text-right">
                           <button type="button" onClick={() => removePendingVariant(v._key)}
                             className="text-dp-text-tertiary hover:text-red-400 transition-colors" aria-label="Remove">
@@ -628,47 +654,34 @@ function ProductModal({
             )}
 
             {/* Add new variant row */}
-            <div className="border border-dp-border rounded-sm overflow-x-auto">
-              <div className="min-w-[500px] p-3 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-2 items-end">
-                <div>
-                  <label className={LABEL_CLS}>Label *</label>
-                  <input value={newVarDraft.label} onChange={(e) => setNewVarDraft((d) => ({ ...d, label: e.target.value }))}
-                    placeholder="e.g. M / 50×70cm" className={INPUT_CLS} />
-                </div>
-                <div>
-                  <label className={LABEL_CLS}>USD $ *</label>
-                  <input type="number" min={0} step={0.01} value={newVarDraft.priceUsd}
-                    onChange={(e) => setNewVarDraft((d) => ({ ...d, priceUsd: e.target.value }))}
-                    placeholder="0.00" className={INPUT_CLS} />
-                </div>
-                <div>
-                  <label className={LABEL_CLS}>GEL ₾</label>
-                  <input type="number" min={0} step={0.01} value={newVarDraft.priceGel}
-                    onChange={(e) => setNewVarDraft((d) => ({ ...d, priceGel: e.target.value }))}
-                    placeholder="0.00" className={INPUT_CLS} />
-                </div>
-                <div>
-                  <label className={LABEL_CLS}>EUR €</label>
-                  <input type="number" min={0} step={0.01} value={newVarDraft.priceEur}
-                    onChange={(e) => setNewVarDraft((d) => ({ ...d, priceEur: e.target.value }))}
-                    placeholder="0.00" className={INPUT_CLS} />
-                </div>
-                <div>
-                  <label className={LABEL_CLS}>GBP £</label>
-                  <input type="number" min={0} step={0.01} value={newVarDraft.priceGbp}
-                    onChange={(e) => setNewVarDraft((d) => ({ ...d, priceGbp: e.target.value }))}
-                    placeholder="0.00" className={INPUT_CLS} />
-                </div>
-                <div className="pb-0">
-                  <button type="button" onClick={addPendingVariant}
-                    disabled={!newVarDraft.label.trim() || !newVarDraft.priceUsd.trim()}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[11px] font-bold rounded-sm transition-colors whitespace-nowrap">
-                    <Plus size={12} /> Add
-                  </button>
-                </div>
+            <div className="border border-dp-border rounded-sm p-3 grid grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
+              <div>
+                <label className={LABEL_CLS}>Label *</label>
+                <input value={newVarDraft.label} onChange={(e) => setNewVarDraft((d) => ({ ...d, label: e.target.value }))}
+                  placeholder="e.g. M / 50×70cm" className={INPUT_CLS}
+                  onKeyDown={(e) => { if (e.key === "Enter") addPendingVariant() }} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Other market (USD $) *</label>
+                <input type="number" min={0} step={0.01} value={newVarDraft.priceUsd}
+                  onChange={(e) => setNewVarDraft((d) => ({ ...d, priceUsd: e.target.value }))}
+                  placeholder="0.00" className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Georgian market (GEL ₾)</label>
+                <input type="number" min={0} step={0.01} value={newVarDraft.priceGel}
+                  onChange={(e) => setNewVarDraft((d) => ({ ...d, priceGel: e.target.value }))}
+                  placeholder="0.00" className={INPUT_CLS} />
+              </div>
+              <div>
+                <button type="button" onClick={addPendingVariant}
+                  disabled={!newVarDraft.label.trim() || !newVarDraft.priceUsd.trim()}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[11px] font-bold rounded-sm transition-colors whitespace-nowrap">
+                  <Plus size={12} /> Add
+                </button>
               </div>
             </div>
-            <p className="text-[10px] text-dp-text-tertiary mt-1.5">Leave GEL/EUR/GBP blank to auto-convert from USD on the storefront.</p>
+            <p className="text-[10px] text-dp-text-tertiary mt-1.5">Leave GEL blank to auto-convert from USD on the storefront for Georgian users.</p>
           </div>
         </div>
 

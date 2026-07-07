@@ -272,7 +272,7 @@ class AdminSuperAnalyticsView(APIView):
 # ── Orders ────────────────────────────────────────────────────────────────────
 
 class AdminOrderListView(AdminNoPaginationMixin, generics.ListAPIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def get_serializer_class(self):
         from apps.orders.serializers import OrderSerializer
@@ -280,7 +280,11 @@ class AdminOrderListView(AdminNoPaginationMixin, generics.ListAPIView):
 
     def get_queryset(self):
         from apps.orders.models import Order
-        return Order.objects.prefetch_related("items", "status_history").all()
+        qs = Order.objects.prefetch_related("items", "status_history").all()
+        if not self.request.user.is_staff and hasattr(self.request.user, "vendor_profile"):
+            vendor = self.request.user.vendor_profile
+            qs = qs.filter(items__vendor=vendor).distinct()
+        return qs
 
 
 class AdminOrderUpdateView(APIView):
@@ -490,7 +494,7 @@ class AdminProductMediaView(APIView):
 # ── Categories ────────────────────────────────────────────────────────────────
 
 class AdminCategoryListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def get_serializer_class(self):
         from apps.products.serializers import CategorySerializer
@@ -502,7 +506,7 @@ class AdminCategoryListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
 
 
 class AdminCategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def get_serializer_class(self):
         from apps.products.serializers import CategorySerializer

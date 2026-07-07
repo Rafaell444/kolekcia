@@ -6,10 +6,34 @@ import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import { Truck, CheckCircle, Clock, Package, XCircle, Search, Eye, X } from "lucide-react"
 
 type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled"
+type OrderItem = { id: number; processing_option: string }
 type AdminOrder = {
   id: string; order_number: string; status: OrderStatus
   shipping_name: string; shipping_email: string
   total: string; created_at: string; tracking_code: string
+  items?: OrderItem[]
+}
+
+function addBusinessDays(date: Date, days: number): Date {
+  const result = new Date(date)
+  let added = 0
+  while (added < days) {
+    result.setDate(result.getDate() + 1)
+    const dow = result.getDay()
+    if (dow !== 0 && dow !== 6) added++
+  }
+  return result
+}
+
+function getShipByDate(order: AdminOrder): Date | null {
+  const items = order.items
+  if (!items || items.length === 0) return null
+  const DAYS: Record<string, number> = { standard: 10, fast: 7, express: 5 }
+  const maxDays = items.reduce((max, item) => {
+    const days = item.processing_option ? (DAYS[item.processing_option] ?? 10) : 25
+    return Math.max(max, days)
+  }, 0)
+  return addBusinessDays(new Date(order.created_at), maxDays)
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size?: number }> }> = {
@@ -184,7 +208,8 @@ export default function AdminOrdersPage(): React.ReactElement {
                   <th className="text-left px-4 py-3">Customer</th>
                   <th className="text-left px-4 py-3">Status</th>
                   <th className="text-left px-4 py-3">Total</th>
-                  <th className="text-left px-4 py-3">Date</th>
+                  <th className="text-left px-4 py-3">Ordered</th>
+                  <th className="text-left px-4 py-3">Ship by</th>
                   <th className="text-left px-4 py-3">Details</th>
                   <th className="text-left px-4 py-3">Update Status</th>
                 </tr>
@@ -211,6 +236,25 @@ export default function AdminOrdersPage(): React.ReactElement {
                       </td>
                       <td className="px-4 py-3 font-bold">${parseFloat(o.total).toFixed(2)}</td>
                       <td className="px-4 py-3 text-dp-text-tertiary">{new Date(o.created_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const shipBy = getShipByDate(o)
+                          if (!shipBy) return <span className="text-dp-text-tertiary">—</span>
+                          const daysLeft = Math.ceil((shipBy.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                          const overdue = daysLeft < 0
+                          const soon = !overdue && daysLeft <= 3
+                          return (
+                            <div>
+                              <p className="text-[12px] font-semibold text-dp-text-primary">
+                                {shipBy.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </p>
+                              <p className={`text-[10px] font-bold ${overdue ? "text-red-400" : soon ? "text-amber-400" : "text-dp-text-tertiary"}`}>
+                                {overdue ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? "Due today" : `${daysLeft}d left`}
+                              </p>
+                            </div>
+                          )
+                        })()}
+                      </td>
                       <td className="px-4 py-3">
                         <Link
                           href={`/admin/orders/${o.id}`}
