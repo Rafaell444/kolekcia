@@ -10,6 +10,7 @@ from .views import (
     DeliveryOptionListView,
     ProcessingOptionListView,
     ShopSettingsPublicView,
+    GiftWrapImageUploadView,
 )
 
 urlpatterns = [
@@ -24,4 +25,5 @@ urlpatterns = [
     path("delivery-options/", DeliveryOptionListView.as_view(), name="delivery-options"),
     path("processing-options/", ProcessingOptionListView.as_view(), name="processing-options"),
     path("shop-settings/", ShopSettingsPublicView.as_view(), name="shop-settings-public"),
+    path("gift-wrap-upload/", GiftWrapImageUploadView.as_view(), name="gift-wrap-upload"),
 ]

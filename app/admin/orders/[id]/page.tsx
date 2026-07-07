@@ -208,12 +208,17 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                       {[item.size_label, item.finish_label, item.frame_label].filter(Boolean).join(" · ")}
                     </p>
                     {item.gift_wrap && (
-                      <div className="mt-1.5 flex flex-col gap-0.5">
+                      <div className="mt-1.5 flex flex-col gap-1">
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-dp-accent-cta bg-dp-accent-cta/10 border border-dp-accent-cta/20 rounded-sm px-2 py-0.5 w-fit">
                           🎁 Gift wrapped
                         </span>
+                        {item.gift_wrap_image_url && (
+                          <a href={item.gift_wrap_image_url} target="_blank" rel="noopener noreferrer" className="inline-block mt-0.5">
+                            <img src={item.gift_wrap_image_url} alt="Engraving design" className="w-16 h-16 object-cover rounded-sm border border-dp-border hover:opacity-80 transition-opacity" />
+                          </a>
+                        )}
                         {item.gift_wrap_note && (
-                          <p className="text-[11px] text-dp-text-secondary italic mt-0.5">
+                          <p className="text-[11px] text-dp-text-secondary italic">
                             &ldquo;{item.gift_wrap_note}&rdquo;
                           </p>
                         )}

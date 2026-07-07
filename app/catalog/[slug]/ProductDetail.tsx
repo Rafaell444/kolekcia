@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -16,7 +16,7 @@ import {
   ChevronLeft, ShoppingCart, Heart, Share2, Shield, Truck,
   RotateCcw, Check, Zap, ArrowRight, Award, Package,
   Sparkles, Clock, ChevronDown, ChevronUp, Loader2,
-  MessageSquare, X, Send, Layers, Box, Palette, Gift, Play,
+  MessageSquare, X, Send, Layers, Box, Palette, Gift, Play, Upload, ImageIcon,
 } from "lucide-react"
 import { resolveProductPrices } from "@/lib/product-pricing"
 
@@ -229,6 +229,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const [shareCopied, setShareCopied] = useState(false)
   const [giftWrap, setGiftWrap] = useState(false)
   const [giftWrapNote, setGiftWrapNote] = useState("")
+  const [giftWrapImageUrl, setGiftWrapImageUrl] = useState("")
+  const [giftWrapImageUploading, setGiftWrapImageUploading] = useState(false)
+  const giftWrapFileRef = useRef<HTMLInputElement>(null)
   const [giftWrapPrice, setGiftWrapPrice] = useState(0)
   const [processingOption, setProcessingOption] = useState("standard")
   const [processingOptions, setProcessingOptions] = useState<ProcessingOpt[]>([])
@@ -304,6 +307,31 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     ? Math.round(((originalPrice - basePrice) / originalPrice) * 100)
     : null
 
+  async function handleGiftWrapImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setGiftWrapImageUploading(true)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+      const token = getAccessToken()
+      const res = await fetch(`${base}/orders/gift-wrap-upload/`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      if (res.ok) {
+        const data = await res.json() as { url: string }
+        setGiftWrapImageUrl(data.url)
+      }
+    } catch { /* noop */ }
+    finally {
+      setGiftWrapImageUploading(false)
+      if (giftWrapFileRef.current) giftWrapFileRef.current.value = ""
+    }
+  }
+
   async function handleAddToCart() {
     if (!getAccessToken()) {
       router.push(`/login?next=${encodeURIComponent(selfHref)}`)
@@ -322,6 +350,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
         await addItem(null, qty, {
           gift_wrap: giftWrap,
           gift_wrap_note: giftWrap ? giftWrapNote : "",
+          gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "",
           processing_option: isWallpanel ? processingOption : "",
           size_variant_id: selectedSizeVariantId,
         })
@@ -347,7 +376,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     setAdding(true)
     setAddError("")
     try {
-      await addItem(variant.id, qty, { gift_wrap: giftWrap, gift_wrap_note: giftWrap ? giftWrapNote : "", processing_option: isWallpanel ? processingOption : "" })
+      await addItem(variant.id, qty, { gift_wrap: giftWrap, gift_wrap_note: giftWrap ? giftWrapNote : "", gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "", processing_option: isWallpanel ? processingOption : "" })
       setAdded(true)
       setTimeout(() => setAdded(false), 2200)
     } catch {
@@ -664,8 +693,46 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                   </div>
                 </label>
                 {giftWrap && (
-                  <div className="px-4 pb-3 flex flex-col gap-2 border-t border-dp-accent-cta/20">
+                  <div className="px-4 pb-3 flex flex-col gap-2.5 border-t border-dp-accent-cta/20">
                     <p className="text-[11px] font-semibold text-dp-text-secondary pt-2">Engraving / personalisation</p>
+
+                    {/* Image upload */}
+                    <div>
+                      <p className="text-[10px] text-dp-text-tertiary mb-1.5">Upload engraving design image (optional)</p>
+                      {giftWrapImageUrl ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-16 rounded-sm overflow-hidden border border-dp-accent-cta/40 shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={giftWrapImageUrl} alt="Engraving preview" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[11px] text-dp-text-secondary">Image uploaded ✓</span>
+                            <button type="button" onClick={() => setGiftWrapImageUrl("")}
+                              className="text-[10px] text-red-400 hover:underline text-left">Remove</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => giftWrapFileRef.current?.click()}
+                          disabled={giftWrapImageUploading}
+                          className="flex items-center gap-2 px-3 py-2 border border-dashed border-dp-border hover:border-dp-accent-cta/50 rounded-sm text-[11px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors disabled:opacity-50"
+                        >
+                          {giftWrapImageUploading
+                            ? <><Loader2 size={13} className="animate-spin" /> Uploading…</>
+                            : <><Upload size={13} /> <ImageIcon size={13} /> Upload image</>}
+                        </button>
+                      )}
+                      <input
+                        ref={giftWrapFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => void handleGiftWrapImageUpload(e)}
+                      />
+                    </div>
+
+                    {/* Text note */}
                     <textarea
                       rows={2}
                       value={giftWrapNote}
@@ -673,7 +740,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                       placeholder="Write the text you want engraved on the box (optional)…"
                       className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-accent-cta/50 transition-colors resize-none"
                     />
-                    <p className="text-[10px] text-dp-text-tertiary">Your personalisation note will be visible to our team in the order details.</p>
+                    <p className="text-[10px] text-dp-text-tertiary">Both the image and text will be visible to our team in the order details.</p>
                   </div>
                 )}
               </div>

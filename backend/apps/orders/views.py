@@ -364,6 +364,31 @@ class ProcessingOptionListView(APIView):
         return Response(ProcessingOptionSerializer(opts, many=True).data)
 
 
+class GiftWrapImageUploadView(APIView):
+    """Authenticated users can upload a gift wrap / engraving image. Returns a URL."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"detail": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        import os, uuid
+        from django.conf import settings as django_settings
+        ext = os.path.splitext(file.name)[1].lower() or ".jpg"
+        allowed = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+        if ext not in allowed:
+            return Response({"detail": "Only image files are allowed."}, status=status.HTTP_400_BAD_REQUEST)
+        filename = f"{uuid.uuid4().hex}{ext}"
+        save_dir = os.path.join(django_settings.MEDIA_ROOT, "gift_wrap")
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        url = request.build_absolute_uri(f"{django_settings.MEDIA_URL}gift_wrap/{filename}")
+        return Response({"url": url}, status=status.HTTP_201_CREATED)
+
+
 class CustomOrderCreateView(generics.CreateAPIView):
     serializer_class = CustomOrderSerializer
     permission_classes = []
