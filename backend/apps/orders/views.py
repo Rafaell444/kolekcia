@@ -52,6 +52,8 @@ class CartItemView(APIView):
         size_variant_id = serializer.validated_data.get("size_variant_id")
         quantity = serializer.validated_data["quantity"]
         gift_wrap = serializer.validated_data.get("gift_wrap", False)
+        gift_wrap_note = serializer.validated_data.get("gift_wrap_note", "")
+        gift_wrap_image_url = serializer.validated_data.get("gift_wrap_image_url", "")
         delivery_type = serializer.validated_data.get("delivery_type", "standard")
         processing_option = serializer.validated_data.get("processing_option", "")
 
@@ -88,6 +90,8 @@ class CartItemView(APIView):
             "quantity": quantity,
             "gift_wrap": gift_wrap,
             "gift_wrap_price": gift_wrap_price,
+            "gift_wrap_note": gift_wrap_note,
+            "gift_wrap_image_url": gift_wrap_image_url,
             "delivery_type": delivery_type,
             "processing_option": processing_option,
         }
@@ -98,8 +102,10 @@ class CartItemView(APIView):
                 item.quantity = F("quantity") + quantity
                 item.gift_wrap = gift_wrap
                 item.gift_wrap_price = gift_wrap_price
+                item.gift_wrap_note = gift_wrap_note
+                item.gift_wrap_image_url = gift_wrap_image_url
                 item.processing_option = processing_option
-                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "processing_option"])
+                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "gift_wrap_note", "gift_wrap_image_url", "processing_option"])
             else:
                 CartItem.objects.create(cart=cart, size_variant=size_variant, **defaults)
         else:
@@ -108,8 +114,10 @@ class CartItemView(APIView):
                 item.quantity = F("quantity") + quantity
                 item.gift_wrap = gift_wrap
                 item.gift_wrap_price = gift_wrap_price
+                item.gift_wrap_note = gift_wrap_note
+                item.gift_wrap_image_url = gift_wrap_image_url
                 item.processing_option = processing_option
-                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "processing_option"])
+                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "gift_wrap_note", "gift_wrap_image_url", "processing_option"])
             else:
                 CartItem.objects.create(cart=cart, variant=variant, **defaults)
 
@@ -271,6 +279,8 @@ class CheckoutView(APIView):
                 price=item.variant.price,
                 quantity=item.quantity,
                 gift_wrap=item.gift_wrap,
+                gift_wrap_note=item.gift_wrap_note,
+                gift_wrap_image_url=item.gift_wrap_image_url,
                 processing_option=item.processing_option,
             )
 

@@ -964,7 +964,7 @@ class AdminProcessingOptionDetailView(APIView):
 # ── Size variants ──────────────────────────────────────────────────────────────
 
 class AdminSizeVariantView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def post(self, request):
         from apps.products.models import Product, SizeVariant
@@ -980,6 +980,18 @@ class AdminSizeVariantView(APIView):
         ser.is_valid(raise_exception=True)
         sv = SizeVariant.objects.create(product=product, **ser.validated_data)
         return Response(SizeVariantSerializer(sv).data, status=status.HTTP_201_CREATED)
+
+    def patch(self, request, sv_id):
+        from apps.products.models import SizeVariant
+        from apps.products.serializers import SizeVariantSerializer
+        try:
+            sv = SizeVariant.objects.get(pk=sv_id)
+        except SizeVariant.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        ser = SizeVariantSerializer(sv, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
 
     def delete(self, request, sv_id):
         from apps.products.models import SizeVariant

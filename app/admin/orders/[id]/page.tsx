@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save } from "lucide-react"
+import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save, CalendarClock } from "lucide-react"
 
 type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled"
 
@@ -19,6 +19,31 @@ type OrderItem = {
   price: string
   quantity: number
   line_total: string
+  processing_option: string
+  gift_wrap?: boolean
+  gift_wrap_note?: string
+  gift_wrap_image_url?: string
+}
+
+type ProcessingOpt = {
+  id: number; slug: string; label: string; est_days_min: number; est_days_max: number
+}
+
+function addBusinessDays(date: Date, days: number): Date {
+  const result = new Date(date)
+  let added = 0
+  while (added < days) {
+    result.setDate(result.getDate() + 1)
+    const dow = result.getDay()
+    if (dow !== 0 && dow !== 6) added++
+  }
+  return result
+}
+
+function getProcessingInfo(item: OrderItem, opts: ProcessingOpt[]): { label: string; days: number } {
+  if (!item.processing_option) return { label: "Standard (Figure)", days: 25 }
+  const opt = opts.find((o) => o.slug === item.processing_option)
+  return opt ? { label: opt.label, days: opt.est_days_max } : { label: item.processing_option, days: 25 }
 }
 
 type StatusHistory = {
@@ -67,6 +92,8 @@ export default function AdminOrderDetailPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
+  const [processingOpts, setProcessingOpts] = useState<ProcessingOpt[]>([])
+
   // Status update state
   const [newStatus, setNewStatus] = useState<string>("")
   const [trackingCode, setTrackingCode] = useState("")
@@ -76,6 +103,12 @@ export default function AdminOrderDetailPage(): React.ReactElement {
 
   const adminUser = typeof window !== "undefined" ? getAdminUser() : null
   const isVendor = Boolean(adminUser && !adminUser.is_staff && adminUser.vendor)
+
+  useEffect(() => {
+    adminFetch<ProcessingOpt[]>("/admin/processing-options/")
+      .then(setProcessingOpts)
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!orderId) return
@@ -174,6 +207,18 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                     <p className="text-[11px] text-dp-text-tertiary mt-1">
                       {[item.size_label, item.finish_label, item.frame_label].filter(Boolean).join(" · ")}
                     </p>
+                    {item.gift_wrap && (
+                      <div className="mt-1.5 flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-dp-accent-cta bg-dp-accent-cta/10 border border-dp-accent-cta/20 rounded-sm px-2 py-0.5 w-fit">
+                          🎁 Gift wrapped
+                        </span>
+                        {item.gift_wrap_note && (
+                          <p className="text-[11px] text-dp-text-secondary italic mt-0.5">
+                            &ldquo;{item.gift_wrap_note}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-[13px] text-dp-text-secondary">×{item.quantity}</p>
@@ -181,6 +226,51 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                   </div>
                 </li>
               ))}
+            </ul>
+          </div>
+
+          {/* Processing Timeline */}
+          <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-dp-border flex items-center gap-2">
+              <CalendarClock size={14} className="text-dp-accent-cta" />
+              <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Processing Timeline</h2>
+            </div>
+            <ul className="divide-y divide-dp-border">
+              {order.items.map((item) => {
+                const info = getProcessingInfo(item, processingOpts)
+                const deadline = addBusinessDays(new Date(order.created_at), info.days)
+                const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                const isOverdue = daysLeft < 0
+                const isDueSoon = !isOverdue && daysLeft <= 3
+                return (
+                  <li key={item.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-dp-text-primary truncate">{item.product_title}</p>
+                      <p className="text-[11px] text-dp-text-tertiary">{info.label} · {info.days} business days</p>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <div className="text-right">
+                        <p className="text-[10px] text-dp-text-tertiary uppercase tracking-widest">Ship by</p>
+                        <p className="text-[13px] font-bold text-dp-text-primary">
+                          {deadline.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </p>
+                      </div>
+                      <div className={`w-16 px-2 py-1.5 rounded-sm text-center border ${
+                        isOverdue
+                          ? "bg-red-500/10 border-red-500/30 text-red-400"
+                          : isDueSoon
+                          ? "bg-dp-accent-gold/10 border-dp-accent-gold/30 text-dp-accent-gold"
+                          : "bg-dp-bg-elevated border-dp-border text-dp-text-secondary"
+                      }`}>
+                        <p className="text-[20px] font-bold leading-none">{Math.abs(daysLeft)}</p>
+                        <p className="text-[9px] uppercase tracking-widest leading-tight">
+                          {isOverdue ? "overdue" : "days left"}
+                        </p>
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           </div>
 

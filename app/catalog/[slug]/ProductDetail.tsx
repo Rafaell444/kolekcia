@@ -89,7 +89,7 @@ type ApiVariant = {
   frame: { id: string; label: string; surcharge: number }
   stock: number
 }
-type SizeVariant = { id: number; label: string; price_usd: string; sort_order: number; is_active: boolean }
+type SizeVariant = { id: number; label: string; price_usd: string; price_gel?: string | null; price_eur?: string | null; price_gbp?: string | null; sort_order: number; is_active: boolean }
 type ProcessingOpt = { id: number; slug: string; label: string; price_usd: string; price_gel: string; est_days_min: number; est_days_max: number }
 type ApiProduct = {
   id: number; slug?: string; title: string; artist_name: string
@@ -228,6 +228,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const [contactMessage, setContactMessage] = useState("")
   const [shareCopied, setShareCopied] = useState(false)
   const [giftWrap, setGiftWrap] = useState(false)
+  const [giftWrapNote, setGiftWrapNote] = useState("")
   const [giftWrapPrice, setGiftWrapPrice] = useState(0)
   const [processingOption, setProcessingOption] = useState("standard")
   const [processingOptions, setProcessingOptions] = useState<ProcessingOpt[]>([])
@@ -282,9 +283,14 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     currency,
     rates,
   )
-  // If new size variant selected, its price_usd overrides the base price (converted to current currency)
+  // If new size variant selected, use its regional price if available, else convert from USD
   const basePrice = hasSizeVariants && selectedSizeVariant
-    ? parseFloat(selectedSizeVariant.price_usd) * (rates[currency] ?? 1)
+    ? (() => {
+        if (currency === "GEL" && selectedSizeVariant.price_gel) return parseFloat(selectedSizeVariant.price_gel)
+        if (currency === "EUR" && selectedSizeVariant.price_eur) return parseFloat(selectedSizeVariant.price_eur)
+        if (currency === "GBP" && selectedSizeVariant.price_gbp) return parseFloat(selectedSizeVariant.price_gbp)
+        return parseFloat(selectedSizeVariant.price_usd) * (rates[currency] ?? 1)
+      })()
     : resolved.price + variantSurcharge
   const originalPrice = hasSizeVariants
     ? null
@@ -315,6 +321,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
       try {
         await addItem(null, qty, {
           gift_wrap: giftWrap,
+          gift_wrap_note: giftWrap ? giftWrapNote : "",
           processing_option: isWallpanel ? processingOption : "",
           size_variant_id: selectedSizeVariantId,
         })
@@ -340,7 +347,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     setAdding(true)
     setAddError("")
     try {
-      await addItem(variant.id, qty, { gift_wrap: giftWrap, processing_option: isWallpanel ? processingOption : "" })
+      await addItem(variant.id, qty, { gift_wrap: giftWrap, gift_wrap_note: giftWrap ? giftWrapNote : "", processing_option: isWallpanel ? processingOption : "" })
       setAdded(true)
       setTimeout(() => setAdded(false), 2200)
     } catch {
@@ -624,26 +631,52 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               </div>
             )}
 
+            {/* Processing time — figure products only (fixed, no choice) */}
+            {isFigure && (
+              <div className="flex items-center gap-3 px-4 py-3 border border-dp-border rounded-sm bg-dp-bg-elevated/40">
+                <Clock size={15} className="text-dp-accent-cta shrink-0" />
+                <div>
+                  <p className="text-[13px] font-semibold text-dp-text-primary">Processing Time: 20–25 business days</p>
+                  <p className="text-[11px] text-dp-text-tertiary mt-0.5">Each figure is hand-crafted and made to order</p>
+                </div>
+              </div>
+            )}
+
             {/* Gift wrap toggle */}
             {giftWrapPrice > 0 && (
-              <label className="flex items-center justify-between gap-3 px-4 py-3 border border-dp-border rounded-sm cursor-pointer hover:border-dp-border-hover transition-colors">
-                <div className="flex items-center gap-3">
-                  <Gift size={16} className="text-dp-text-tertiary shrink-0" />
-                  <div>
-                    <p className="text-[13px] font-semibold text-dp-text-primary">Add gift wrapping</p>
-                    <p className="text-[11px] text-dp-text-tertiary">Beautifully wrapped with a handwritten card slot</p>
+              <div className={`border rounded-sm transition-colors ${giftWrap ? "border-dp-accent-cta/50 bg-dp-accent-cta/5" : "border-dp-border"}`}>
+                <label className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer hover:bg-dp-bg-elevated/30 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <Gift size={16} className="text-dp-text-tertiary shrink-0" />
+                    <div>
+                      <p className="text-[13px] font-semibold text-dp-text-primary">Add gift wrapping</p>
+                      <p className="text-[11px] text-dp-text-tertiary">Beautifully wrapped — add engraving text below</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-bold text-dp-text-primary">+{formatPrice(giftWrapPrice)}</span>
-                  <input
-                    type="checkbox"
-                    checked={giftWrap}
-                    onChange={(e) => setGiftWrap(e.target.checked)}
-                    className="w-4 h-4 accent-dp-accent-cta"
-                  />
-                </div>
-              </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-bold text-dp-text-primary">+{formatPrice(giftWrapPrice)}</span>
+                    <input
+                      type="checkbox"
+                      checked={giftWrap}
+                      onChange={(e) => setGiftWrap(e.target.checked)}
+                      className="w-4 h-4 accent-dp-accent-cta"
+                    />
+                  </div>
+                </label>
+                {giftWrap && (
+                  <div className="px-4 pb-3 flex flex-col gap-2 border-t border-dp-accent-cta/20">
+                    <p className="text-[11px] font-semibold text-dp-text-secondary pt-2">Engraving / personalisation</p>
+                    <textarea
+                      rows={2}
+                      value={giftWrapNote}
+                      onChange={(e) => setGiftWrapNote(e.target.value)}
+                      placeholder="Write the text you want engraved on the box (optional)…"
+                      className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-accent-cta/50 transition-colors resize-none"
+                    />
+                    <p className="text-[10px] text-dp-text-tertiary">Your personalisation note will be visible to our team in the order details.</p>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center">

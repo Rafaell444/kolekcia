@@ -28,6 +28,8 @@ class CartItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     gift_wrap = models.BooleanField(default=False)
     gift_wrap_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    gift_wrap_note = models.CharField(max_length=500, blank=True, default="")
+    gift_wrap_image_url = models.URLField(blank=True, default="")
     delivery_type = models.CharField(max_length=20, default="standard")
     processing_option = models.CharField(max_length=50, blank=True, default="")
 
@@ -148,6 +150,8 @@ class OrderItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=1)
     gift_wrap = models.BooleanField(default=False)
+    gift_wrap_note = models.CharField(max_length=500, blank=True, default="")
+    gift_wrap_image_url = models.URLField(blank=True, default="")
     processing_option = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:

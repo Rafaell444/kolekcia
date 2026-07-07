@@ -16,7 +16,8 @@ class CartItemSerializer(serializers.ModelSerializer):
         fields = (
             "id", "variant", "size_variant", "quantity", "line_total",
             "product_title", "product_image", "size_label",
-            "gift_wrap", "gift_wrap_price", "delivery_type", "processing_option",
+            "gift_wrap", "gift_wrap_price", "gift_wrap_note", "gift_wrap_image_url",
+            "delivery_type", "processing_option",
         )
 
     def get_product_title(self, obj):
@@ -72,6 +73,8 @@ class AddToCartSerializer(serializers.Serializer):
     size_variant_id = serializers.IntegerField(required=False, allow_null=True)
     quantity = serializers.IntegerField(min_value=1, default=1)
     gift_wrap = serializers.BooleanField(default=False, required=False)
+    gift_wrap_note = serializers.CharField(max_length=500, default="", required=False, allow_blank=True)
+    gift_wrap_image_url = serializers.URLField(default="", required=False, allow_blank=True)
     delivery_type = serializers.CharField(max_length=20, default="standard", required=False)
     processing_option = serializers.CharField(max_length=50, default="", required=False, allow_blank=True)
 
@@ -86,7 +89,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderItem
-        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "processing_option")
+        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "gift_wrap_note", "gift_wrap_image_url", "processing_option")
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):

@@ -44,7 +44,7 @@ class PosterFrameSerializer(serializers.ModelSerializer):
 class SizeVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = SizeVariant
-        fields = ("id", "label", "price_usd", "sort_order", "is_active")
+        fields = ("id", "label", "price_usd", "price_gel", "price_eur", "price_gbp", "sort_order", "is_active")
 
 
 class ProductImageSerializer(serializers.ModelSerializer):

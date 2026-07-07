@@ -143,10 +143,13 @@ class ProductImage(models.Model):
 
 
 class SizeVariant(models.Model):
-    """Simplified size variant with its own explicit USD price."""
+    """Simplified size variant with its own explicit USD price and regional overrides."""
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="size_variants")
     label = models.CharField(max_length=50)
     price_usd = models.DecimalField(max_digits=10, decimal_places=2)
+    price_gel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    price_eur = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    price_gbp = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
