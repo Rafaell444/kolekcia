@@ -386,7 +386,7 @@ class AdminProductListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
 
     def get_queryset(self):
         from apps.products.models import Product
-        return Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame")
+        return Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
 
 
 class AdminProductDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -398,7 +398,7 @@ class AdminProductDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         from apps.products.models import Product
-        return Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame")
+        return Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
 
     def perform_update(self, serializer):
         instance = serializer.save()

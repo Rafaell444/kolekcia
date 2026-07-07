@@ -24,6 +24,7 @@ type AdminProduct = {
   allow_custom_size?: boolean
   category_slug: string
   category_slugs?: string[]
+  tags?: string[]
   status?: "active" | "paused" | "sold"
   vendor_slug?: string | null
   vendor_name?: string | null
@@ -133,7 +134,7 @@ function ProductModal({
       ? {
           title: editProduct.title,
           categories: editProduct.category_slugs?.join(",") ?? editProduct.category_slug ?? "",
-          tags: Array.isArray(editProduct.size_variants) ? "" : "",
+          tags: Array.isArray(editProduct.tags) ? editProduct.tags.join(", ") : "",
           vendorSlug: editProduct.vendor_slug ?? "",
           status: editProduct.status ?? "active",
           isLimited: editProduct.is_limited,
@@ -175,13 +176,28 @@ function ProductModal({
   const [savingStep, setSavingStep] = useState("")
   const [error, setError] = useState("")
 
-  // Load full product size_variants + images when editing
+  // Load full product detail when editing (list endpoint may lack tags, description, etc.)
   useEffect(() => {
     if (!editProduct) return
     adminFetch<AdminProduct>(`/admin/products/${editProduct.id}/`)
       .then((p) => {
         if (p.size_variants) setSizeVariants(p.size_variants)
         if (p.images) setMediaItems(p.images.map((i) => ({ id: i.id, src: i.src ?? i.url, media_type: i.media_type ?? "image" })))
+        setDraft((prev) => ({
+          ...prev,
+          title: p.title ?? prev.title,
+          categories: p.category_slugs?.join(",") ?? prev.categories,
+          tags: Array.isArray(p.tags) ? p.tags.join(", ") : prev.tags,
+          vendorSlug: p.vendor_slug ?? prev.vendorSlug,
+          status: p.status ?? prev.status,
+          isLimited: p.is_limited ?? prev.isLimited,
+          isSale: p.is_sale ?? prev.isSale,
+          isNew: p.is_new ?? prev.isNew,
+          isExclusive: p.is_exclusive ?? prev.isExclusive,
+          allowCustomSize: p.allow_custom_size ?? prev.allowCustomSize,
+          description: p.description ?? prev.description,
+          material: p.material ?? prev.material,
+        }))
       })
       .catch(() => {})
   }, [editProduct?.id]) // eslint-disable-line react-hooks/exhaustive-deps
