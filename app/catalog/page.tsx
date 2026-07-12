@@ -844,8 +844,8 @@ function CatalogPageInner(): React.ReactElement {
       {/* ── Mobile filter drawer ── */}
       {mounted && mobileOpen && createPortal(
         <>
-          <div className="fixed inset-0 z-[99] bg-black/70 lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
-          <div className="fixed top-0 bottom-16 left-0 z-[100] w-80 max-w-full bg-dp-bg-surface border-r border-dp-border flex flex-col lg:hidden">
+          <div className="fixed inset-0 z-[200] bg-black/70 lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
+          <div className="fixed inset-y-0 left-0 z-[201] w-80 max-w-full bg-dp-bg-surface border-r border-dp-border flex flex-col lg:hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border shrink-0">
               <span className="font-display text-2xl text-dp-text-primary">Filters</span>
               <button onClick={() => setMobileOpen(false)} aria-label="Close filters">
