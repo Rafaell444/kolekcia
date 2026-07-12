@@ -119,16 +119,6 @@ export default function AdminVendorsPage(): React.ReactElement {
           </div>
         </div>
       )}
-
-      <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5 text-[13px] text-dp-text-secondary">
-        <p className="font-bold text-dp-text-primary mb-2">How to add a new vendor</p>
-        <ol className="list-decimal list-inside space-y-1 text-dp-text-tertiary">
-          <li>Create a new user account from the <strong className="text-dp-text-secondary">Django admin</strong> at <code className="text-dp-accent-cta">/django-admin/</code></li>
-          <li>Set their role to <code className="text-dp-accent-cta">vendor</code></li>
-          <li>Create a <code className="text-dp-accent-cta">Vendor</code> record linked to that user</li>
-          <li>They can then log in at <code className="text-dp-accent-cta">/admin/login</code> to access their vendor panel</li>
-        </ol>
-      </div>
     </div>
   )
 }

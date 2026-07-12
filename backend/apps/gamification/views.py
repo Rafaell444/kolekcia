@@ -2,21 +2,49 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
-from .models import GamificationProfile, Badge, XPLog, XPRule
-from .serializers import GamificationProfileSerializer, BadgeSerializer, XPLogSerializer, XPRuleSerializer
+from .models import GamificationProfile, Badge, XPLog, XPRule, UserBadge
+from .serializers import (
+    GamificationProfileSerializer,
+    BadgeSerializer,
+    XPLogSerializer,
+    XPRuleSerializer,
+    UserBadgeSerializer,
+)
 
 
 class GamificationProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from .services import sync_earned_badges_from_xp
+        sync_earned_badges_from_xp(request.user)
         profile, _ = GamificationProfile.objects.get_or_create(user=request.user)
         return Response(GamificationProfileSerializer(profile).data)
 
 
+class MyBadgesView(generics.ListAPIView):
+    serializer_class = UserBadgeSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        from .services import sync_earned_badges_from_xp
+        sync_earned_badges_from_xp(self.request.user)
+        return UserBadge.objects.filter(user=self.request.user).select_related("badge", "badge__prize_promo").order_by("-earned_at")
+
+
+class MarkBadgesSeenView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        updated = UserBadge.objects.filter(user=request.user, seen_at__isnull=True).update(seen_at=timezone.now())
+        return Response({"marked": updated})
+
+
 class BadgeListView(generics.ListAPIView):
-    queryset = Badge.objects.all()
+    queryset = Badge.objects.select_related("prize_promo").all()
     serializer_class = BadgeSerializer
     permission_classes = [AllowAny]
     pagination_class = None

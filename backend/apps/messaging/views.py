@@ -11,6 +11,25 @@ def _is_vendor(user):
     return hasattr(user, "vendor_profile") and user.vendor_profile is not None
 
 
+def _message_sender_meta(user):
+    if _is_vendor(user):
+        return "admin", "vendor", user
+    if user.is_staff:
+        return "admin", "superadmin", user
+    return "customer", "customer", user
+
+
+def _create_message(conversation, user, text=""):
+    from_role, sender_kind, sender_user = _message_sender_meta(user)
+    return Message.objects.create(
+        conversation=conversation,
+        from_role=from_role,
+        sender_kind=sender_kind,
+        sender_user=sender_user if sender_kind != "customer" else user,
+        text=text,
+    )
+
+
 class ConversationListView(generics.ListCreateAPIView):
     serializer_class = ConversationSerializer
     permission_classes = [IsAuthenticated]
@@ -54,7 +73,7 @@ class ConversationListView(generics.ListCreateAPIView):
         conv = serializer.save(customer=self.request.user, vendor=vendor, product=product, subject=subject)
         text = self.request.data.get("initial_message", "")
         if text:
-            Message.objects.create(conversation=conv, from_role="customer", text=text)
+            _create_message(conv, self.request.user, text)
 
 
 class ConversationDetailView(generics.RetrieveAPIView):
@@ -103,14 +122,20 @@ class SendMessageView(APIView):
         except Conversation.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        from_role = "admin" if is_admin_side else "customer"
+        from_role, sender_kind, sender_user = _message_sender_meta(request.user)
         text = request.data.get("text", "").strip()
         files = request.FILES.getlist("files")
 
         if not text and not files:
             return Response({"detail": "Message text or attachment is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        msg = Message.objects.create(conversation=conv, from_role=from_role, text=text)
+        msg = Message.objects.create(
+            conversation=conv,
+            from_role=from_role,
+            sender_kind=sender_kind,
+            sender_user=sender_user if sender_kind != "customer" else request.user,
+            text=text,
+        )
 
         for f in files:
             mime = f.content_type or ""
@@ -129,3 +154,50 @@ class SendMessageView(APIView):
 
         conv.save()
         return Response(MessageSerializer(msg, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
+class StartConversationWithCustomerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.users.models import User
+        from apps.vendors.models import Vendor
+
+        customer_id = request.data.get("customer_id")
+        if not customer_id:
+            return Response({"detail": "customer_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            customer = User.objects.get(pk=customer_id)
+        except User.DoesNotExist:
+            return Response({"detail": "Customer not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        vendor = None
+        if _is_vendor(request.user):
+            vendor = request.user.vendor_profile
+        elif request.user.is_staff and request.data.get("vendor_id"):
+            try:
+                vendor = Vendor.objects.get(pk=request.data["vendor_id"])
+            except Vendor.DoesNotExist:
+                pass
+        elif not request.user.is_staff:
+            return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+
+        subject = (request.data.get("subject") or "").strip()
+        if not subject:
+            subject = f"Message from {vendor.name}" if vendor else "Support message"
+
+        conv = Conversation.objects.filter(customer=customer, vendor=vendor).order_by("-updated_at").first()
+        created = False
+        if not conv:
+            conv = Conversation.objects.create(customer=customer, vendor=vendor, subject=subject)
+            created = True
+
+        initial = (request.data.get("initial_message") or "").strip()
+        if initial:
+            _create_message(conv, request.user, initial)
+
+        return Response(
+            ConversationSerializer(conv, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )

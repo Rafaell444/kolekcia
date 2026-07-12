@@ -1,25 +1,28 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { Search, Shield, ShieldOff } from "lucide-react"
+import { Search, Shield, ShieldOff, MessageSquare } from "lucide-react"
 
 type AdminUser = {
   id: string; email: string; name: string; role: string
-  orders?: number; xp?: number; joined?: string; banned?: boolean
+  orders?: number; orders_count?: number; xp?: number; joined?: string; banned?: boolean
   date_joined?: string
 }
 
 export default function AdminUsersPage(): React.ReactElement {
+  const router = useRouter()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [messagingId, setMessagingId] = useState<string | null>(null)
 
   const adminUser = typeof window !== "undefined" ? getAdminUser() : null
   const isVendor = adminUser && !adminUser.is_staff && !!adminUser.vendor
   const endpoint = isVendor ? "/vendors/me/customers/" : "/admin/users/"
   const pageTitle = isVendor ? "Customers" : "All Users"
-  const pageDesc = isVendor ? "Customers who have purchased your products." : "All registered platform users."
+  const pageDesc = isVendor ? "Customers who have purchased or requested custom work." : "All registered platform users."
 
   useEffect(() => {
     let cancelled = false
@@ -34,6 +37,24 @@ export default function AdminUsersPage(): React.ReactElement {
     if (isVendor) return
     await adminFetch(`/admin/users/${userId}/toggle/`, { method: "POST" }).catch(() => {})
     setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, banned: !currentBanned } : u))
+  }
+
+  async function startInbox(customerId: string, customerName: string) {
+    setMessagingId(customerId)
+    try {
+      const conv = await adminFetch<{ id: string | number }>("/messaging/conversations/start-with-customer/", {
+        method: "POST",
+        body: JSON.stringify({
+          customer_id: customerId,
+          subject: `Message to ${customerName}`,
+        }),
+      })
+      router.push(`/admin/inbox?c=${conv.id}`)
+    } catch {
+      alert("Could not start conversation.")
+    } finally {
+      setMessagingId(null)
+    }
   }
 
   const filtered = users.filter(
@@ -61,9 +82,10 @@ export default function AdminUsersPage(): React.ReactElement {
             <thead className="border-b border-dp-border">
               <tr className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">
                 <th className="text-left px-4 py-3">User</th>
-                <th className="text-left px-4 py-3">Role</th>
+                {isVendor && <th className="text-left px-4 py-3">Orders</th>}
+                {!isVendor && <th className="text-left px-4 py-3">Role</th>}
                 <th className="text-left px-4 py-3">Joined</th>
-                {!isVendor && <th className="text-left px-4 py-3">Actions</th>}
+                <th className="text-left px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dp-border">
@@ -73,30 +95,44 @@ export default function AdminUsersPage(): React.ReactElement {
                     <p className="font-semibold text-dp-text-primary">{u.name || "—"}</p>
                     <p className="text-[11px] text-dp-text-tertiary">{u.email}</p>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className="px-2 py-0.5 rounded-sm border text-[10px] font-bold uppercase tracking-widest text-dp-text-secondary border-dp-border">
-                      {u.role ?? "customer"}
-                    </span>
-                  </td>
+                  {isVendor && (
+                    <td className="px-4 py-3 text-dp-text-secondary">{u.orders_count ?? 0}</td>
+                  )}
+                  {!isVendor && (
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-sm border text-[10px] font-bold uppercase tracking-widest text-dp-text-secondary border-dp-border">
+                        {u.role ?? "customer"}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-dp-text-tertiary">
                     {u.date_joined ? new Date(u.date_joined).toLocaleDateString() : u.joined ?? "—"}
                   </td>
-                  {!isVendor && (
-                    <td className="px-4 py-3">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => toggleBan(u.id, u.banned ?? false)}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-sm border text-[11px] font-bold uppercase tracking-widest transition-colors ${
-                          u.banned
-                            ? "border-dp-success text-dp-success hover:bg-dp-success/10"
-                            : "border-dp-accent-cta text-dp-accent-cta hover:bg-dp-accent-cta/10"
-                        }`}
-                        aria-label={u.banned ? "Unban user" : "Ban user"}
+                        type="button"
+                        onClick={() => void startInbox(u.id, u.name || u.email)}
+                        disabled={messagingId === u.id}
+                        className="flex items-center gap-1 px-2 py-1 rounded-sm border border-dp-border text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta hover:bg-dp-accent-cta/10 transition-colors disabled:opacity-50"
                       >
-                        {u.banned ? <Shield size={11} /> : <ShieldOff size={11} />}
-                        {u.banned ? "Unban" : "Ban"}
+                        <MessageSquare size={11} /> Message
                       </button>
-                    </td>
-                  )}
+                      {!isVendor && (
+                        <button
+                          onClick={() => toggleBan(u.id, u.banned ?? false)}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-sm border text-[11px] font-bold uppercase tracking-widest transition-colors ${
+                            u.banned
+                              ? "border-dp-success text-dp-success hover:bg-dp-success/10"
+                              : "border-dp-accent-cta text-dp-accent-cta hover:bg-dp-accent-cta/10"
+                          }`}
+                        >
+                          {u.banned ? <Shield size={11} /> : <ShieldOff size={11} />}
+                          {u.banned ? "Unban" : "Ban"}
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

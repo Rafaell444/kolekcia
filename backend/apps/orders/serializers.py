@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption
+from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
 from apps.products.serializers import ProductVariantSerializer, SizeVariantSerializer
 
 
@@ -35,7 +35,15 @@ class CartItemSerializer(serializers.ModelSerializer):
             product = obj.variant.product
         if product:
             img = product.images.first()
-            return img.url if img else ""
+            if not img:
+                return ""
+            if img.url:
+                return img.url
+            if img.video_file:
+                request = self.context.get("request")
+                if request:
+                    return request.build_absolute_uri(img.video_file.url)
+                return img.video_file.url
         return ""
 
     def get_size_label(self, obj):
@@ -53,9 +61,17 @@ class DeliveryOptionSerializer(serializers.ModelSerializer):
 
 
 class ProcessingOptionSerializer(serializers.ModelSerializer):
+    vendor_slug = serializers.CharField(source="vendor.slug", read_only=True, allow_null=True)
+
     class Meta:
         model = ProcessingOption
-        fields = ("id", "slug", "label", "est_days_min", "est_days_max", "price_usd", "price_gel", "sort_order", "is_active")
+        fields = ("id", "vendor", "vendor_slug", "slug", "label", "est_days_min", "est_days_max", "price_usd", "price_gel", "sort_order", "is_active")
+
+
+class VendorShippingOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VendorShippingOption
+        fields = ("id", "market", "label", "price", "est_days_min", "est_days_max", "is_active", "sort_order")
 
 
 class CartSerializer(serializers.ModelSerializer):
@@ -74,9 +90,10 @@ class AddToCartSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(min_value=1, default=1)
     gift_wrap = serializers.BooleanField(default=False, required=False)
     gift_wrap_note = serializers.CharField(max_length=500, default="", required=False, allow_blank=True)
-    gift_wrap_image_url = serializers.URLField(default="", required=False, allow_blank=True)
+    gift_wrap_image_url = serializers.CharField(max_length=500, default="", required=False, allow_blank=True)
     delivery_type = serializers.CharField(max_length=20, default="standard", required=False)
     processing_option = serializers.CharField(max_length=50, default="", required=False, allow_blank=True)
+    currency = serializers.CharField(max_length=3, default="USD", required=False)
 
     def validate(self, attrs):
         if not attrs.get("variant_id") and not attrs.get("size_variant_id"):
@@ -141,7 +158,10 @@ class CustomOrderSerializer(serializers.ModelSerializer):
         fields = (
             "id", "vendor", "vendor_name", "product_type",
             "name", "email", "phone", "image_url", "notes",
-            "status", "payment_ref", "created_at",
+            "status", "payment_ref", "price", "currency", "payment_url",
+            "tracking_code", "cancel_reason", "paid_at", "created_at",
         )
-        read_only_fields = ("id", "vendor_name", "status", "payment_ref", "created_at")
+        read_only_fields = (
+            "id", "vendor_name", "payment_ref", "paid_at", "created_at",
+        )
         extra_kwargs = {"vendor": {"write_only": False, "required": False, "allow_null": True}}

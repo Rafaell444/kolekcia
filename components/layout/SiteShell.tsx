@@ -25,22 +25,49 @@ import { DesktopSearch, MobileHeaderSearch, MenuSearch } from "@/components/layo
 import { useLocale } from "@/contexts/locale-context"
 
 type NavCategory = { id: string; name: string; slug: string }
-type NavArtist   = { id: number; name: string; handle: string; avatar_url: string }
+type NavVendor = { id: number; name: string; slug: string; logo_url: string; catalog_category_slug: string }
 type NavProduct  = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
 
+const VENDOR_CATEGORY_LABELS: Record<string, string> = {
+  figures: "Figures",
+  wallpanels: "Wallpanels",
+}
+
 // ── Promo banner ──────────────────────────────────────────
-const PROMO_MESSAGES = [
+const FALLBACK_PROMO_MESSAGES = [
   "FREE SHIPPING on orders over $49 — use code FREESHIP",
   "LIMITED EDITIONS: New drops every Friday at noon",
   "EARN XP with every purchase — unlock exclusive badges",
 ]
 
 function PromoBanner() {
-  const [idx] = useState(0)
+  const [messages, setMessages] = useState<string[]>(FALLBACK_PROMO_MESSAGES)
+  const [idx, setIdx] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<{ messages: string[]; is_active: boolean }>("/cms/announcement/")
+      .then((data) => {
+        if (!cancelled && data.is_active && data.messages?.length) {
+          setMessages(data.messages)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (messages.length <= 1) return
+    const id = setInterval(() => setIdx((i) => (i + 1) % messages.length), 6000)
+    return () => clearInterval(id)
+  }, [messages.length])
+
+  if (!messages.length) return null
+
   return (
     <div className="bg-dp-accent-cta text-white text-center py-2 px-4" role="banner">
       <p className="text-[11px] font-semibold uppercase tracking-widest">
-        {PROMO_MESSAGES[idx]}
+        {messages[idx % messages.length]}
       </p>
     </div>
   )
@@ -59,24 +86,21 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
 }
 
 // ── Mega menu panels ──────────────────────────────────────
-function ShopMegaMenu({ onClose }: { onClose: () => void }) {
+function ShopMegaMenu({
+  onClose,
+  categories,
+  vendors,
+  featured,
+}: {
+  onClose: () => void
+  categories: NavCategory[]
+  vendors: NavVendor[]
+  featured: NavProduct[]
+}) {
   const { formatPrice } = useLocale()
-  const [categories, setCategories] = useState<NavCategory[]>([])
-  const [artists, setArtists] = useState<NavArtist[]>([])
-  const [featured, setFeatured] = useState<NavProduct[]>([])
-
-  useEffect(() => {
-    let cancelled = false
-    apiFetch<NavCategory[]>("/products/categories/").then((d) => { if (!cancelled) setCategories(d) }).catch(() => {})
-    apiFetch<NavArtist[] | PaginatedResponse<NavArtist>>("/products/artists/?page_size=4")
-      .then((d) => { if (!cancelled) setArtists(parseList(d).slice(0, 4)) })
-      .catch(() => {})
-    apiFetch<{ results: NavProduct[] }>("/products/?exclusive=true&page_size=2").then((d) => { if (!cancelled) setFeatured(d.results.slice(0, 2)) }).catch(() => {})
-    return () => { cancelled = true }
-  }, [])
 
   return (
-    <div className="absolute top-full left-0 w-full bg-dp-bg-surface border-b border-dp-border shadow-xl z-40">
+    <div className="absolute top-full left-0 w-full bg-dp-bg-surface border-b border-dp-border shadow-xl z-40 -mt-px pt-px">
       <div className="dp-container py-8 grid grid-cols-4 gap-8">
 
         {/* Col 1 — Collections */}
@@ -126,30 +150,33 @@ function ShopMegaMenu({ onClose }: { onClose: () => void }) {
           </ul>
         </div>
 
-        {/* Col 3 — Top Artists */}
+        {/* Col 3 — Vendors */}
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Top Artists</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Our Vendors</p>
           <ul className="flex flex-col gap-3">
-            {artists.map((artist) => (
-              <li key={artist.id}>
+            {vendors.map((vendor) => {
+              const categoryLabel = VENDOR_CATEGORY_LABELS[vendor.catalog_category_slug] ?? vendor.catalog_category_slug
+              return (
+              <li key={vendor.id}>
                 <Link
-                  href={`/artists/${artist.handle}`}
+                  href={`/catalog?category=${vendor.catalog_category_slug}`}
                   onClick={onClose}
                   className="flex items-center gap-3 group"
                 >
-                  <div className="relative w-8 h-8 rounded-full overflow-hidden border border-dp-border shrink-0">
-                    {artist.avatar_url && <Image src={artist.avatar_url} alt={artist.name} fill className="object-cover" sizes="32px" />}
+                  <div className="relative w-8 h-8 rounded-sm overflow-hidden border border-dp-border shrink-0 bg-dp-bg-elevated">
+                    {vendor.logo_url && <Image src={vendor.logo_url} alt={vendor.name} fill className="object-cover" sizes="32px" />}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[12px] font-bold text-dp-text-primary group-hover:text-dp-accent-cta transition-colors truncate">{artist.name}</p>
-                    <p className="text-[10px] text-dp-text-tertiary">@{artist.handle}</p>
+                    <p className="text-[12px] font-bold text-dp-text-primary group-hover:text-dp-accent-cta transition-colors truncate">{vendor.name}</p>
+                    <p className="text-[10px] text-dp-text-tertiary">{categoryLabel}</p>
                   </div>
                 </Link>
               </li>
-            ))}
+              )
+            })}
             <li>
-              <Link href="/catalog?sort=artist" onClick={onClose} className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors mt-1">
-                All Artists <ArrowRight size={11} />
+              <Link href="/artists" onClick={onClose} className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors mt-1">
+                All Vendors <ArrowRight size={11} />
               </Link>
             </li>
           </ul>
@@ -438,7 +465,27 @@ function SiteHeader({
   }, [])
 
   const handleLeave = useCallback(() => {
-    closeTimer.current = setTimeout(() => setActiveMenu(null), 120)
+    closeTimer.current = setTimeout(() => setActiveMenu(null), 300)
+  }, [])
+
+  const [navCategories, setNavCategories] = useState<NavCategory[]>([])
+  const [navVendors, setNavVendors] = useState<NavVendor[]>([])
+  const [navFeatured, setNavFeatured] = useState<NavProduct[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<NavCategory[]>("/products/categories/").then((d) => { if (!cancelled) setNavCategories(d) }).catch(() => {})
+    apiFetch<NavVendor[] | PaginatedResponse<NavVendor>>("/vendors/public/")
+      .then((d) => {
+        if (cancelled) return
+        const list = parseList(d).filter((v) => v.catalog_category_slug === "figures" || v.catalog_category_slug === "wallpanels")
+        setNavVendors(list.slice(0, 2))
+      })
+      .catch(() => {})
+    apiFetch<{ results: NavProduct[] }>("/products/?exclusive=true&page_size=2")
+      .then((d) => { if (!cancelled) setNavFeatured((d.results ?? []).slice(0, 2)) })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [])
 
   // Close mega menu on outside click
@@ -528,8 +575,15 @@ function SiteHeader({
       </div>
 
       {/* Desktop Mega Menu panels */}
-      <div onMouseEnter={() => handleEnter(activeMenu)} onMouseLeave={handleLeave}>
-        {activeMenu === "shop" && <ShopMegaMenu onClose={() => setActiveMenu(null)} />}
+      <div onMouseEnter={() => handleEnter("shop")} onMouseLeave={handleLeave}>
+        {activeMenu === "shop" && (
+          <ShopMegaMenu
+            onClose={() => setActiveMenu(null)}
+            categories={navCategories}
+            vendors={navVendors}
+            featured={navFeatured}
+          />
+        )}
       </div>
 
       {/* Mobile nav — full-screen overlay (covers promo + header), bottom tab bar stays visible */}
@@ -600,6 +654,20 @@ function SiteHeader({
 
 // ── Footer ────────────────────────────────────────────────
 function SiteFooter() {
+  const [siteName, setSiteName] = useState("Kolekcia")
+  const [supportEmail, setSupportEmail] = useState("")
+  const [supportPhone, setSupportPhone] = useState("")
+
+  useEffect(() => {
+    apiFetch<Record<string, string>>("/cms/settings/")
+      .then((d) => {
+        if (d.site_name) setSiteName(d.site_name)
+        if (d.support_email) setSupportEmail(d.support_email)
+        if (d.support_phone) setSupportPhone(d.support_phone)
+      })
+      .catch(() => {})
+  }, [])
+
   return (
     <footer className="bg-dp-bg-surface border-t border-dp-border mt-auto" role="contentinfo">
       <div className="dp-container py-12">
@@ -610,11 +678,17 @@ function SiteFooter() {
               <span className="flex items-center justify-center w-6 h-6 rounded-sm border border-dp-border-hover bg-dp-bg-elevated" aria-hidden>
                 <span className="block w-3 h-3 rounded-sm border-2" style={{ borderColor: "var(--dp-accent-cta)" }} />
               </span>
-              <span className="font-display text-lg text-dp-text-primary tracking-wider">KOLEKCIA</span>
+              <span className="font-display text-lg text-dp-text-primary tracking-wider">{siteName.toUpperCase()}</span>
             </div>
             <p className="text-[12px] text-dp-text-tertiary leading-relaxed max-w-xs">
               The world&apos;s finest metal poster marketplace. Artist-made originals, licensed collections, and custom prints.
             </p>
+            {(supportEmail || supportPhone) && (
+              <div className="mt-3 flex flex-col gap-1 text-[12px] text-dp-text-tertiary">
+                {supportEmail && <a href={`mailto:${supportEmail}`} className="hover:text-dp-text-primary transition-colors">{supportEmail}</a>}
+                {supportPhone && <span>{supportPhone}</span>}
+              </div>
+            )}
             <div className="flex items-center gap-1.5 mt-3">
               <Zap size={10} className="text-dp-accent-cta" aria-hidden />
               <span className="text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta">Tool-free magnetic mounting</span>
@@ -663,7 +737,8 @@ function SiteFooter() {
             <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Support</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "Help Center",   href: "/contact#faq" },
+                { label: "Help Center",   href: "/faq" },
+                { label: "FAQ",           href: "/faq" },
                 { label: "Shipping",      href: "/shipping" },
                 { label: "Returns",       href: "/returns" },
                 { label: "Contact Us",    href: "/contact" },
@@ -680,7 +755,7 @@ function SiteFooter() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-dp-border">
           <div className="flex flex-col gap-1">
             <p className="text-[11px] text-dp-text-tertiary">
-              &copy; {new Date().getFullYear()} Kolekcia. All rights reserved.
+              &copy; {new Date().getFullYear()} {siteName}. All rights reserved.
             </p>
             <p className="text-[11px] text-dp-text-tertiary">
               Developed by{" "}

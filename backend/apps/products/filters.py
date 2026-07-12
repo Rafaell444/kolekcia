@@ -20,12 +20,19 @@ class ProductFilter(django_filters.FilterSet):
         fields = ["category", "artist", "min_price", "max_price", "sale", "new", "exclusive", "limited", "material", "size", "tag"]
 
     def filter_category(self, queryset, name, value):
+        from django.db.models import Q
         normalized = (value or "").strip().lower()
         if normalized in {"figures", "figure"}:
-            return queryset.filter(category__slug="figures")
-        if normalized in {"wallpanels", "wallpanel", "panels", "panel"}:
-            return queryset.filter(category__slug="wallpanels")
-        return queryset.filter(category__slug__iexact=normalized)
+            slug = "figures"
+        elif normalized in {"wallpanels", "wallpanel", "panels", "panel"}:
+            slug = "wallpanels"
+        else:
+            slug = normalized
+        if not slug:
+            return queryset
+        return queryset.filter(
+            Q(category__slug__iexact=slug) | Q(categories__slug__iexact=slug)
+        ).distinct()
 
     def filter_artist(self, queryset, name, value):
         # Accept comma-separated list of artist handles

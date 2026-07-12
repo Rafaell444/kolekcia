@@ -15,4 +15,17 @@ node_modules
 .DS_Store
 .vercel
 
-.vercel
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Django
+backend/db.sqlite3
+backend/media/
+
+# Editor / IDE
+.cursor/
+
+# TypeScript
+tsconfig.tsbuildinfo

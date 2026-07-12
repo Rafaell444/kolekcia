@@ -145,3 +145,17 @@ export const auth = {
     authFetch<T>(url, { method: "PATCH", body: JSON.stringify(body) }),
   del: <T>(url: string) => authFetch<T>(url, { method: "DELETE" }),
 }
+
+/** Extract a user-facing message from an authFetch/apiFetch error. */
+export function getApiErrorMessage(err: unknown, fallback = "Something went wrong. Please try again."): string {
+  if (!err || typeof err !== "object") return fallback
+  const data = (err as ApiError).data
+  if (!data) return fallback
+  if (typeof data.detail === "string") return data.detail
+  if (Array.isArray(data.detail)) return data.detail.map(String).join(" ")
+  for (const value of Object.values(data)) {
+    if (typeof value === "string") return value
+    if (Array.isArray(value) && value.length > 0) return String(value[0])
+  }
+  return fallback
+}

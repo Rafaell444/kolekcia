@@ -5,6 +5,7 @@ export type AdminVendor = {
   name: string
   slug: string
   logo_url: string
+  catalog_category_slug?: string
 }
 
 export type AdminUser = {

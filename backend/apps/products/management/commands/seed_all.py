@@ -452,6 +452,14 @@ class Command(BaseCommand):
                 "description": description, "trigger_action": trigger_action,
             })
 
+        from apps.promo.models import PromoCode
+        freeshp = PromoCode.objects.filter(code="FREESHIP").first()
+        if freeshp:
+            Badge.objects.filter(trigger_action="first_purchase").update(
+                prize_promo=freeshp,
+                prize_description="Free shipping on your next order over $49",
+            )
+
         xp_rules = [
             ("registration_bonus", 5, True),
             ("first_purchase",     100, True),
@@ -504,7 +512,19 @@ class Command(BaseCommand):
 
     # ────────────────────────────────────────────────
     def _seed_cms(self):
-        from apps.cms.models import HeroSlide, FAQ
+        from apps.cms.models import HeroSlide, FAQ, AnnouncementBar
+
+        AnnouncementBar.objects.get_or_create(
+            pk=1,
+            defaults={
+                "messages": [
+                    "FREE SHIPPING on orders over $49 — use code FREESHIP",
+                    "LIMITED EDITIONS: New drops every Friday at noon",
+                    "EARN XP with every purchase — unlock exclusive badges",
+                ],
+                "is_active": True,
+            },
+        )
 
         slides = [
             ("image", "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1440&h=720&fit=crop", None,

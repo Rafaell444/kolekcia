@@ -1,5 +1,5 @@
 from decimal import Decimal
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework import status
@@ -39,7 +39,9 @@ def get_vendor_for_request(request):
 
 def _apply_vendor_fields(vendor, data, staff=False):
     fields = (
-        "name", "logo_url", "banner_url", "description", "payment_email",
+        "name", "logo_url", "banner_url", "description", "payment_email", "merchant_id",
+        "gift_wrap_price_gel", "gift_wrap_price_usd",
+        "shipping_email_subject", "shipping_email_body",
         "social_website", "social_instagram", "social_facebook", "social_twitter", "social_tiktok", "social_youtube",
     )
     if staff:
@@ -210,16 +212,34 @@ class VendorCustomerListView(APIView):
     permission_classes = [IsVendorOrAdmin]
 
     def get(self, request):
-        from apps.orders.models import OrderItem
+        from apps.orders.models import OrderItem, CustomOrder
         from apps.users.models import User
+        from django.db.models import Count
+
         vendor = get_vendor_for_request(request)
         if vendor:
-            user_ids = (
-                OrderItem.objects.filter(vendor=vendor)
+            order_user_ids = (
+                OrderItem.objects.filter(vendor=vendor, order__user__isnull=False)
                 .values_list("order__user_id", flat=True)
                 .distinct()
             )
-            users = User.objects.filter(id__in=user_ids)
+            custom_user_ids = (
+                CustomOrder.objects.filter(vendor=vendor, user__isnull=False)
+                .values_list("user_id", flat=True)
+                .distinct()
+            )
+            user_ids = set(order_user_ids) | set(custom_user_ids)
+            users = (
+                User.objects.filter(id__in=user_ids, is_staff=False)
+                .exclude(vendor_profile__isnull=False)
+                .annotate(
+                    orders_count=Count(
+                        "orders",
+                        distinct=True,
+                        filter=Q(orders__items__vendor=vendor),
+                    )
+                )
+            )
         else:
             users = User.objects.filter(role="customer")
 
@@ -228,6 +248,7 @@ class VendorCustomerListView(APIView):
             "email": u.email,
             "name": u.name,
             "date_joined": u.date_joined.strftime("%Y-%m-%d"),
+            "orders_count": getattr(u, "orders_count", 0),
         } for u in users]
         return Response(data)
 
@@ -301,6 +322,7 @@ class VendorCustomOrderListView(APIView):
     def patch(self, request, pk=None):
         from apps.orders.models import CustomOrder
         from apps.orders.serializers import CustomOrderSerializer
+        from django.utils import timezone
 
         vendor = get_vendor_for_request(request)
         try:
@@ -311,9 +333,147 @@ class VendorCustomOrderListView(APIView):
         except CustomOrder.DoesNotExist:
             return Response({"detail": "Not found."}, status=404)
 
-        allowed = ("status",)
+        allowed = ("status", "cancel_reason", "price", "currency", "payment_url", "tracking_code")
         data = {k: v for k, v in request.data.items() if k in allowed}
+        new_status = data.get("status", order.status)
+
+        if new_status == "paid":
+            data["paid_at"] = timezone.now()
+            data["payment_url"] = ""
+        if new_status == "cancelled" and not (data.get("cancel_reason") or order.cancel_reason):
+            return Response({"detail": "cancel_reason is required when cancelling."}, status=400)
+        if new_status == "approved" and data.get("price") and not data.get("payment_url"):
+            # Auto-generate a placeholder payment link vendors can replace
+            data.setdefault("payment_url", f"/custom?pay={order.payment_ref}")
+
         ser = CustomOrderSerializer(order, data=data, partial=True)
         ser.is_valid(raise_exception=True)
         ser.save()
         return Response(ser.data)
+
+
+class VendorMediaUploadView(APIView):
+    permission_classes = [IsVendorOrAdmin]
+
+    def post(self, request):
+        import os
+        import uuid as uuid_lib
+        from django.conf import settings as django_settings
+
+        vendor = getattr(request.user, "vendor_profile", None)
+        if not vendor:
+            return Response({"detail": "Vendor profile required."}, status=403)
+
+        file = request.FILES.get("file")
+        kind = request.data.get("kind", "logo")
+        if not file:
+            return Response({"detail": "No file uploaded."}, status=400)
+        if kind not in ("logo", "banner"):
+            return Response({"detail": "kind must be logo or banner."}, status=400)
+
+        ext = os.path.splitext(file.name)[1] or ".jpg"
+        filename = f"{vendor.slug}-{kind}-{uuid_lib.uuid4().hex[:8]}{ext}"
+        save_dir = os.path.join(django_settings.MEDIA_ROOT, "vendors")
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        url = request.build_absolute_uri(f"{django_settings.MEDIA_URL}vendors/{filename}")
+        if kind == "logo":
+            vendor.logo_url = url
+        else:
+            vendor.banner_url = url
+        vendor.save(update_fields=["logo_url" if kind == "logo" else "banner_url"])
+        return Response({"url": url, "kind": kind}, status=201)
+
+
+class VendorShippingListView(APIView):
+    permission_classes = [IsVendorOrAdmin]
+
+    def get(self, request):
+        from apps.orders.models import VendorShippingOption
+        from apps.orders.serializers import VendorShippingOptionSerializer
+
+        vendor = get_vendor_for_request(request)
+        if not vendor:
+            return Response({"detail": "Vendor profile required."}, status=403)
+        opts = VendorShippingOption.objects.filter(vendor=vendor)
+        return Response(VendorShippingOptionSerializer(opts, many=True).data)
+
+    def post(self, request):
+        from apps.orders.models import VendorShippingOption
+        from apps.orders.serializers import VendorShippingOptionSerializer
+
+        vendor = get_vendor_for_request(request)
+        if not vendor:
+            return Response({"detail": "Vendor profile required."}, status=403)
+        ser = VendorShippingOptionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        opt = VendorShippingOption.objects.create(vendor=vendor, **ser.validated_data)
+        return Response(VendorShippingOptionSerializer(opt).data, status=201)
+
+
+class VendorShippingDetailView(APIView):
+    permission_classes = [IsVendorOrAdmin]
+
+    def patch(self, request, pk):
+        from apps.orders.models import VendorShippingOption
+        from apps.orders.serializers import VendorShippingOptionSerializer
+
+        vendor = get_vendor_for_request(request)
+        if not vendor:
+            return Response({"detail": "Vendor profile required."}, status=403)
+        try:
+            opt = VendorShippingOption.objects.get(pk=pk, vendor=vendor)
+        except VendorShippingOption.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+        ser = VendorShippingOptionSerializer(opt, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
+
+    def delete(self, request, pk):
+        from apps.orders.models import VendorShippingOption
+
+        vendor = get_vendor_for_request(request)
+        if not vendor:
+            return Response({"detail": "Vendor profile required."}, status=403)
+        try:
+            VendorShippingOption.objects.get(pk=pk, vendor=vendor).delete()
+        except VendorShippingOption.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+        return Response(status=204)
+
+
+class VendorCatalogFilterConfigView(APIView):
+    permission_classes = [IsAuthenticated, IsVendorOrAdmin]
+
+    def get(self, request):
+        from apps.products.models import CatalogFilterConfig, DEFAULT_VISIBLE_FILTERS
+        from apps.products.filter_config import _apply_config
+
+        vendor = get_vendor_for_request(request)
+        if not vendor:
+            return Response({"detail": "Vendor profile required."}, status=403)
+        merged = dict(DEFAULT_VISIBLE_FILTERS)
+        cfg = CatalogFilterConfig.objects.filter(scope="vendor", vendor=vendor).first()
+        merged = _apply_config(merged, cfg)
+        return Response(merged)
+
+    def patch(self, request):
+        from apps.products.models import CatalogFilterConfig
+
+        vendor = get_vendor_for_request(request)
+        if not vendor:
+            return Response({"detail": "Vendor profile required."}, status=403)
+        visible_filters = request.data.get("visible_filters", {})
+        cfg, _ = CatalogFilterConfig.objects.update_or_create(
+            scope="vendor",
+            vendor=vendor,
+            defaults={
+                "category_slug": vendor.catalog_category_slug or "",
+                "visible_filters": visible_filters,
+            },
+        )
+        return Response(cfg.resolved_filters())

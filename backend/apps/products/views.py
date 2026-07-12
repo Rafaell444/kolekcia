@@ -60,7 +60,7 @@ class ProductListView(generics.ListAPIView):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images")
+        qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images", "size_variants")
         sort = self.request.query_params.get("sort")
         if sort == "featured":
             qs = qs.order_by("-review_count")
@@ -157,13 +157,20 @@ class ProductFilterOptionsView(generics.GenericAPIView):
     def get(self, request):
         from django.db.models import Min, Max
         from .models import SizeVariant
+        from django.db.models import Q
         category = (request.query_params.get("category") or "").strip().lower()
 
         qs = Product.objects.filter(status="active")
         if category in {"figures", "figure"}:
-            qs = qs.filter(category__slug="figures")
+            slug = "figures"
         elif category in {"wallpanels", "wallpanel", "panels"}:
-            qs = qs.filter(category__slug="wallpanels")
+            slug = "wallpanels"
+        else:
+            slug = category
+        if slug:
+            qs = qs.filter(
+                Q(category__slug__iexact=slug) | Q(categories__slug__iexact=slug)
+            ).distinct()
 
         product_ids = list(qs.values_list("id", flat=True))
 
@@ -221,3 +228,13 @@ class ProductFilterOptionsView(generics.GenericAPIView):
             "artists": [{"handle": a["artist__handle"], "name": a["artist__name"]} for a in artists],
             "price_range": {"min": price_min, "max": price_max},
         })
+
+
+class CatalogFilterConfigView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .filter_config import resolve_catalog_filter_visibility
+
+        category = request.query_params.get("category", "")
+        return Response(resolve_catalog_filter_visibility(category))

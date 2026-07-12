@@ -2,7 +2,6 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { Star } from "lucide-react"
 import { useLocale } from "@/contexts/locale-context"
 import { productHref } from "@/lib/product-url"
 
@@ -49,12 +48,7 @@ export default function HomeProductCard({ product }: { product: ApiProduct }) {
         <div className="p-3">
           <p className="text-[10px] text-dp-text-tertiary uppercase tracking-widest truncate mb-0.5">{product.artist_name}</p>
           <h3 className="text-[13px] font-semibold text-dp-text-primary truncate leading-tight">{product.title}</h3>
-          <div className="flex items-center gap-1 mt-1 mb-2">
-            <Star size={10} className="fill-dp-accent-gold text-dp-accent-gold" aria-hidden />
-            <span className="text-[11px] text-dp-text-secondary">{parseFloat(product.rating).toFixed(1)}</span>
-            <span className="text-[11px] text-dp-text-tertiary">({product.review_count.toLocaleString("en-US")})</span>
-          </div>
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-2 mt-2">
             <span className="text-[15px] font-bold text-dp-text-primary">{formatPrice(price)}</span>
             {original && <span className="text-[12px] text-dp-text-tertiary line-through">{formatPrice(original)}</span>}
           </div>

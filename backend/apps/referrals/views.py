@@ -5,7 +5,7 @@ from rest_framework import status
 
 from .models import ReferralProfile, ReferralInvite
 from .serializers import ReferralClaimSerializer
-from .services import ensure_referral_profile
+from .services import ensure_referral_profile, _award_referral_signup_xp
 
 
 class ReferralMeView(APIView):
@@ -41,5 +41,9 @@ class ReferralClaimView(APIView):
         if inviter.id == invitee.id:
             return Response({"detail": "You cannot claim your own code."}, status=status.HTTP_400_BAD_REQUEST)
 
-        ReferralInvite.objects.get_or_create(inviter=inviter, invitee=invitee, defaults={"code": code})
-        return Response({"detail": "Referral linked."})
+        invite, created = ReferralInvite.objects.get_or_create(
+            inviter=inviter, invitee=invitee, defaults={"code": code}
+        )
+        if created:
+            _award_referral_signup_xp(inviter, invitee)
+        return Response({"detail": "Referral linked.", "created": created})

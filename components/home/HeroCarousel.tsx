@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 
 type HeroSlide = {
-  id: string; type: string; image_url: string; video_poster_url: string
+  id: string; type: string; image_url: string; video_url: string; video_poster_url: string
   headline: string; subline: string; cta: string; cta_href: string
 }
 
@@ -154,7 +154,8 @@ export default function HeroCarousel(): React.ReactElement {
           }}
         >
           {slides.map((s, i) => {
-            const src    = s.type === "video" ? s.video_poster_url : s.image_url
+            const isVideo = s.type === "video" && s.video_url
+            const src = isVideo ? (s.video_poster_url || s.video_url) : s.image_url
             const active = i === current
 
             return (
@@ -177,7 +178,17 @@ export default function HeroCarousel(): React.ReactElement {
                   style={{ position: "relative", background: "var(--dp-bg-elevated)" }}
                   className="aspect-[4/3] sm:aspect-[16/9] lg:aspect-[16/7]"
                 >
-                  {src && (
+                  {isVideo && s.video_url ? (
+                    <video
+                      src={s.video_url}
+                      poster={s.video_poster_url || undefined}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  ) : src ? (
                     <Image
                       src={src}
                       alt={s.headline}
@@ -187,7 +198,7 @@ export default function HeroCarousel(): React.ReactElement {
                       draggable={false}
                       sizes="90vw"
                     />
-                  )}
+                  ) : null}
 
                   {/* Gradient */}
                   <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/30 to-transparent pointer-events-none" />

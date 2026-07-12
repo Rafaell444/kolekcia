@@ -6,7 +6,8 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Paintbrush,
   Gavel, MessageSquare, Tag, Settings, ChevronRight, BarChart2,
-  Image as ImageIcon, Star, Bell, LogOut, Trophy, Shield, Store, Menu, X,
+  Image as ImageIcon, Bell, LogOut, Trophy, Shield, Store, Menu, X, Truck,
+  FileText, ScrollText,
 } from "lucide-react"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { ThemeProvider } from "@/components/ThemeProvider"
@@ -22,6 +23,7 @@ const SUPERADMIN_NAV = [
     links: [
       { href: "/admin",           label: "Dashboard",     Icon: LayoutDashboard },
       { href: "/admin/analytics", label: "Analytics",     Icon: BarChart2 },
+      { href: "/admin/logs",      label: "Activity Log",  Icon: ScrollText },
     ],
   },
   {
@@ -38,7 +40,6 @@ const SUPERADMIN_NAV = [
     links: [
       { href: "/admin/users",     label: "Users",         Icon: Users },
       { href: "/admin/artists",   label: "Artists",       Icon: Paintbrush },
-      { href: "/admin/reviews",   label: "Reviews",       Icon: Star },
     ],
   },
   {
@@ -52,10 +53,12 @@ const SUPERADMIN_NAV = [
   {
     section: "Content",
     links: [
-      { href: "/admin/hero",       label: "Hero Slides",   Icon: ImageIcon },
+      { href: "/admin/pages",      label: "Pages",         Icon: FileText },
+      { href: "/admin/reviews",    label: "Reviews",       Icon: MessageSquare },
+      { href: "/admin/faqs",       label: "FAQs",          Icon: FileText },
+      { href: "/admin/catalog-filters", label: "Catalog Filters", Icon: Package },
       { href: "/admin/blog",       label: "Blog",          Icon: MessageSquare },
       { href: "/admin/categories", label: "Categories",    Icon: Package },
-      { href: "/admin/banners",    label: "Promo Banners", Icon: Bell },
     ],
   },
   {
@@ -76,6 +79,9 @@ const VENDOR_NAV = [
       { href: "/admin/products",         label: "My Products",    Icon: ImageIcon },
       { href: "/admin/orders",           label: "Orders",         Icon: ShoppingCart },
       { href: "/admin/custom-orders",    label: "Custom Orders",  Icon: Package },
+      { href: "/admin/auctions",         label: "Auctions",       Icon: Gavel },
+      { href: "/admin/shipping",         label: "Shipping",       Icon: Truck },
+      { href: "/admin/filters",          label: "Filters",        Icon: Package },
       { href: "/admin/users",            label: "Customers",      Icon: Users },
       { href: "/admin/analytics",        label: "Analytics",      Icon: BarChart2 },
       { href: "/admin/inbox",            label: "Inbox",          Icon: MessageSquare },
@@ -117,6 +123,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setAdminUser(user)
     setReady(true)
   }, [isLoginPage, router])
+
+  useEffect(() => {
+    if (!adminUser || isLoginPage) return
+    const isVendorUser = !adminUser.is_staff && !!adminUser.vendor
+    if (isVendorUser && pathname.startsWith("/admin/logs")) {
+      router.replace("/admin")
+    }
+  }, [adminUser, isLoginPage, pathname, router])
 
   if (!ready) {
     return <div className="min-h-screen bg-dp-bg-base" />

@@ -150,6 +150,8 @@ class SizeVariant(models.Model):
     price_gel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     price_eur = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     price_gbp = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    sale_price_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    sale_price_gel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
@@ -207,3 +209,56 @@ class Review(models.Model):
 
     def __str__(self):
         return f"{self.user.email} → {self.product.title} ({self.rating}★)"
+
+
+DEFAULT_VISIBLE_FILTERS = {
+    "category": True,
+    "price": True,
+    "size": True,
+    "theme": True,
+    "material": True,
+    "artist": True,
+    "availability": True,
+}
+
+
+class CatalogFilterConfig(models.Model):
+    SCOPE_CHOICES = [
+        ("global", "Global"),
+        ("category", "Category"),
+        ("vendor", "Vendor"),
+    ]
+
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES)
+    category_slug = models.CharField(max_length=80, blank=True, default="")
+    vendor = models.ForeignKey(
+        "vendors.Vendor",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="filter_configs",
+    )
+    visible_filters = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "catalog_filter_configs"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "category_slug", "vendor"],
+                name="unique_catalog_filter_config_scope",
+            ),
+        ]
+
+    def __str__(self):
+        if self.scope == "vendor" and self.vendor_id:
+            return f"Filters ({self.vendor})"
+        if self.scope == "category" and self.category_slug:
+            return f"Filters ({self.category_slug})"
+        return "Filters (global)"
+
+    def resolved_filters(self) -> dict:
+        merged = dict(DEFAULT_VISIBLE_FILTERS)
+        if isinstance(self.visible_filters, dict):
+            merged.update(self.visible_filters)
+        return merged

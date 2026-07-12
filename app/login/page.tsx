@@ -9,9 +9,10 @@ import { useAuth } from "@/contexts/auth-context"
 import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 import { useCart } from "@/contexts/cart-context"
 import { clearPendingCartIntent, getPendingCartIntent } from "@/lib/pending-cart"
+import { claimPendingReferral } from "@/lib/referral"
 
 function LoginPageInner(): React.ReactElement {
-  const { login } = useAuth()
+  const { login, loginWithGoogle } = useAuth()
   const { addItem } = useCart()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -20,7 +21,46 @@ function LoginPageInner(): React.ReactElement {
   const [rememberMe, setRememberMe] = useState(false)
   const [showPw, setShowPw]     = useState(false)
   const [loading, setLoading]   = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError]       = useState("")
+
+  async function finishAuthRedirect() {
+    await claimPendingReferral()
+
+    const pending = getPendingCartIntent()
+    const next = searchParams.get("next")
+    const returnTo = pending?.returnTo ?? next ?? "/account"
+
+    if (pending) {
+      try {
+        if (pending.sizeVariantId) {
+          await addItem(null, pending.quantity, { size_variant_id: pending.sizeVariantId })
+        } else if (pending.variantId) {
+          await addItem(pending.variantId, pending.quantity)
+        }
+      } catch {
+        // still redirect back to product page
+      } finally {
+        clearPendingCartIntent()
+      }
+    }
+
+    router.push(returnTo.startsWith("/") ? returnTo : "/account")
+  }
+
+  async function handleGoogleSuccess(idToken: string) {
+    setError("")
+    setGoogleLoading(true)
+    try {
+      await loginWithGoogle(idToken, rememberMe)
+      await finishAuthRedirect()
+    } catch (err: unknown) {
+      const apiErr = err as { data?: { detail?: string } }
+      setError(apiErr?.data?.detail ?? "Google sign-in failed. Please try again.")
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -29,22 +69,7 @@ function LoginPageInner(): React.ReactElement {
     setLoading(true)
     try {
       await login(email, password, rememberMe)
-
-      const pending = getPendingCartIntent()
-      const next = searchParams.get("next")
-      const returnTo = pending?.returnTo ?? next ?? "/account"
-
-      if (pending) {
-        try {
-          await addItem(pending.variantId, pending.quantity)
-        } catch {
-          // still redirect back to product page
-        } finally {
-          clearPendingCartIntent()
-        }
-      }
-
-      router.push(returnTo.startsWith("/") ? returnTo : "/account")
+      await finishAuthRedirect()
     } catch (err: unknown) {
       const apiErr = err as { data?: { detail?: string } }
       setError(apiErr?.data?.detail ?? "Login failed. Please try again.")
@@ -67,7 +92,12 @@ function LoginPageInner(): React.ReactElement {
           </div>
 
           <form onSubmit={handleSubmit} className="bg-dp-bg-surface border border-dp-border rounded-sm p-8 flex flex-col gap-5" noValidate>
-            <GoogleAuthButton label="Sign in with Google" />
+            <GoogleAuthButton
+              mode="signin"
+              disabled={loading || googleLoading}
+              onSuccess={handleGoogleSuccess}
+              onError={(message) => setError(message)}
+            />
 
             <div className="relative flex items-center gap-3">
               <div className="flex-1 border-t border-dp-border" />
@@ -146,7 +176,7 @@ function LoginPageInner(): React.ReactElement {
             {/* Submit */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || googleLoading}
               className="flex items-center justify-center gap-2 w-full py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors mt-1"
             >
               {loading ? (

@@ -248,6 +248,18 @@ function ContactForm() {
 
 // ── Page ──────────────────────────────────────────────────
 export default function ContactPage() {
+  const [supportEmail, setSupportEmail] = useState("support@kolekcia.com")
+  const [supportPhone, setSupportPhone] = useState("")
+
+  useEffect(() => {
+    apiFetch<Record<string, string>>("/cms/settings/")
+      .then((d) => {
+        if (d.support_email) setSupportEmail(d.support_email)
+        if (d.support_phone) setSupportPhone(d.support_phone)
+      })
+      .catch(() => {})
+  }, [])
+
   return (
     <SiteShell>
 
@@ -273,17 +285,17 @@ export default function ContactPage() {
             </p>
           </div>
           {/* Quick contact info */}
-          <div className="flex flex-col gap-4 shrink-0">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0 w-full md:w-auto">
             {[
-              { icon: <Clock size={16} />,          label: "Response Time", value: "Under 24 hours" },
-              { icon: <Mail size={16} />,            label: "Email",         value: "hello@kolekcia.com" },
-              { icon: <Phone size={16} />,           label: "Phone",         value: "+421 900 123 456" },
+              { icon: <Clock size={16} />, label: "Response Time", value: "Under 24 hours" },
+              { icon: <Mail size={16} />, label: "Email", value: supportEmail },
+              ...(supportPhone ? [{ icon: <Phone size={16} />, label: "Phone", value: supportPhone }] : []),
             ].map(({ icon, label, value }) => (
-              <div key={label} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-sm px-4 py-3">
+              <div key={label} className="flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 bg-white/5 border border-white/10 rounded-sm px-2 sm:px-4 py-2.5 sm:py-3 min-w-0 text-center sm:text-left">
                 <span className="text-dp-accent-cta shrink-0">{icon}</span>
-                <div>
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest">{label}</p>
-                  <p className="text-[13px] font-semibold text-white">{value}</p>
+                <div className="min-w-0">
+                  <p className="text-[9px] sm:text-[10px] text-white/40 uppercase tracking-widest truncate">{label}</p>
+                  <p className="text-[10px] sm:text-[13px] font-semibold text-white truncate">{value}</p>
                 </div>
               </div>
             ))}
@@ -353,8 +365,8 @@ export default function ContactPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Mail size={15} className="text-dp-accent-cta shrink-0" />
-                <a href="mailto:hello@kolekcia.com" className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">
-                  hello@kolekcia.com
+                <a href={`mailto:${supportEmail}`} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">
+                  {supportEmail}
                 </a>
               </div>
             </div>

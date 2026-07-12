@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
+import { Suspense } from 'react'
 import { Barlow, Barlow_Condensed, Bebas_Neue, Geist_Mono } from 'next/font/google'
 import { AuthProvider } from '@/contexts/auth-context'
+import GoogleAuthProvider from '@/components/auth/GoogleAuthProvider'
 import { GamificationProvider } from '@/contexts/gamification-context'
 import { CartProvider } from '@/contexts/cart-context'
 import { WishlistProvider } from '@/contexts/wishlist-context'
@@ -106,16 +108,20 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased min-h-screen bg-background text-foreground">
           <LocaleProvider>
+            <GoogleAuthProvider>
             <AuthProvider>
               <CartProvider>
                 <WishlistProvider>
                   <GamificationProvider>
-                    <ReferralTracker />
+                    <Suspense fallback={null}>
+                      <ReferralTracker />
+                    </Suspense>
                     {children}
                   </GamificationProvider>
                 </WishlistProvider>
               </CartProvider>
             </AuthProvider>
+            </GoogleAuthProvider>
           </LocaleProvider>
       </body>
     </html>

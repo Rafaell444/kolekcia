@@ -26,6 +26,7 @@ import { apiFetch, authFetch } from "@/lib/api"
 import { useAuth } from "@/contexts/auth-context"
 import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
+import AuctionLiveChat from "@/components/auctions/AuctionLiveChat"
 
 // ─── Auction FAQ ─────────────────────────────────────────────
 
@@ -98,9 +99,13 @@ type ApiAuction = {
   current_bid: string
   bid_count: number
   top_bidder: string
+  starts_at: string
   ends_at: string
+  status: string
   is_live: boolean
   is_ended: boolean
+  is_upcoming?: boolean
+  is_biddable?: boolean
   recent_bids: ApiBid[]
 }
 
@@ -679,6 +684,7 @@ export default function AuctionDetailPage(): React.ReactElement {
   const [auction, setAuction] = useState<ApiAuction | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [auctionFaqs, setAuctionFaqs] = useState(AUCTION_FAQS)
 
   // Bidding UI state
   const [bidInput, setBidInput] = useState("")
@@ -721,12 +727,25 @@ export default function AuctionDetailPage(): React.ReactElement {
   // Initial load
   useEffect(() => { fetchAuction() }, [fetchAuction])
 
-  // Live polling every 4 seconds
+  useEffect(() => {
+    apiFetch<Array<{ id: number; question: string; answer: string }>>("/cms/faqs/?category=auction")
+      .then((data) => {
+        if (Array.isArray(data) && data.length) {
+          setAuctionFaqs(data.map((f) => ({ q: f.question, a: f.answer })))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Live polling every 4 seconds while not ended
   useEffect(() => {
     if (!auction || auction.is_ended) return
     const interval = setInterval(() => fetchAuction(true), 4000)
     return () => clearInterval(interval)
   }, [auction, fetchAuction])
+
+  const isUpcoming = Boolean(auction?.is_upcoming)
+  const isBiddable = Boolean(auction?.is_biddable ?? auction?.is_live)
 
   function handleQuickBid(increment: number) {
     if (!auction) return
@@ -742,6 +761,12 @@ export default function AuctionDetailPage(): React.ReactElement {
       return
     }
     if (!auction) return
+    if (!isBiddable) {
+      setBidError(isUpcoming
+        ? `Bidding opens ${new Date(auction.starts_at).toLocaleString()}.`
+        : "Bidding is not available for this auction.")
+      return
+    }
     const val = parseFloat(bidInput)
     const current = parseFloat(auction.current_bid)
     if (isNaN(val) || val <= current) {
@@ -767,6 +792,7 @@ export default function AuctionDetailPage(): React.ReactElement {
   }
 
   const { d, h, m, s, done } = useCountdown(auction?.ends_at ?? new Date(0).toISOString())
+  const startCountdown = useCountdown(auction?.starts_at ?? new Date(0).toISOString())
   const currentBid = auction ? parseFloat(auction.current_bid) : 0
   const img = auction?.effective_image || auction?.image_url || "/placeholder.svg"
   const urgent = !done && d === 0 && h === 0 && m < 10
@@ -855,10 +881,15 @@ export default function AuctionDetailPage(): React.ReactElement {
                     Auction Ended
                   </span>
                 </div>
-              ) : auction.is_live ? (
+              ) : isBiddable ? (
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-dp-accent-cta text-white text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-sm">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                   Live Auction
+                </div>
+              ) : isUpcoming ? (
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-sm">
+                  <Clock size={11} />
+                  Starts Soon
                 </div>
               ) : null}
             </div>
@@ -902,7 +933,21 @@ export default function AuctionDetailPage(): React.ReactElement {
                   {formatPrice(currentBid)}
                 </p>
               </div>
-              {!auction.is_ended && (
+              {!auction.is_ended && isUpcoming && !startCountdown.done && (
+                <div>
+                  <p className="text-[11px] uppercase tracking-widest mb-2 text-blue-500">Starts in</p>
+                  <div className="flex gap-1.5">
+                    {startCountdown.d > 0 && <CountdownBlock label="days" value={startCountdown.d} />}
+                    <CountdownBlock label="hrs" value={startCountdown.h} />
+                    <CountdownBlock label="min" value={startCountdown.m} />
+                    <CountdownBlock label="sec" value={startCountdown.s} />
+                  </div>
+                  <p className="text-[11px] text-dp-text-tertiary mt-2">
+                    Opens {new Date(auction.starts_at).toLocaleString()}
+                  </p>
+                </div>
+              )}
+              {!auction.is_ended && !isUpcoming && (
                 <div>
                   <p className={`text-[11px] uppercase tracking-widest mb-2 ${urgent ? "text-dp-accent-cta" : "text-dp-text-tertiary"}`}>
                     {done ? "Auction ended" : "Ends in"}
@@ -932,6 +977,13 @@ export default function AuctionDetailPage(): React.ReactElement {
               <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5 flex flex-col gap-4">
                 <h2 className="font-display text-xl text-dp-text-primary">Place Your Bid</h2>
 
+                {isUpcoming && !isBiddable ? (
+                  <p className="text-[13px] text-dp-text-secondary">
+                    This auction is scheduled. Bidding opens on{" "}
+                    <strong>{new Date(auction.starts_at).toLocaleString()}</strong>.
+                  </p>
+                ) : (
+                  <>
                 {/* Quick-bid buttons */}
                 <div className="flex flex-wrap gap-2">
                   {[3, 5, 10].map((inc) => (
@@ -985,8 +1037,12 @@ export default function AuctionDetailPage(): React.ReactElement {
                 <p className="text-[11px] text-dp-text-tertiary">
                   Min increment: $1.00 · Bids are binding · Winner pays within 48h
                 </p>
+                  </>
+                )}
               </div>
             )}
+
+            {isBiddable && <AuctionLiveChat auctionId={auction.id} isLive={isBiddable} />}
 
             {/* Bid history */}
             <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
@@ -1027,7 +1083,7 @@ export default function AuctionDetailPage(): React.ReactElement {
             Auction Questions
           </h2>
           <div className="bg-dp-bg-surface border border-dp-border rounded-sm px-5 sm:px-6">
-            {AUCTION_FAQS.map((faq) => (
+            {auctionFaqs.map((faq) => (
               <AuctionFaqItem key={faq.q} q={faq.q} a={faq.a} />
             ))}
           </div>

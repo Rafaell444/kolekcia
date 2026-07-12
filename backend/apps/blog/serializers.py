@@ -11,6 +11,7 @@ class BlogPostSerializer(serializers.ModelSerializer):
             "slug",
             "excerpt",
             "content",
+            "content_blocks",
             "cover_image_url",
             "is_published",
             "published_at",

@@ -20,6 +20,15 @@ class Vendor(models.Model):
     social_tiktok = models.URLField(blank=True)
     social_youtube = models.URLField(blank=True)
     payment_email = models.EmailField(blank=True)
+    merchant_id = models.CharField(max_length=100, blank=True)
+    gift_wrap_price_gel = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    gift_wrap_price_usd = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    shipping_email_subject = models.CharField(max_length=255, blank=True, default="Your order {{order_number}} has shipped!")
+    shipping_email_body = models.TextField(blank=True, default=(
+        "Hi {{customer_name}},\n\n"
+        "Great news — your order {{order_number}} has shipped!{{tracking_info}}\n\n"
+        "Thank you for shopping with us!"
+    ))
     # Human-readable label for what custom product type this vendor produces
     custom_product_type = models.CharField(max_length=100, blank=True,
         help_text="e.g. '3D Panel Poster' or '3D Figure'")

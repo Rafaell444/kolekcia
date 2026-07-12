@@ -11,6 +11,10 @@ from .views import (
     VendorPublicListView,
     VendorPublicByCategoryView,
     VendorCustomOrderListView,
+    VendorMediaUploadView,
+    VendorShippingListView,
+    VendorShippingDetailView,
+    VendorCatalogFilterConfigView,
 )
 
 urlpatterns = [
@@ -24,6 +28,10 @@ urlpatterns = [
     path("me/orders/", VendorOrderListView.as_view(), name="vendor-orders"),
     path("me/customers/", VendorCustomerListView.as_view(), name="vendor-customers"),
     path("me/analytics/", VendorAnalyticsView.as_view(), name="vendor-analytics"),
+    path("me/upload/", VendorMediaUploadView.as_view(), name="vendor-media-upload"),
     path("me/custom-orders/", VendorCustomOrderListView.as_view(), name="vendor-custom-orders"),
     path("me/custom-orders/<uuid:pk>/", VendorCustomOrderListView.as_view(), name="vendor-custom-order-detail"),
+    path("me/shipping/", VendorShippingListView.as_view(), name="vendor-shipping"),
+    path("me/shipping/<int:pk>/", VendorShippingDetailView.as_view(), name="vendor-shipping-detail"),
+    path("me/catalog-filter-config/", VendorCatalogFilterConfigView.as_view(), name="vendor-catalog-filter-config"),
 ]

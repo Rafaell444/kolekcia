@@ -19,7 +19,11 @@ from .serializers import (
     ForgotPasswordSerializer,
     ResetPasswordSerializer,
     ChangePasswordSerializer,
+    GoogleAuthSerializer,
 )
+from .google_auth import verify_google_id_token, authenticate_google_user
+from .services import award_registration_bonus
+from django.core.exceptions import ValidationError
 
 
 class AuthThrottle(ScopedRateThrottle):
@@ -36,21 +40,7 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # Award 5 XP welcome bonus
-        try:
-            from apps.gamification.models import XPRule
-            from apps.gamification.services import award_xp
-            XPRule.objects.update_or_create(
-                action_key="registration_bonus",
-                defaults={
-                    "xp_amount": 5,
-                    "is_one_time": True,
-                    "description": "New member welcome bonus",
-                },
-            )
-            award_xp(user, "registration_bonus", xp_amount=5)
-        except Exception:
-            pass  # never block registration if gamification fails
+        award_registration_bonus(user)
 
         refresh = RefreshToken.for_user(user)
         return Response(
@@ -78,6 +68,50 @@ class LoginView(APIView):
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
             }
+        )
+
+
+class GoogleAuthView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
+
+    def post(self, request):
+        if not settings.GOOGLE_CLIENT_ID:
+            return Response(
+                {"detail": "Google sign-in is not configured."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        serializer = GoogleAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            id_info = verify_google_id_token(serializer.validated_data["id_token"])
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({"detail": "Invalid Google token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user, created = authenticate_google_user(id_info)
+        except ValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.is_active:
+            return Response({"detail": "Account is deactivated."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if created:
+            award_registration_bonus(user)
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "user": UserSerializer(user).data,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "is_new_user": created,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
 

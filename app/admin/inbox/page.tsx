@@ -2,17 +2,20 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { adminFetch } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, Loader2, Paperclip, X, Play } from "lucide-react"
-import { getAdminToken } from "@/lib/admin-auth"
+import { getAdminToken, getAdminUser } from "@/lib/admin-auth"
 
 type Attachment = { id: string; url: string; media_type: string; original_name: string }
 type Message = {
   id: string
   from_role: string
+  sender_kind?: string
+  sender_label?: string | null
   text: string
   sent_at: string
   read: boolean
@@ -26,6 +29,7 @@ type Conversation = {
   customer_email: string
   customer_name: string
   vendor_name: string | null
+  shop_label?: string | null
   product_id: number | null
   product_slug: string | null
   product_title: string | null
@@ -71,6 +75,7 @@ function AttachmentPreview({ att }: { att: Attachment }) {
 }
 
 export default function AdminInboxPage(): React.ReactElement {
+  const searchParams = useSearchParams()
   const [convs, setConvs]       = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draft, setDraft]       = useState("")
@@ -82,6 +87,7 @@ export default function AdminInboxPage(): React.ReactElement {
   const pollRef     = useRef<NodeJS.Timeout | null>(null)
   const activeIdRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const openedFromUrl = useRef(false)
 
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
 
@@ -157,15 +163,30 @@ export default function AdminInboxPage(): React.ReactElement {
     }
   }, [activeId, pollActive])
 
-  async function openConv(id: string) {
-    setActiveId(id)
+  async function openConv(id: string | number) {
+    const sid = String(id)
+    setActiveId(sid)
     setDraft("")
     setPendingFiles([])
     try {
-      const full = await adminFetch<Conversation>(`/messaging/conversations/${id}/`)
-      applyOpenedConv(full, id)
+      const full = await adminFetch<Conversation>(`/messaging/conversations/${sid}/`)
+      applyOpenedConv(full, sid)
+      setConvs((prev) => {
+        if (prev.some((c) => String(c.id) === sid)) {
+          return prev.map((c) => (String(c.id) === sid ? { ...full, unread_count: 0 } : c))
+        }
+        return [{ ...full, id: sid, unread_count: 0 }, ...prev]
+      })
     } catch { /* noop */ }
   }
+
+  // Open conversation from ?c= query (e.g. from Customers → Message)
+  useEffect(() => {
+    const convId = searchParams.get("c")
+    if (!convId || openedFromUrl.current) return
+    openedFromUrl.current = true
+    void openConv(convId)
+  }, [searchParams])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -210,8 +231,9 @@ export default function AdminInboxPage(): React.ReactElement {
     finally { setSending(false) }
   }
 
-  const active = convs.find((c) => c.id === activeId) ?? null
+  const active = convs.find((c) => String(c.id) === activeId) ?? null
   const totalUnread = convs.reduce((s, c) => s + (c.unread_count ?? 0), 0)
+  const isSuperadmin = getAdminUser()?.vendor == null
 
   return (
     <div className="flex flex-col h-[calc(100vh-48px)] lg:h-screen overflow-hidden">
@@ -257,6 +279,11 @@ export default function AdminInboxPage(): React.ReactElement {
                     <span className="text-[9px] text-dp-text-tertiary shrink-0">{relTime(c.created_at)}</span>
                   </div>
                   <p className="text-[10px] text-dp-text-tertiary truncate">{c.subject}</p>
+                  {isSuperadmin && c.shop_label && (
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded-sm bg-dp-bg-elevated border border-dp-border text-[9px] font-bold uppercase tracking-wider text-dp-text-secondary">
+                      {c.shop_label}
+                    </span>
+                  )}
                   {(c.unread_count ?? 0) > 0 && (
                     <span className="inline-block mt-1 px-1.5 rounded-full bg-dp-accent-cta text-white text-[9px] font-bold">
                       {c.unread_count}
@@ -286,6 +313,11 @@ export default function AdminInboxPage(): React.ReactElement {
                     {active.customer_name || active.customer_email}
                   </p>
                   <p className="text-[11px] text-dp-text-tertiary truncate">{active.subject}</p>
+                  {isSuperadmin && active.shop_label && (
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-sm bg-dp-accent-cta/10 border border-dp-accent-cta/30 text-[10px] font-bold uppercase tracking-wider text-dp-accent-cta">
+                      {active.shop_label} shop
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -326,6 +358,11 @@ export default function AdminInboxPage(): React.ReactElement {
                         {!isAdmin && (
                           <p className="text-[10px] font-bold text-dp-text-tertiary mb-1 uppercase tracking-wider">
                             {active.customer_name || "Customer"}
+                          </p>
+                        )}
+                        {isAdmin && isSuperadmin && m.sender_label && (
+                          <p className="text-[10px] font-bold mb-1 uppercase tracking-wider opacity-80">
+                            {m.sender_label}
                           </p>
                         )}
                         {hasText && <p className="mb-1">{m.text}</p>}

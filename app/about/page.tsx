@@ -89,11 +89,19 @@ const PRESS = [
 
 export default function AboutPage(): React.ReactElement {
   const [artists, setArtists] = useState<Artist[]>([])
+  const [timeline, setTimeline] = useState(TIMELINE)
 
   useEffect(() => {
     let cancelled = false
     apiFetch<Artist[] | PaginatedResponse<Artist>>("/products/artists/?page_size=6")
       .then((d) => { if (!cancelled) setArtists(parseList(d).slice(0, 6)) })
+      .catch(() => {})
+    apiFetch<Array<{ section_key: string; content: { items?: typeof TIMELINE } }>>("/cms/pages/about/")
+      .then((sections) => {
+        if (cancelled) return
+        const t = sections.find((s) => s.section_key === "timeline")
+        if (t?.content?.items?.length) setTimeline(t.content.items)
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -255,7 +263,7 @@ export default function AboutPage(): React.ReactElement {
           {/* Vertical line */}
           <div className="absolute left-[calc(50%-0.5px)] top-0 bottom-0 w-px bg-dp-border hidden md:block" aria-hidden />
           <div className="flex flex-col gap-0">
-            {TIMELINE.map((item, i) => (
+            {timeline.map((item, i) => (
               <div
                 key={item.year}
                 className={`relative flex md:items-center gap-6 md:gap-0 ${i % 2 === 0 ? "md:flex-row" : "md:flex-row-reverse"}`}

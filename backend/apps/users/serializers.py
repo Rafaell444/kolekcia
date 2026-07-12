@@ -75,6 +75,10 @@ class ChangePasswordSerializer(serializers.Serializer):
         return data
 
 
+class GoogleAuthSerializer(serializers.Serializer):
+    id_token = serializers.CharField()
+
+
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
 

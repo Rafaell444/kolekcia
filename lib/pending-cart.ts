@@ -1,7 +1,8 @@
 const PENDING_CART_KEY = "kolekcia_pending_cart"
 
 export type PendingCartIntent = {
-  variantId: number
+  variantId?: number
+  sizeVariantId?: number
   quantity: number
   returnTo: string
 }

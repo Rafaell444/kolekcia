@@ -80,6 +80,10 @@ class Badge(models.Model):
     rarity = models.CharField(max_length=20, choices=RARITY_CHOICES, default="common")
     description = models.TextField()
     trigger_action = models.CharField(max_length=50, blank=True)
+    prize_promo = models.ForeignKey(
+        "promo.PromoCode", on_delete=models.SET_NULL, null=True, blank=True, related_name="badge_prizes"
+    )
+    prize_description = models.CharField(max_length=255, blank=True)
 
     class Meta:
         db_table = "badges"
@@ -92,6 +96,7 @@ class UserBadge(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="badges")
     badge = models.ForeignKey(Badge, on_delete=models.CASCADE)
     earned_at = models.DateTimeField(auto_now_add=True)
+    seen_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "user_badges"

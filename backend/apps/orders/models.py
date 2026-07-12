@@ -120,8 +120,39 @@ class DeliveryOption(models.Model):
         return self.label
 
 
+class VendorShippingOption(models.Model):
+    MARKET_CHOICES = [
+        ("GE", "Georgian"),
+        ("OTHER", "Other"),
+    ]
+
+    vendor = models.ForeignKey("vendors.Vendor", on_delete=models.CASCADE, related_name="shipping_options")
+    market = models.CharField(max_length=10, choices=MARKET_CHOICES)
+    label = models.CharField(max_length=50)
+    price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    est_days_min = models.PositiveIntegerField(default=1)
+    est_days_max = models.PositiveIntegerField(default=5)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table = "vendor_shipping_options"
+        ordering = ["market", "sort_order"]
+        unique_together = [("vendor", "market", "label")]
+
+    def __str__(self):
+        return f"{self.vendor.name} — {self.market} {self.label}"
+
+
 class ProcessingOption(models.Model):
-    slug = models.SlugField(unique=True)
+    vendor = models.ForeignKey(
+        "vendors.Vendor",
+        on_delete=models.CASCADE,
+        related_name="processing_options",
+        null=True,
+        blank=True,
+    )
+    slug = models.SlugField()
     label = models.CharField(max_length=100)
     est_days_min = models.PositiveSmallIntegerField(default=1)
     est_days_max = models.PositiveSmallIntegerField(default=5)
@@ -133,6 +164,7 @@ class ProcessingOption(models.Model):
     class Meta:
         db_table = "processing_options"
         ordering = ["sort_order"]
+        unique_together = [("vendor", "slug")]
 
     def __str__(self):
         return self.label
@@ -192,10 +224,16 @@ class CustomOrder(models.Model):
     name = models.CharField(max_length=255)
     email = models.EmailField()
     phone = models.CharField(max_length=30, blank=True)
-    image_url = models.URLField()
+    image_url = models.TextField()
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     payment_ref = models.CharField(max_length=100, blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=10, default="USD")
+    payment_url = models.URLField(blank=True)
+    tracking_code = models.CharField(max_length=100, blank=True)
+    cancel_reason = models.TextField(blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

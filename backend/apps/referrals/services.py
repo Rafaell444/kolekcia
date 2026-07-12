@@ -9,6 +9,22 @@ def ensure_referral_profile(user):
     return profile
 
 
+def _award_referral_signup_xp(inviter, invitee):
+    from apps.gamification.models import XPRule
+    from apps.gamification.services import award_xp
+
+    XPRule.objects.get_or_create(
+        action_key="referral_signup_inviter",
+        defaults={"xp_amount": 50, "is_one_time": False, "description": "Referral signup reward for inviter"},
+    )
+    XPRule.objects.get_or_create(
+        action_key="referral_signup_invitee",
+        defaults={"xp_amount": 25, "is_one_time": True, "description": "Referral signup reward for invitee"},
+    )
+    award_xp(inviter, "referral_signup_inviter")
+    award_xp(invitee, "referral_signup_invitee")
+
+
 @transaction.atomic
 def process_referral_conversion(invitee_user):
     from apps.orders.models import Order

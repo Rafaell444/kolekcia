@@ -1,13 +1,14 @@
 "use client"
 
 import React, { useState, useEffect, useRef, useCallback, Suspense } from "react"
+import { createPortal } from "react-dom"
 import { useSearchParams } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import ProductCard from "@/components/catalog/ProductCard"
 import { SlidersHorizontal, X, ChevronDown, ChevronUp, LayoutGrid, List } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
-import { resolveProductPrices, formatAmount } from "@/lib/product-pricing"
+import { resolveListProductPrice, formatAmount } from "@/lib/product-pricing"
 import CategoryVendorBanner from "@/components/catalog/CategoryVendorBanner"
 
 type ApiCategory = { id: string; name: string; slug: string; count: number }
@@ -31,7 +32,17 @@ type ApiProduct = {
   is_exclusive: boolean
   tags: string[]
   default_variant_id: number | null
+  default_size_variant_id?: number | null
   material?: string
+  size_variants?: Array<{
+    id: number
+    label: string
+    price_usd: string
+    price_gel?: string | null
+    sale_price_usd?: string | null
+    sale_price_gel?: string | null
+    is_active?: boolean
+  }>
 }
 
 type PaginatedProducts = {
@@ -47,6 +58,19 @@ type FilterOptions = {
   themes: string[]
   artists: { handle: string; name: string }[]
   price_range: { min: number; max: number }
+}
+
+type FilterVisibilityKey = "category" | "price" | "size" | "theme" | "material" | "artist" | "availability"
+type FilterVisibility = Record<FilterVisibilityKey, boolean>
+
+const DEFAULT_FILTER_VISIBILITY: FilterVisibility = {
+  category: true,
+  price: true,
+  size: true,
+  theme: true,
+  material: true,
+  artist: true,
+  availability: true,
 }
 
 // ─── Filter state type ─────────────────────────────────────
@@ -86,25 +110,14 @@ const SORT_OPTIONS = [
   { value: "price_desc",  label: "Price: High to Low" },
 ]
 
-// ─── Collapsible filter group ──────────────────────────────
-function FilterGroup({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen)
+// ─── Collapsible filter group (always expanded) ────────────
+function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="border-b border-dp-border pb-4 mb-4">
-      <button
-        className="flex items-center justify-between w-full text-left mb-3"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-      >
-        <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">
-          {title}
-        </span>
-        {open
-          ? <ChevronUp size={14} className="text-dp-text-tertiary" />
-          : <ChevronDown size={14} className="text-dp-text-tertiary" />
-        }
-      </button>
-      {open && children}
+      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">
+        {title}
+      </p>
+      {children}
     </div>
   )
 }
@@ -247,6 +260,7 @@ function FilterSidebar({
   filterOptions,
   hideCategoryFilter = false,
   currency,
+  filterVisibility = DEFAULT_FILTER_VISIBILITY,
 }: {
   filters: Filters
   onChange: (f: Filters) => void
@@ -255,6 +269,7 @@ function FilterSidebar({
   filterOptions: FilterOptions | null
   hideCategoryFilter?: boolean
   currency: string
+  filterVisibility?: FilterVisibility
 }) {
   const toggleArr = (key: "categories" | "materials" | "sizes" | "themes" | "artistHandles", value: string) => {
     const arr = filters[key]
@@ -304,7 +319,7 @@ function FilterSidebar({
       </div>
 
       {/* Category — hidden on locked category pages */}
-      {!hideCategoryFilter && categories.length > 0 && (
+      {filterVisibility.category && !hideCategoryFilter && categories.length > 0 && (
         <FilterGroup title="Category">
           <ul className="flex flex-col gap-1.5">
             {categories.map((cat) => {
@@ -331,7 +346,7 @@ function FilterSidebar({
       )}
 
       {/* Price Range */}
-      {filterOptions && (
+      {filterVisibility.price && filterOptions && (
         <FilterGroup title="Price Range">
           <PriceRangeSlider
             absMin={absMin}
@@ -345,7 +360,7 @@ function FilterSidebar({
       )}
 
       {/* Size */}
-      {filterOptions && filterOptions.sizes.length > 0 && (
+      {filterVisibility.size && filterOptions && filterOptions.sizes.length > 0 && (
         <FilterGroup title="Size">
           <div className="flex flex-wrap gap-2">
             {filterOptions.sizes.map((sz) => {
@@ -370,7 +385,7 @@ function FilterSidebar({
       )}
 
       {/* Themes — derived from product tags (Forest, Nature, Cyberpunk, etc.) */}
-      {filterOptions && filterOptions.themes.length > 0 && (
+      {filterVisibility.theme && filterOptions && filterOptions.themes.length > 0 && (
         <FilterGroup title="Theme / Collection">
           <div className="flex flex-wrap gap-2">
             {filterOptions.themes.map((theme) => {
@@ -395,8 +410,8 @@ function FilterSidebar({
       )}
 
       {/* Material */}
-      {filterOptions && filterOptions.materials.length > 0 && (
-        <FilterGroup title="Material" defaultOpen={false}>
+      {filterVisibility.material && filterOptions && filterOptions.materials.length > 0 && (
+        <FilterGroup title="Material">
           <ul className="flex flex-col gap-1.5">
             {filterOptions.materials.map((mat) => (
               <li key={mat}>
@@ -418,8 +433,8 @@ function FilterSidebar({
       )}
 
       {/* Artist */}
-      {filterOptions && filterOptions.artists.length > 1 && (
-        <FilterGroup title="Artist" defaultOpen={false}>
+      {filterVisibility.artist && filterOptions && filterOptions.artists.length > 1 && (
+        <FilterGroup title="Artist">
           <ul className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
             {filterOptions.artists.map((a) => {
               const active = filters.artistHandles.includes(a.handle)
@@ -444,6 +459,7 @@ function FilterSidebar({
       )}
 
       {/* Availability */}
+      {filterVisibility.availability && (
       <FilterGroup title="Availability">
         {(
           [
@@ -466,6 +482,7 @@ function FilterSidebar({
           </label>
         ))}
       </FilterGroup>
+      )}
     </aside>
   )
 }
@@ -513,6 +530,7 @@ function CatalogPageInner(): React.ReactElement {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [categories, setCategories] = useState<ApiCategory[]>([])
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
+  const [filterVisibility, setFilterVisibility] = useState<FilterVisibility>(DEFAULT_FILTER_VISIBILITY)
 
   const [products, setProducts] = useState<ApiProduct[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -520,6 +538,16 @@ function CatalogPageInner(): React.ReactElement {
   const [hasNext, setHasNext] = useState(false)
   const [fetchLoading, setFetchLoading] = useState(true)
   const abortRef = useRef<AbortController | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
+
+  useEffect(() => {
+    if (!mobileOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = prev }
+  }, [mobileOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -545,6 +573,15 @@ function CatalogPageInner(): React.ReactElement {
           }))
         }
       })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [lockedCategory])
+
+  useEffect(() => {
+    let cancelled = false
+    const qs = lockedCategory ? `?category=${lockedCategory}` : ""
+    apiFetch<FilterVisibility>(`/products/catalog-filter-config${qs}`)
+      .then((d) => { if (!cancelled && d) setFilterVisibility({ ...DEFAULT_FILTER_VISIBILITY, ...d }) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [lockedCategory])
@@ -674,6 +711,7 @@ function CatalogPageInner(): React.ReactElement {
               filterOptions={filterOptions}
               hideCategoryFilter={hideCategoryFilter}
               currency={currency}
+              filterVisibility={filterVisibility}
             />
           </div>
 
@@ -740,7 +778,7 @@ function CatalogPageInner(): React.ReactElement {
             ) : view === "grid" ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
                 {products.map((p) => {
-                  const resolved = resolveProductPrices(p.base_price, p.original_price, p.regional_prices, currency, rates)
+                  const resolved = resolveListProductPrice(p, currency, rates)
                   return (
                   <ProductCard key={p.id} product={{
                     id: String(p.id), title: p.title, artistName: p.artist_name,
@@ -748,10 +786,10 @@ function CatalogPageInner(): React.ReactElement {
                     category: p.category_slug,
                     imageUrl: p.image_url, price: resolved.price,
                     originalPrice: resolved.original,
-                    rating: parseFloat(p.rating), reviews: p.review_count,
                     isLimited: p.is_limited, isSale: p.is_sale, isNew: p.is_new,
                     isExclusive: p.is_exclusive, tags: p.tags,
                     defaultVariantId: p.default_variant_id,
+                    defaultSizeVariantId: p.default_size_variant_id ?? p.size_variants?.find((sv) => sv.is_active !== false)?.id ?? null,
                     priceIsLocalized: true,
                   }} />
                 )})}
@@ -759,7 +797,7 @@ function CatalogPageInner(): React.ReactElement {
             ) : (
               <div className="flex flex-col gap-3">
                 {products.map((p) => {
-                  const resolved = resolveProductPrices(p.base_price, p.original_price, p.regional_prices, currency, rates)
+                  const resolved = resolveListProductPrice(p, currency, rates)
                   return (
                   <div key={p.id} className="flex gap-4 bg-dp-bg-surface border border-dp-border rounded-sm p-3 dp-card-hover">
                     <div className="relative w-20 h-28 shrink-0 overflow-hidden rounded-sm">
@@ -804,33 +842,39 @@ function CatalogPageInner(): React.ReactElement {
       </div>
 
       {/* ── Mobile filter drawer ── */}
-      {mobileOpen && (
+      {mounted && mobileOpen && createPortal(
         <>
-          <div className="fixed inset-0 z-40 bg-black/70" onClick={() => setMobileOpen(false)} aria-hidden />
-          <div className="fixed inset-y-0 left-0 z-50 w-80 max-w-full bg-dp-bg-surface border-r border-dp-border overflow-y-auto p-5">
-            <div className="flex items-center justify-between mb-5">
+          <div className="fixed inset-0 z-[99] bg-black/70 lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
+          <div className="fixed top-0 bottom-16 left-0 z-[100] w-80 max-w-full bg-dp-bg-surface border-r border-dp-border flex flex-col lg:hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border shrink-0">
               <span className="font-display text-2xl text-dp-text-primary">Filters</span>
               <button onClick={() => setMobileOpen(false)} aria-label="Close filters">
                 <X size={20} className="text-dp-text-secondary" />
               </button>
             </div>
-            <FilterSidebar
-              filters={filters}
-              onChange={setFilters}
-              onReset={() => { resetFilters(); setMobileOpen(false) }}
-              categories={categories}
-              filterOptions={filterOptions}
-              hideCategoryFilter={hideCategoryFilter}
-              currency={currency}
-            />
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="w-full mt-4 py-3 bg-dp-accent-cta text-white text-[12px] font-bold uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors"
-            >
-              Show {totalCount} Results
-            </button>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <FilterSidebar
+                filters={filters}
+                onChange={setFilters}
+                onReset={() => { resetFilters(); setMobileOpen(false) }}
+                categories={categories}
+                filterOptions={filterOptions}
+                hideCategoryFilter={hideCategoryFilter}
+                currency={currency}
+                filterVisibility={filterVisibility}
+              />
+            </div>
+            <div className="shrink-0 px-5 py-4 border-t border-dp-border bg-dp-bg-surface pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <button
+                onClick={() => setMobileOpen(false)}
+                className="w-full py-3 bg-dp-accent-cta text-white text-[12px] font-bold uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors"
+              >
+                Show {totalCount} Results
+              </button>
+            </div>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </SiteShell>
   )

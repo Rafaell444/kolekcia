@@ -4,7 +4,7 @@ import React, { useState } from "react"
 import Image from "next/image"
 import { apiFetch } from "@/lib/api"
 
-export default function NewsletterSection(): React.ReactElement {
+export default function NewsletterSection({ content }: { content?: { heading?: string; subheading?: string; promoText?: string; imageUrl?: string } }): React.ReactElement {
   const [email, setEmail] = useState("")
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -31,17 +31,16 @@ export default function NewsletterSection(): React.ReactElement {
         <div className="rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-2 min-h-[360px] bg-[#dce8f7]">
           <div className="relative min-h-[240px] md:min-h-0">
             <Image
-              src="https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=800&h=600&fit=crop"
-              alt="Sign up and save 25% on your first order"
+              src={content?.imageUrl ?? "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=800&h=600&fit=crop"}
+              alt="Sign up and save on your first order"
               fill
               className="object-cover"
               sizes="(max-width: 768px) 100vw, 50vw"
             />
             <div className="absolute inset-0 bg-blue-600/10" aria-hidden />
             <div className="absolute inset-0 flex items-center justify-center p-8">
-              <p className="font-display text-6xl sm:text-7xl font-black text-white uppercase leading-none drop-shadow-xl text-center">
-                Sign Up &amp;<br />Save<br />
-                <span className="text-7xl sm:text-8xl">25%!</span>
+              <p className="font-display text-6xl sm:text-7xl font-black text-white uppercase leading-none drop-shadow-xl text-center whitespace-pre-line">
+                {content?.promoText ?? "Sign Up &\nSave\n25%!"}
               </p>
             </div>
           </div>
@@ -55,10 +54,10 @@ export default function NewsletterSection(): React.ReactElement {
             ) : (
               <>
                 <h2 className="font-display text-2xl md:text-3xl font-black text-dp-text-primary mb-2" id="newsletter-heading">
-                  Sign up and never miss a deal
+                  {content?.heading ?? "Sign up and never miss a deal"}
                 </h2>
                 <p className="text-[13px] text-dp-text-secondary mb-5">
-                  Join our newsletter for the latest discounts and Kolekcia goodies
+                  {content?.subheading ?? "Join our newsletter for the latest discounts and Kolekcia goodies"}
                 </p>
                 {error && <p className="text-[12px] text-red-600 mb-3">{error}</p>}
                 <form onSubmit={handleSubmit} className="flex gap-2">

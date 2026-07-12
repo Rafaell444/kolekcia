@@ -298,18 +298,20 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                       ))}
                     </select>
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">
-                      Tracking Number
-                      {newStatus === "shipped" && <span className="text-dp-accent-cta ml-1">— will be emailed to customer</span>}
-                    </label>
-                    <input
-                      value={trackingCode}
-                      onChange={(e) => setTrackingCode(e.target.value)}
-                      placeholder="e.g. GE123456789GE"
-                      className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
-                    />
-                  </div>
+                  {newStatus === "shipped" && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">
+                        Tracking Number
+                        <span className="text-dp-accent-cta ml-1">— will be emailed to customer</span>
+                      </label>
+                      <input
+                        value={trackingCode}
+                        onChange={(e) => setTrackingCode(e.target.value)}
+                        placeholder="e.g. GE123456789GE"
+                        className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Internal Note (optional)</label>

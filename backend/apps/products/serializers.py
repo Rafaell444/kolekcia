@@ -4,9 +4,20 @@ from apps.vendors.models import Vendor
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    count = serializers.SerializerMethodField()
+
     class Meta:
         model = Category
         fields = ("id", "name", "slug", "image_url", "count")
+
+    def get_count(self, obj):
+        from django.db.models import Q
+        return (
+            Product.objects.filter(status="active")
+            .filter(Q(category=obj) | Q(categories=obj))
+            .distinct()
+            .count()
+        )
 
 
 class ArtistSerializer(serializers.ModelSerializer):
@@ -44,7 +55,11 @@ class PosterFrameSerializer(serializers.ModelSerializer):
 class SizeVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = SizeVariant
-        fields = ("id", "label", "price_usd", "price_gel", "price_eur", "price_gbp", "sort_order", "is_active")
+        fields = (
+            "id", "label", "price_usd", "price_gel", "price_eur", "price_gbp",
+            "sale_price_usd", "sale_price_gel",
+            "sort_order", "is_active",
+        )
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
@@ -83,6 +98,8 @@ class ProductListSerializer(serializers.ModelSerializer):
     vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True)
     image_url = serializers.SerializerMethodField()
     default_variant_id = serializers.SerializerMethodField()
+    default_size_variant_id = serializers.SerializerMethodField()
+    size_variants = SizeVariantSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
@@ -92,7 +109,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "base_price", "original_price", "regional_prices", "rating", "review_count",
             "is_limited", "is_sale", "is_new", "is_exclusive", "allow_custom_size", "status", "tags",
             "description", "material",
-            "default_variant_id",
+            "default_variant_id", "default_size_variant_id", "size_variants",
         )
 
     def get_image_url(self, obj):
@@ -112,7 +129,14 @@ class ProductListSerializer(serializers.ModelSerializer):
         return ""
 
     def get_default_variant_id(self, obj):
+        size_variants = [sv for sv in obj.size_variants.all() if sv.is_active]
+        if size_variants:
+            return None
         first = obj.variants.first()
+        return first.id if first else None
+
+    def get_default_size_variant_id(self, obj):
+        first = obj.size_variants.filter(is_active=True).order_by("sort_order", "id").first()
         return first.id if first else None
 
     def get_category_slugs(self, obj):
@@ -224,8 +248,10 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             categories = self._resolve_categories(validated_data)
             if categories:
                 instance.categories.set(categories)
-                if not instance.category:
-                    instance.category = categories[0]
+                instance.category = categories[0]
+            else:
+                instance.categories.clear()
+                instance.category = None
         if "artist_handle" in validated_data:
             instance.artist = self._resolve_artist(validated_data)
         if "vendor_slug_input" in validated_data:

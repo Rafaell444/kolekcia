@@ -4,13 +4,15 @@ import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import { Truck, CheckCircle, Clock, Package, XCircle, Search, Eye, X } from "lucide-react"
+import { formatAmount } from "@/lib/product-pricing"
+import type { Currency } from "@/contexts/locale-context"
 
 type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled"
 type OrderItem = { id: number; processing_option: string }
 type AdminOrder = {
   id: string; order_number: string; status: OrderStatus
-  shipping_name: string; shipping_email: string
-  total: string; created_at: string; tracking_code: string
+  shipping_name: string; shipping_email: string; shipping_country?: string
+  total: string; currency?: string; created_at: string; tracking_code: string
   items?: OrderItem[]
 }
 
@@ -201,7 +203,7 @@ export default function AdminOrdersPage(): React.ReactElement {
           <div className="animate-pulse space-y-2">{[1,2,3,4,5].map((i) => <div key={i} className="h-12 bg-dp-bg-elevated rounded-sm" />)}</div>
         ) : (
           <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-x-auto">
-            <table className="w-full text-[13px] min-w-[640px]">
+            <table className="w-full text-[13px] min-w-[760px]">
               <thead className="border-b border-dp-border">
                 <tr className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">
                   <th className="text-left px-4 py-3">Order</th>
@@ -210,6 +212,7 @@ export default function AdminOrdersPage(): React.ReactElement {
                   <th className="text-left px-4 py-3">Total</th>
                   <th className="text-left px-4 py-3">Ordered</th>
                   <th className="text-left px-4 py-3">Ship by</th>
+                  <th className="text-left px-4 py-3">Tracking</th>
                   <th className="text-left px-4 py-3">Details</th>
                   <th className="text-left px-4 py-3">Update Status</th>
                 </tr>
@@ -221,9 +224,6 @@ export default function AdminOrdersPage(): React.ReactElement {
                     <tr key={o.id} className="hover:bg-dp-bg-elevated transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-dp-text-primary">{o.order_number}</p>
-                        {o.tracking_code && (
-                          <p className="text-[11px] text-dp-text-tertiary mt-0.5">📦 {o.tracking_code}</p>
-                        )}
                       </td>
                       <td className="px-4 py-3 text-dp-text-secondary">
                         {o.shipping_name}<br />
@@ -234,7 +234,9 @@ export default function AdminOrdersPage(): React.ReactElement {
                           <cfg.Icon size={10} /> {cfg.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-bold">${parseFloat(o.total).toFixed(2)}</td>
+                      <td className="px-4 py-3 font-bold">
+                        {formatAmount(parseFloat(o.total), (o.currency ?? "USD") as Currency)}
+                      </td>
                       <td className="px-4 py-3 text-dp-text-tertiary">{new Date(o.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
                         {(() => {
@@ -254,6 +256,13 @@ export default function AdminOrdersPage(): React.ReactElement {
                             </div>
                           )
                         })()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {o.tracking_code ? (
+                          <span className="font-mono text-[12px] text-dp-text-secondary">{o.tracking_code}</span>
+                        ) : (
+                          <span className="text-dp-text-tertiary">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <Link

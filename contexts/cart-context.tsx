@@ -22,6 +22,8 @@ export type CartItemType = {
   size_label: string
   gift_wrap: boolean
   gift_wrap_price: string
+  gift_wrap_note?: string
+  gift_wrap_image_url?: string
   delivery_type: string
   processing_option: string
 }
@@ -41,7 +43,7 @@ type CartContextValue = {
   openCart: () => void
   closeCart: () => void
   refresh: () => Promise<void>
-  addItem: (variantId: number | null, quantity?: number, options?: { gift_wrap?: boolean; gift_wrap_note?: string; gift_wrap_image_url?: string; processing_option?: string; size_variant_id?: number }) => Promise<void>
+  addItem: (variantId: number | null, quantity?: number, options?: { gift_wrap?: boolean; gift_wrap_note?: string; gift_wrap_image_url?: string; processing_option?: string; size_variant_id?: number; currency?: string }) => Promise<void>
   removeItem: (itemId: number) => Promise<void>
   updateQuantity: (itemId: number, quantity: number) => Promise<void>
   applyPromo: (code: string) => Promise<void>
@@ -78,13 +80,14 @@ export function CartProvider({ children }: { children: React.ReactNode }): React
     refresh()
   }, [refresh])
 
-  const addItem = useCallback(async (variantId: number | null, quantity = 1, options?: { gift_wrap?: boolean; gift_wrap_note?: string; gift_wrap_image_url?: string; processing_option?: string; size_variant_id?: number }) => {
+  const addItem = useCallback(async (variantId: number | null, quantity = 1, options?: { gift_wrap?: boolean; gift_wrap_note?: string; gift_wrap_image_url?: string; processing_option?: string; size_variant_id?: number; currency?: string }) => {
     const body: Record<string, unknown> = {
       quantity,
       gift_wrap: options?.gift_wrap ?? false,
       gift_wrap_note: options?.gift_wrap_note ?? "",
       gift_wrap_image_url: options?.gift_wrap_image_url ?? "",
       processing_option: options?.processing_option ?? "",
+      currency: options?.currency ?? "USD",
     }
     if (options?.size_variant_id) {
       body.size_variant_id = options.size_variant_id

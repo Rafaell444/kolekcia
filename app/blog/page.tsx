@@ -27,6 +27,11 @@ export default async function BlogPage() {
   return (
     <SiteShell>
       <div className="dp-container py-12">
+        <nav className="flex items-center gap-2 text-[12px] text-dp-text-tertiary mb-6" aria-label="Breadcrumb">
+          <Link href="/" className="hover:text-dp-text-primary transition-colors">Home</Link>
+          <span>/</span>
+          <span className="text-dp-text-secondary">Blog</span>
+        </nav>
         <h1 className="font-display text-5xl text-dp-text-primary">Blog</h1>
         <p className="text-dp-text-secondary mt-2">Stories, tips, and updates from the Kolekcia team.</p>
 

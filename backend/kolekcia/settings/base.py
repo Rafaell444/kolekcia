@@ -12,6 +12,7 @@ env = environ.Env(
     CSRF_TRUSTED_ORIGINS=(list, []),
     SECRET_KEY=(str, "django-insecure-change-me"),
     FRONTEND_URL=(str, "http://localhost:3000"),
+    GOOGLE_CLIENT_ID=(str, ""),
 )
 
 environ.Env.read_env(BASE_DIR / ".env")
@@ -20,6 +21,7 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 FRONTEND_URL = env("FRONTEND_URL")
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")
 
 DJANGO_APPS = [
     "django.contrib.admin",
@@ -36,6 +38,7 @@ THIRD_PARTY_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
+    "channels",
 ]
 
 LOCAL_APPS = [
@@ -88,6 +91,22 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "kolekcia.wsgi.application"
+ASGI_APPLICATION = "kolekcia.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}
+
+_redis_url = env("REDIS_URL", default="")
+if _redis_url:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [_redis_url]},
+        },
+    }
 
 DATABASES = {"default": env.db("DATABASE_URL")}
 

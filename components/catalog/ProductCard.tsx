@@ -11,6 +11,7 @@ import { useLocale } from "@/contexts/locale-context"
 import { formatAmount } from "@/lib/product-pricing"
 import { getAccessToken } from "@/lib/auth-storage"
 import { savePendingCartIntent } from "@/lib/pending-cart"
+import { getApiErrorMessage } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 
 export type ProductCardProps = {
@@ -31,6 +32,7 @@ export type ProductCardProps = {
     category?: string
     slug?: string
     defaultVariantId?: number | null
+    defaultSizeVariantId?: number | null
     priceIsLocalized?: boolean
   }
 }
@@ -43,6 +45,7 @@ export default function ProductCard({ product: p }: ProductCardProps) {
   const { formatPrice, currency } = useLocale()
   const [adding, setAdding]           = useState(false)
   const [addedToCart, setAddedToCart] = useState(false)
+  const [cartError, setCartError]     = useState("")
   const [wishWorking, setWishWorking] = useState(false)
 
   const displayPrice = (amount: number | null | undefined) =>
@@ -60,7 +63,13 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     e.stopPropagation()
 
     if (!getAccessToken()) {
-      if (p.defaultVariantId) {
+      if (p.defaultSizeVariantId) {
+        savePendingCartIntent({
+          sizeVariantId: p.defaultSizeVariantId,
+          quantity: 1,
+          returnTo: href,
+        })
+      } else if (p.defaultVariantId) {
         savePendingCartIntent({
           variantId: p.defaultVariantId,
           quantity: 1,
@@ -71,18 +80,23 @@ export default function ProductCard({ product: p }: ProductCardProps) {
       return
     }
 
-    if (!p.defaultVariantId) {
+    if (!p.defaultVariantId && !p.defaultSizeVariantId) {
       router.push(href)
       return
     }
 
     setAdding(true)
+    setCartError("")
     try {
-      await addItem(p.defaultVariantId, 1)
+      if (p.defaultSizeVariantId) {
+        await addItem(null, 1, { size_variant_id: p.defaultSizeVariantId })
+      } else if (p.defaultVariantId) {
+        await addItem(p.defaultVariantId, 1)
+      }
       setAddedToCart(true)
       setTimeout(() => setAddedToCart(false), 1800)
-    } catch {
-      // silently ignore — user can go to product page
+    } catch (err) {
+      setCartError(getApiErrorMessage(err, "Could not add to cart. Please try again."))
     } finally {
       setAdding(false)
     }
@@ -186,14 +200,19 @@ export default function ProductCard({ product: p }: ProductCardProps) {
       </div>
 
       {/* ── Price ── */}
-      <div className="flex items-center gap-2 px-3 pb-3 mt-auto">
-        <span className="text-[15px] font-bold text-dp-text-primary">
-          {displayPrice(p.price)}
-        </span>
-        {p.originalPrice && p.originalPrice > p.price && (
-          <span className="text-[12px] text-dp-text-tertiary line-through">
-            {displayPrice(p.originalPrice)}
+      <div className="flex flex-col gap-1 px-3 pb-3 mt-auto">
+        <div className="flex items-center gap-2">
+          <span className="text-[15px] font-bold text-dp-text-primary">
+            {displayPrice(p.price)}
           </span>
+          {p.originalPrice && p.originalPrice > p.price && (
+            <span className="text-[12px] text-dp-text-tertiary line-through">
+              {displayPrice(p.originalPrice)}
+            </span>
+          )}
+        </div>
+        {cartError && (
+          <p className="text-[10px] text-dp-accent-cta leading-tight">{cartError}</p>
         )}
       </div>
     </Link>

@@ -5,20 +5,21 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
-import { apiFetch, authFetch } from "@/lib/api"
+import { apiFetch, authFetch, getApiErrorMessage } from "@/lib/api"
 import { useCart } from "@/contexts/cart-context"
 import { useWishlist } from "@/contexts/wishlist-context"
 import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
 import { savePendingCartIntent } from "@/lib/pending-cart"
 import { productHref } from "@/lib/product-url"
+import { formatAmount, resolveProductPrices, resolveSizeVariantPrice } from "@/lib/product-pricing"
 import {
   ChevronLeft, ShoppingCart, Heart, Share2, Shield, Truck,
   RotateCcw, Check, Zap, ArrowRight, Award, Package,
   Sparkles, Clock, ChevronDown, ChevronUp, Loader2,
   MessageSquare, X, Send, Layers, Box, Palette, Gift, Play, Upload, ImageIcon,
 } from "lucide-react"
-import { resolveProductPrices } from "@/lib/product-pricing"
+import ProductCmsSections, { type ProductCmsContent } from "@/components/product/ProductCmsSections"
 
 // ── Variant selector ──────────────────────────────────────
 function VariantSelector<T extends { id: string; label: string; surcharge: number }>({
@@ -89,7 +90,18 @@ type ApiVariant = {
   frame: { id: string; label: string; surcharge: number }
   stock: number
 }
-type SizeVariant = { id: number; label: string; price_usd: string; price_gel?: string | null; price_eur?: string | null; price_gbp?: string | null; sort_order: number; is_active: boolean }
+type SizeVariant = {
+  id: number
+  label: string
+  price_usd: string
+  price_gel?: string | null
+  price_eur?: string | null
+  price_gbp?: string | null
+  sale_price_usd?: string | null
+  sale_price_gel?: string | null
+  sort_order: number
+  is_active: boolean
+}
 type ProcessingOpt = { id: number; slug: string; label: string; price_usd: string; price_gel: string; est_days_min: number; est_days_max: number }
 type ApiProduct = {
   id: number; slug?: string; title: string; artist_name: string
@@ -98,6 +110,7 @@ type ApiProduct = {
   category?: { slug: string; name: string } | null
   categories_data?: { slug: string; name: string }[]
   vendor_id?: number | null
+  vendor_slug?: string | null
   base_price: string; original_price: string | null
   regional_prices?: Record<string, { price?: string | number | null; original?: string | number | null }>
   description?: string; material?: string
@@ -199,6 +212,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const { addItem } = useCart()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()
   const { formatPrice, currency, rates, detectedCountry } = useLocale()
+  const formatLocalized = (amount: number | string | null | undefined) => formatAmount(amount, currency)
   const isGeoGE = detectedCountry === "GE" || currency === "GEL"
   const categorySlug = product.category_slug ?? product.category?.slug ?? ""
   const categoryName = product.category_name ?? product.category?.name ?? ""
@@ -230,11 +244,16 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const [giftWrap, setGiftWrap] = useState(false)
   const [giftWrapNote, setGiftWrapNote] = useState("")
   const [giftWrapImageUrl, setGiftWrapImageUrl] = useState("")
+  const [giftWrapLocalPreview, setGiftWrapLocalPreview] = useState("")
+  const [giftWrapUploadError, setGiftWrapUploadError] = useState("")
   const [giftWrapImageUploading, setGiftWrapImageUploading] = useState(false)
   const giftWrapFileRef = useRef<HTMLInputElement>(null)
+  const giftWrapPreviewRef = useRef<HTMLDivElement>(null)
+  const mainVideoRef = useRef<HTMLVideoElement>(null)
   const [giftWrapPrice, setGiftWrapPrice] = useState(0)
   const [processingOption, setProcessingOption] = useState("standard")
   const [processingOptions, setProcessingOptions] = useState<ProcessingOpt[]>([])
+  const [productCmsContent, setProductCmsContent] = useState<ProductCmsContent | null>(null)
 
   const wishlisted = isWishlisted(product.id)
 
@@ -246,17 +265,25 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     return () => { cancelled = true }
   }, [product.id, categorySlug])
 
-  // Load gift wrap price
+  // Load gift wrap price (per vendor, GEL/USD)
   useEffect(() => {
-    apiFetch<Record<string, string>>("/orders/shop-settings/")
-      .then((d) => { if (d.gift_wrap_price) setGiftWrapPrice(parseFloat(d.gift_wrap_price) || 0) })
+    const slug = product.vendor_slug
+    const url = slug ? `/orders/shop-settings/?vendor=${slug}` : "/orders/shop-settings/"
+    apiFetch<Record<string, string>>(url)
+      .then((d) => {
+        const price = currency === "GEL"
+          ? parseFloat(d.gift_wrap_price_gel ?? d.gift_wrap_price ?? "0")
+          : parseFloat(d.gift_wrap_price_usd ?? d.gift_wrap_price ?? "0")
+        if (price > 0) setGiftWrapPrice(price)
+      })
       .catch(() => {})
-  }, [])
+  }, [product.vendor_slug, currency])
 
   // Load processing options for wallpanel products
   useEffect(() => {
     if (!isWallpanel) return
-    apiFetch<ProcessingOpt[]>("/orders/processing-options/")
+    const slug = product.vendor_slug ?? "panel-studio"
+    apiFetch<ProcessingOpt[]>(`/orders/processing-options/?vendor=${slug}`)
       .then((d) => {
         if (Array.isArray(d) && d.length > 0) {
           setProcessingOptions(d)
@@ -266,6 +293,38 @@ export default function ProductDetail({ product, categoryContext }: { product: A
       .catch(() => {})
   }, [isWallpanel])
 
+  useEffect(() => {
+    let cancelled = false
+    const sectionKey = isFigure ? "figures" : isWallpanel ? "wallpanels" : "default"
+    apiFetch<Array<{ section_key: string; content: Record<string, unknown> }>>("/cms/pages/product/")
+      .then((sections) => {
+        if (cancelled) return
+        const match = sections.find((s) => s.section_key === sectionKey)
+        if (match?.content) setProductCmsContent(match.content as ProductCmsContent)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isFigure, isWallpanel])
+
+  const thumbMedia = product.images?.length
+    ? product.images.map((i) => ({ src: i.src ?? i.url, media_type: i.media_type ?? "image" }))
+    : []
+
+  useEffect(() => {
+    const active = thumbMedia[activeImage]
+    const video = mainVideoRef.current
+    if (!video) return
+    if (active?.media_type === "video") {
+      video.load()
+      void video.play().catch(() => {})
+    } else {
+      video.pause()
+    }
+  }, [activeImage, thumbMedia])
+
+  useEffect(() => () => {
+    if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
+  }, [giftWrapLocalPreview])
 
   // New size variant system
   const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
@@ -286,17 +345,15 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     currency,
     rates,
   )
-  // If new size variant selected, use its regional price if available, else convert from USD
-  const basePrice = hasSizeVariants && selectedSizeVariant
-    ? (() => {
-        if (currency === "GEL" && selectedSizeVariant.price_gel) return parseFloat(selectedSizeVariant.price_gel)
-        if (currency === "EUR" && selectedSizeVariant.price_eur) return parseFloat(selectedSizeVariant.price_eur)
-        if (currency === "GBP" && selectedSizeVariant.price_gbp) return parseFloat(selectedSizeVariant.price_gbp)
-        return parseFloat(selectedSizeVariant.price_usd) * (rates[currency] ?? 1)
-      })()
+  // If new size variant selected, use explicit regional prices (no conversion drift)
+  const selectedVariantPricing = selectedSizeVariant
+    ? resolveSizeVariantPrice(selectedSizeVariant, currency, rates, product.is_sale, product)
+    : null
+  const basePrice = selectedVariantPricing
+    ? selectedVariantPricing.price
     : resolved.price + variantSurcharge
-  const originalPrice = hasSizeVariants
-    ? null
+  const originalPrice = selectedVariantPricing
+    ? selectedVariantPricing.original
     : (resolved.original != null ? resolved.original + variantSurcharge : null)
   const selectedProcessing = processingOptions.find((o) => o.slug === processingOption)
   const processingPrice = selectedProcessing
@@ -310,6 +367,10 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   async function handleGiftWrapImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    setGiftWrapUploadError("")
+    if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
+    const localUrl = URL.createObjectURL(file)
+    setGiftWrapLocalPreview(localUrl)
     setGiftWrapImageUploading(true)
     try {
       const form = new FormData()
@@ -324,9 +385,17 @@ export default function ProductDetail({ product, categoryContext }: { product: A
       if (res.ok) {
         const data = await res.json() as { url: string }
         setGiftWrapImageUrl(data.url)
+        URL.revokeObjectURL(localUrl)
+        setGiftWrapLocalPreview("")
+        requestAnimationFrame(() => {
+          giftWrapPreviewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+        })
+      } else {
+        setGiftWrapUploadError("Upload failed. Please try again.")
       }
-    } catch { /* noop */ }
-    finally {
+    } catch {
+      setGiftWrapUploadError("Upload failed. Please try again.")
+    } finally {
       setGiftWrapImageUploading(false)
       if (giftWrapFileRef.current) giftWrapFileRef.current.value = ""
     }
@@ -353,11 +422,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
           gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "",
           processing_option: isWallpanel ? processingOption : "",
           size_variant_id: selectedSizeVariantId,
+          currency,
         })
         setAdded(true)
         setTimeout(() => setAdded(false), 2200)
-      } catch {
-        setAddError("Could not add to cart. Please try again.")
+      } catch (err) {
+        setAddError(getApiErrorMessage(err, "Could not add to cart. Please try again."))
       } finally {
         setAdding(false)
       }
@@ -376,11 +446,11 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     setAdding(true)
     setAddError("")
     try {
-      await addItem(variant.id, qty, { gift_wrap: giftWrap, gift_wrap_note: giftWrap ? giftWrapNote : "", gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "", processing_option: isWallpanel ? processingOption : "" })
+      await addItem(variant.id, qty, { gift_wrap: giftWrap, gift_wrap_note: giftWrap ? giftWrapNote : "", gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "", processing_option: isWallpanel ? processingOption : "", currency })
       setAdded(true)
       setTimeout(() => setAdded(false), 2200)
-    } catch {
-      setAddError("Could not add to cart. Please try again.")
+    } catch (err) {
+      setAddError(getApiErrorMessage(err, "Could not add to cart. Please try again."))
     } finally {
       setAdding(false)
     }
@@ -415,10 +485,6 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     }
   }
 
-  const thumbMedia = product.images?.length
-    ? product.images.map((i) => ({ src: i.src ?? i.url, media_type: i.media_type ?? "image" }))
-    : []
-
   return (
     <SiteShell>
       {/* Breadcrumb */}
@@ -450,24 +516,25 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-dp-bg-elevated">
               {thumbMedia.length > 0 && thumbMedia[activeImage]?.media_type === "video" ? (
                 <video
+                  ref={mainVideoRef}
                   key={thumbMedia[activeImage].src}
                   src={thumbMedia[activeImage].src}
-                  autoPlay
                   muted
                   loop
                   controls
                   playsInline
+                  preload="metadata"
                   className="w-full h-full object-cover"
                 />
               ) : thumbMedia.length > 0 ? (
-                <Image
+              <Image
                   src={thumbMedia[activeImage]?.src || ""}
-                  alt={product.title}
-                  fill
-                  className="object-cover transition-opacity duration-300"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  priority
-                />
+                alt={product.title}
+                fill
+                className="object-cover transition-opacity duration-300"
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                priority={activeImage === 0}
+              />
               ) : null}
               <div className="absolute top-4 left-4 flex flex-col gap-2">
                 {product.is_limited   && <span className="badge-limited">Limited</span>}
@@ -486,9 +553,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                   aria-pressed={activeImage === i}
                 >
                   {media.media_type === "video" ? (
-                    <div className="w-full h-full bg-dp-bg-elevated flex items-center justify-center">
-                      <Play size={18} className="text-dp-text-tertiary" />
-                    </div>
+                    <video
+                      src={media.src}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-cover pointer-events-none"
+                    />
                   ) : (
                     <Image src={media.src} alt="" fill className="object-cover" sizes="64px" />
                   )}
@@ -521,10 +592,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             </h1>
 
             <div className="flex items-baseline gap-3">
-              <span className="font-display text-4xl text-dp-text-primary">{formatPrice(price)}</span>
+              <span className={`font-display text-4xl ${originalPrice != null && originalPrice > basePrice ? "text-dp-accent-cta" : "text-dp-text-primary"}`}>
+                {formatLocalized(price)}
+              </span>
               {originalPrice != null && originalPrice > basePrice && (
                 <span className="text-lg text-dp-text-tertiary line-through">
-                  {formatPrice(originalPrice)}
+                  {formatLocalized(originalPrice + (giftWrap ? giftWrapPrice : 0) + processingPrice)}
                 </span>
               )}
               {discount != null && discount > 0 && <span className="text-sm font-bold text-dp-accent-cta">Save {discount}%</span>}
@@ -557,8 +630,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2.5">Select Size</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {activeSizeVariants.map((sv) => {
-                    const svPrice = parseFloat(sv.price_usd) * (rates[currency] ?? 1)
+                    const svResolved = resolveSizeVariantPrice(sv, currency, rates, product.is_sale, product)
                     const isSelected = selectedSizeVariantId === sv.id
+                    const onVariantSale = svResolved.original != null && svResolved.original > svResolved.price
                     return (
                       <button
                         key={sv.id}
@@ -578,9 +652,20 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                         <span className={`text-[12px] font-bold leading-tight ${isSelected ? "text-dp-accent-cta" : "text-dp-text-primary"}`}>
                           {sv.label}
                         </span>
-                        <span className={`text-[13px] font-black tabular-nums ${isSelected ? "text-dp-text-primary" : "text-dp-text-secondary"}`}>
-                          {formatPrice(svPrice)}
+                        <span className={`text-[13px] font-black tabular-nums ${
+                          onVariantSale
+                            ? "text-dp-accent-cta"
+                            : isSelected
+                              ? "text-dp-text-primary"
+                              : "text-dp-text-secondary"
+                        }`}>
+                          {formatLocalized(svResolved.price)}
                         </span>
+                        {onVariantSale && (
+                          <span className="text-[10px] text-dp-text-tertiary line-through tabular-nums">
+                            {formatLocalized(svResolved.original!)}
+                          </span>
+                        )}
                       </button>
                     )
                   })}
@@ -651,7 +736,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                           </div>
                         </div>
                         <span className="text-[13px] font-bold text-dp-text-primary">
-                          {optPrice === 0 ? "Included" : `+${formatPrice(optPrice)}`}
+                          {optPrice === 0 ? "Included" : `+${formatLocalized(optPrice)}`}
                         </span>
                       </label>
                     )
@@ -699,15 +784,22 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                     {/* Image upload */}
                     <div>
                       <p className="text-[10px] text-dp-text-tertiary mb-1.5">Upload engraving design image (optional)</p>
-                      {giftWrapImageUrl ? (
-                        <div className="flex items-center gap-2">
+                      {giftWrapUploadError && <p className="text-[11px] text-dp-accent-cta mb-1.5">{giftWrapUploadError}</p>}
+                      {(giftWrapImageUrl || giftWrapLocalPreview) ? (
+                        <div ref={giftWrapPreviewRef} className="flex items-center gap-2">
                           <div className="w-16 h-16 rounded-sm overflow-hidden border border-dp-accent-cta/40 shrink-0">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={giftWrapImageUrl} alt="Engraving preview" className="w-full h-full object-cover" />
+                            <img src={giftWrapImageUrl || giftWrapLocalPreview} alt="Engraving preview" className="w-full h-full object-cover" />
                           </div>
                           <div className="flex flex-col gap-1">
-                            <span className="text-[11px] text-dp-text-secondary">Image uploaded ✓</span>
-                            <button type="button" onClick={() => setGiftWrapImageUrl("")}
+                            <span className="text-[11px] text-dp-text-secondary">
+                              {giftWrapImageUploading ? "Uploading…" : giftWrapImageUrl ? "Image uploaded ✓" : "Preview ready — uploading…"}
+                            </span>
+                            <button type="button" onClick={() => {
+                              if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
+                              setGiftWrapLocalPreview("")
+                              setGiftWrapImageUrl("")
+                            }}
                               className="text-[10px] text-red-400 hover:underline text-left">Remove</button>
                           </div>
                         </div>
@@ -749,25 +841,25 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="flex items-stretch gap-2 w-full sm:flex-1 sm:min-w-0">
                 <div className="flex items-center border border-dp-border rounded-sm overflow-hidden shrink-0">
-                  <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Decrease quantity">−</button>
-                  <span className="px-4 py-2.5 text-[14px] font-bold text-dp-text-primary min-w-[3rem] text-center tabular-nums">{qty}</span>
-                  <button onClick={() => setQty((q) => q + 1)} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Increase quantity">+</button>
-                </div>
-                <button
-                  onClick={() => { void handleAddToCart() }}
-                  disabled={adding}
+                <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Decrease quantity">−</button>
+                <span className="px-4 py-2.5 text-[14px] font-bold text-dp-text-primary min-w-[3rem] text-center tabular-nums">{qty}</span>
+                <button onClick={() => setQty((q) => q + 1)} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Increase quantity">+</button>
+              </div>
+              <button
+                onClick={() => { void handleAddToCart() }}
+                disabled={adding}
                   className={`flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-3 rounded-sm text-[11px] sm:text-[13px] font-black uppercase tracking-widest transition-colors disabled:opacity-60 ${
-                    added
-                      ? "bg-dp-success text-white"
-                      : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"
-                  }`}
-                >
-                  {adding
+                  added
+                    ? "bg-dp-success text-white"
+                    : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"
+                }`}
+              >
+                {adding
                     ? <><Loader2 size={16} className="animate-spin shrink-0" /> <span className="truncate">Adding…</span></>
-                    : added
+                  : added
                       ? <><Check size={16} className="shrink-0" /> <span className="truncate">Added to Cart</span></>
-                      : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatPrice(price * qty)}</span></>}
-                </button>
+                      : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(price * qty)}</span></>}
+              </button>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
               <button
@@ -918,27 +1010,19 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
               {/* Generic shipping for non-figure, non-wallpanel */}
               {!isFigure && !isWallpanel && (
-                <AccordionItem title="Shipping & Returns">
-                  Free standard shipping on orders over {formatPrice(49)}. Estimated delivery 5–8 business days.
-                  Not happy? Return within 100 days for a full refund — no questions asked.
-                </AccordionItem>
-              )}
-              <AccordionItem title="Size Guide">
-                <div className="grid grid-cols-3 gap-2 text-[12px]">
-                  {(product.sizes ?? []).map((s) => (
-                    <div key={s.id} className={`p-2 border rounded-sm ${selectedSize === s.id ? "border-dp-accent-cta bg-dp-accent-cta/10" : "border-dp-border"}`}>
-                      <p className="font-bold text-dp-text-primary">{s.label.split(" ")[0]}</p>
-                      <p className="text-dp-text-tertiary">{s.label.replace(/^[A-Z]+\s/, "")}</p>
-                    </div>
-                  ))}
-                </div>
+              <AccordionItem title="Shipping & Returns">
+                Free standard shipping on orders over {formatPrice(49)}. Estimated delivery 5–8 business days.
+                Not happy? Return within 100 days for a full refund — no questions asked.
               </AccordionItem>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {isFigure ? (
+      {productCmsContent?.blocks?.length ? (
+        <ProductCmsSections content={productCmsContent} />
+      ) : isFigure ? (
         <>
           <section className="border-y border-dp-border bg-dp-bg-elevated py-14" aria-labelledby="figures-craft-heading">
             <div className="dp-container">
@@ -946,24 +1030,24 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-dp-accent-cta mb-3">Figure Studio</p>
                 <h2 id="figures-craft-heading" className="font-display text-4xl md:text-5xl text-dp-text-primary mb-4 leading-tight">
                   Sculpted Detail.<br />Built to Collect.
-                </h2>
+                  </h2>
                 <p className="text-[14px] text-dp-text-secondary leading-relaxed">
                   Each figure is produced as a precision metal piece — crisp silhouettes, rich surface depth,
                   and colour that holds up on shelves, desks, and in display cases year after year.
                 </p>
-              </div>
+                </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   { icon: <Layers size={22} />, title: "Layered Depth", desc: "UV metal printing brings out contours, shadows, and linework that flat prints flatten out." },
                   { icon: <Palette size={22} />, title: "Finish Options", desc: "Matte, gloss, or satin coatings let you match the look of your collection or display setup." },
                   { icon: <Box size={22} />, title: "Collector Packaging", desc: "Ships protected and display-ready — ideal for gifting, unboxing, and long-term storage." },
-                ].map(({ icon, title, desc }) => (
+                  ].map(({ icon, title, desc }) => (
                   <div key={title} className="p-6 bg-dp-bg-surface border border-dp-border rounded-sm">
                     <span className="inline-flex items-center justify-center w-10 h-10 rounded-sm bg-dp-accent-cta/10 text-dp-accent-cta mb-4">{icon}</span>
                     <h3 className="text-[15px] font-bold text-dp-text-primary mb-2">{title}</h3>
                     <p className="text-[13px] text-dp-text-secondary leading-relaxed">{desc}</p>
-                  </div>
-                ))}
+                    </div>
+                  ))}
               </div>
             </div>
           </section>
@@ -974,7 +1058,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-dp-accent-cta mb-3">Display Your Way</p>
                 <h2 id="figures-display-heading" className="font-display text-3xl md:text-4xl text-dp-text-primary mb-4 leading-tight">
                   Made for Shelves,<br />Desks &amp; Galleries
-                </h2>
+            </h2>
                 <p className="text-[14px] text-dp-text-secondary leading-relaxed mb-6">
                   Figures aren&apos;t just wall art — they&apos;re objects meant to be lived with.
                   Lean one on a bookshelf, line up a series on a desk, or build a curated collector wall.
@@ -991,8 +1075,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                         <p className="text-[13px] font-bold text-dp-text-primary">{label}</p>
                         <p className="text-[12px] text-dp-text-secondary mt-0.5">{detail}</p>
                       </div>
-                    </div>
-                  ))}
+                </div>
+              ))}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1147,7 +1231,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
           >
             {added
               ? <><Check size={16} className="shrink-0" /> Added!</>
-              : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatPrice(price * qty)}</span></>}
+              : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(price * qty)}</span></>}
           </button>
         </div>
       </section>

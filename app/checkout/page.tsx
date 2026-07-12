@@ -211,82 +211,154 @@ function ShippingForm({ onNext }: { onNext: (data: Record<string, string>, count
 }
 
 // ─── Payment form ─────────────────────────────────────────
-function PaymentForm({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const [f, setF] = useState({ cardNumber: "", name: "", expiry: "", cvc: "" })
-  const set = (key: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [key]: v }))
-  const valid = Object.values(f).every(Boolean)
+type PaymentMethod = { id: number; brand: string; last4: string; exp_month: number; exp_year: number; is_default: boolean }
 
-  // Mask card number as groups of 4
+export type CheckoutPaymentData = {
+  paymentMethodId?: number | null
+  saveCard?: boolean
+  brand?: string
+  last4?: string
+  exp_month?: number
+  exp_year?: number
+  is_default?: boolean
+}
+
+function cardBrandFromNumber(num: string): string {
+  const d = num.replace(/\D/g, "")
+  if (d.startsWith("4")) return "visa"
+  if (d.startsWith("5")) return "mastercard"
+  if (d.startsWith("3")) return "amex"
+  return "visa"
+}
+
+function PaymentForm({
+  onNext, onBack,
+}: {
+  onNext: (data: CheckoutPaymentData) => void
+  onBack: () => void
+}) {
+  const [f, setF] = useState({ cardNumber: "", name: "", expiry: "", cvc: "" })
+  const [cards, setCards] = useState<PaymentMethod[]>([])
+  const [selectedCardId, setSelectedCardId] = useState<number | null>(null)
+  const [useNewCard, setUseNewCard] = useState(false)
+  const [saveCard, setSaveCard] = useState(true)
+  const [setDefault, setSetDefault] = useState(false)
+  const set = (key: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [key]: v }))
+  const validNew = Object.values(f).every(Boolean)
+  const valid = useNewCard ? validNew : selectedCardId != null
+
+  useEffect(() => {
+    authFetch<PaymentMethod[]>("/auth/payment-methods/")
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d as { results?: PaymentMethod[] }).results ?? []
+        setCards(list)
+        const def = list.find((c) => c.is_default) ?? list[0]
+        if (def) {
+          setSelectedCardId(def.id)
+          setUseNewCard(false)
+        } else {
+          setUseNewCard(true)
+        }
+      })
+      .catch(() => setUseNewCard(true))
+  }, [])
+
   const handleCard = (v: string) => {
     const digits = v.replace(/\D/g, "").slice(0, 16)
     const groups = digits.match(/.{1,4}/g) ?? []
     setF((p) => ({ ...p, cardNumber: groups.join(" ") }))
   }
-  // Mask expiry as MM/YY
   const handleExpiry = (v: string) => {
     const digits = v.replace(/\D/g, "").slice(0, 4)
     const formatted = digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits
     setF((p) => ({ ...p, expiry: formatted }))
   }
 
+  function submitPayment(e: React.FormEvent) {
+    e.preventDefault()
+    if (!valid) return
+    if (!useNewCard && selectedCardId != null) {
+      onNext({ paymentMethodId: selectedCardId })
+      return
+    }
+    const digits = f.cardNumber.replace(/\D/g, "")
+    const [mm, yy] = f.expiry.split("/")
+    onNext({
+      saveCard,
+      brand: cardBrandFromNumber(digits),
+      last4: digits.slice(-4),
+      exp_month: parseInt(mm, 10),
+      exp_year: 2000 + parseInt(yy, 10),
+      is_default: setDefault || cards.length === 0,
+    })
+  }
+
   return (
-    <form
-      onSubmit={(e) => { e.preventDefault(); if (valid) onNext() }}
-      className="flex flex-col gap-4"
-      aria-label="Payment information"
-    >
+    <form onSubmit={submitPayment} className="flex flex-col gap-4" aria-label="Payment information">
       <h2 className="font-display text-3xl text-dp-text-primary">Payment</h2>
 
-      {/* Secure badge */}
       <div className="flex items-center gap-2 text-[12px] text-dp-text-tertiary">
         <Lock size={13} className="text-dp-success" aria-hidden />
         <span>All transactions are encrypted and secure</span>
       </div>
 
-      <div className="relative">
-        <Field
-          label="Card Number" id="cardNumber" type="text"
-          autoComplete="cc-number" placeholder="1234 5678 9012 3456"
-          value={f.cardNumber} onChange={handleCard}
-        />
-        <CreditCard
-          size={16}
-          className="absolute right-3 bottom-2.5 text-dp-text-tertiary"
-          aria-hidden
-        />
-      </div>
-      <Field label="Name on Card"   id="cardName"   autoComplete="cc-name"  placeholder="Full name as on card" value={f.name}   onChange={set("name")}   />
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Expiry (MM/YY)" id="expiry" autoComplete="cc-exp"  placeholder="MM/YY" value={f.expiry} onChange={handleExpiry} />
-        <Field label="CVC"             id="cvc"    autoComplete="cc-csc"  placeholder="123"   value={f.cvc}    onChange={set("cvc")}    />
-      </div>
+      {cards.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">Saved cards</p>
+          {cards.map((c) => (
+            <label key={c.id} className={`flex items-center justify-between gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${!useNewCard && selectedCardId === c.id ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
+              <div className="flex items-center gap-3">
+                <input type="radio" name="savedCard" checked={!useNewCard && selectedCardId === c.id} onChange={() => { setUseNewCard(false); setSelectedCardId(c.id) }} />
+                <span className="text-[13px] font-semibold text-dp-text-primary uppercase">{c.brand}</span>
+                <span className="text-[13px] text-dp-text-secondary">•••• {c.last4}</span>
+                {c.is_default && <span className="text-[10px] font-bold uppercase text-dp-accent-gold">Default</span>}
+              </div>
+              <span className="text-[12px] text-dp-text-tertiary">{String(c.exp_month).padStart(2, "0")}/{c.exp_year}</span>
+            </label>
+          ))}
+          <label className={`flex items-center gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${useNewCard ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
+            <input type="radio" name="savedCard" checked={useNewCard} onChange={() => setUseNewCard(true)} />
+            <span className="text-[13px] font-semibold text-dp-text-primary">Use a new card</span>
+          </label>
+        </div>
+      )}
 
-      {/* Accepted cards */}
+      {useNewCard && (
+        <>
+          <div className="relative">
+            <Field label="Card Number" id="cardNumber" type="text" autoComplete="cc-number" placeholder="1234 5678 9012 3456" value={f.cardNumber} onChange={handleCard} />
+            <CreditCard size={16} className="absolute right-3 bottom-2.5 text-dp-text-tertiary" aria-hidden />
+          </div>
+          <Field label="Name on Card" id="cardName" autoComplete="cc-name" placeholder="Full name as on card" value={f.name} onChange={set("name")} />
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Expiry (MM/YY)" id="expiry" autoComplete="cc-exp" placeholder="MM/YY" value={f.expiry} onChange={handleExpiry} />
+            <Field label="CVC" id="cvc" autoComplete="cc-sc" placeholder="123" value={f.cvc} onChange={set("cvc")} />
+          </div>
+          <label className="flex items-center gap-2 text-[13px] text-dp-text-secondary">
+            <input type="checkbox" checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} />
+            Save this card for future purchases
+          </label>
+          {saveCard && (
+            <label className="flex items-center gap-2 text-[13px] text-dp-text-secondary">
+              <input type="checkbox" checked={setDefault} onChange={(e) => setSetDefault(e.target.checked)} />
+              Set as default payment method
+            </label>
+          )}
+        </>
+      )}
+
       <div className="flex items-center gap-3 pt-1">
         <span className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Accepted:</span>
-        {["Visa","MC","Amex","PayPal"].map((c) => (
-          <span
-            key={c}
-            className="px-2.5 py-0.5 border border-dp-border rounded-sm text-[10px] font-bold text-dp-text-tertiary uppercase tracking-widest"
-          >
-            {c}
-          </span>
+        {["Visa", "MC", "Amex", "PayPal"].map((c) => (
+          <span key={c} className="px-2.5 py-0.5 border border-dp-border rounded-sm text-[10px] font-bold text-dp-text-tertiary uppercase tracking-widest">{c}</span>
         ))}
       </div>
 
       <div className="flex gap-3 mt-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-1 px-4 py-3 border border-dp-border rounded-sm text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
-        >
+        <button type="button" onClick={onBack} className="flex items-center gap-1 px-4 py-3 border border-dp-border rounded-sm text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
           <ArrowLeft size={13} /> Back
         </button>
-        <button
-          type="submit"
-          disabled={!valid}
-          className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors"
-        >
+        <button type="submit" disabled={!valid} className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors">
           Review Order <ChevronRight size={14} aria-hidden />
         </button>
       </div>
@@ -296,13 +368,14 @@ function PaymentForm({ onNext, onBack }: { onNext: () => void; onBack: () => voi
 
 // ─── Review step ──────────────────────────────────────────
 function ReviewStep({
-  onConfirm, onBack, shippingData, checkoutCurrency, isGE,
+  onConfirm, onBack, shippingData, checkoutCurrency, isGE, paymentData,
 }: {
   onConfirm: (orderNum: string) => void
   onBack: () => void
   shippingData: Record<string, string>
   checkoutCurrency: string
   isGE: boolean
+  paymentData: CheckoutPaymentData | null
 }) {
   const { cart, refresh } = useCart()
   const { formatPrice } = useLocale()
@@ -331,6 +404,18 @@ function ReviewStep({
     setLoading(true)
     setError("")
     try {
+      if (paymentData?.saveCard && paymentData.last4 && paymentData.exp_month && paymentData.exp_year) {
+        await authFetch("/auth/payment-methods/", {
+          method: "POST",
+          body: JSON.stringify({
+            brand: paymentData.brand ?? "visa",
+            last4: paymentData.last4,
+            exp_month: paymentData.exp_month,
+            exp_year: paymentData.exp_year,
+            is_default: paymentData.is_default ?? false,
+          }),
+        }).catch(() => {})
+      }
       type OrderResponse = { id: string; order_number: string }
       const order = await authFetch<OrderResponse>("/orders/checkout/", {
         method: "POST",
@@ -365,7 +450,7 @@ function ReviewStep({
             <div className="flex-1 min-w-0">
               <p className="text-[14px] font-semibold text-dp-text-primary truncate mt-0.5">{item.product_title}</p>
               <p className="text-[12px] text-dp-text-tertiary">
-                {item.variant.size.label} · Qty {item.quantity}
+                {item.size_label ? `${item.size_label} · ` : ""}Qty {item.quantity}
               </p>
               <CartItemExtras item={item} formatPrice={formatPrice} compact />
             </div>
@@ -516,7 +601,7 @@ function OrderAside() {
               <div className="flex-1 min-w-0">
                 <p className="text-[12px] font-semibold text-dp-text-primary truncate">{item.product_title}</p>
                 <p className="text-[11px] text-dp-text-tertiary">
-                  {item.variant.size.label} · Qty {item.quantity}
+                  {item.size_label ? `${item.size_label} · ` : ""}Qty {item.quantity}
                 </p>
                 <CartItemExtras item={item} formatPrice={formatPrice} compact />
               </div>
@@ -554,6 +639,7 @@ export default function CheckoutPage(): React.ReactElement {
   const [pendingCountry, setPendingCountry] = useState("")
   const [checkoutCurrency, setCheckoutCurrency] = useState("USD")
   const [isGE, setIsGE] = useState(false)
+  const [paymentData, setPaymentData] = useState<CheckoutPaymentData | null>(null)
 
   function handleShippingNext(data: Record<string, string>, country: string) {
     // Determine the correct currency for the chosen shipping country
@@ -607,12 +693,13 @@ export default function CheckoutPage(): React.ReactElement {
             <div className="flex-1 min-w-0">
               <StepBar current={step} />
               {step === "shipping" && <ShippingForm onNext={handleShippingNext} />}
-              {step === "payment"  && <PaymentForm  onNext={() => setStep("review")}  onBack={() => setStep("shipping")} />}
+              {step === "payment"  && <PaymentForm  onNext={(data) => { setPaymentData(data); setStep("review") }}  onBack={() => setStep("shipping")} />}
               {step === "review"   && (
                 <ReviewStep
                   shippingData={shippingData}
                   checkoutCurrency={checkoutCurrency}
                   isGE={isGE}
+                  paymentData={paymentData}
                   onConfirm={(num) => { setConfirmedOrder(num); setStep("confirmed") }}
                   onBack={() => setStep("payment")}
                 />

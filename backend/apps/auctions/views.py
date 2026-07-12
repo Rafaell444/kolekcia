@@ -6,8 +6,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import Auction, AuctionBid
-from .serializers import AuctionSerializer, PlaceBidSerializer, AuctionBidSerializer
+from rest_framework.exceptions import ValidationError
+from apps.admin_api.permissions import IsAdminOrVendor
+from .models import Auction, AuctionBid, AuctionChatMessage
+from .serializers import (
+    AuctionSerializer,
+    AuctionWriteSerializer,
+    PlaceBidSerializer,
+    AuctionBidSerializer,
+    AuctionChatMessageSerializer,
+    AuctionChatPostSerializer,
+)
 
 
 def resolve_auction(lookup: str) -> Auction:
@@ -25,7 +34,11 @@ class AuctionListView(generics.ListAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return Auction.objects.prefetch_related("bids__user").select_related("product")
+        return (
+            Auction.objects.exclude(status=Auction.STATUS_INACTIVE)
+            .prefetch_related("bids__user")
+            .select_related("product", "vendor", "winner")
+        )
 
 
 class AuctionDetailView(generics.RetrieveAPIView):
@@ -48,12 +61,18 @@ class PlaceBidView(APIView):
         amount = serializer.validated_data["amount"]
 
         try:
-            # Row-level lock prevents simultaneous bid race conditions
             auction = Auction.objects.select_for_update().get(pk=resolve_auction(lookup).pk)
         except Auction.DoesNotExist:
             return Response({"detail": "Auction not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        if auction.status != Auction.STATUS_ACTIVE:
+            return Response({"detail": "This auction is not active."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if auction.is_upcoming():
+            return Response({"detail": "Bidding has not started yet."}, status=status.HTTP_400_BAD_REQUEST)
+
         if auction.ends_at <= timezone.now():
+            auction.finalize_if_ended()
             return Response({"detail": "This auction has ended."}, status=status.HTTP_400_BAD_REQUEST)
 
         current = auction.current_bid
@@ -70,6 +89,8 @@ class PlaceBidView(APIView):
             )
 
         AuctionBid.objects.create(auction=auction, user=request.user, amount=amount)
+        auction.refresh_live_flag()
+        auction.save(update_fields=["is_live"])
 
         try:
             from apps.gamification.services import award_xp
@@ -77,13 +98,11 @@ class PlaceBidView(APIView):
         except Exception:
             pass
 
-        # Return fresh auction data after the bid
         auction.refresh_from_db()
         return Response(AuctionSerializer(auction).data, status=status.HTTP_201_CREATED)
 
 
 class AuctionLeaderboardView(APIView):
-    """Bid history leaderboard for a single auction."""
     permission_classes = [AllowAny]
 
     def get(self, request, lookup):
@@ -96,20 +115,63 @@ class AuctionLeaderboardView(APIView):
             AuctionBid.objects
             .filter(auction=auction)
             .select_related("user")
-            .order_by("-amount")[:20]
+            .order_by("-placed_at")
         )
         return Response(AuctionBidSerializer(bids, many=True).data)
 
 
+class AuctionChatView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, lookup):
+        try:
+            auction = resolve_auction(lookup)
+        except Auction.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        messages = auction.chat_messages.select_related("user").order_by("created_at")[:200]
+        return Response(AuctionChatMessageSerializer(messages, many=True).data)
+
+    def post(self, request, lookup):
+        if not request.user.is_authenticated:
+            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            auction = resolve_auction(lookup)
+        except Auction.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not auction.is_biddable():
+            return Response({"detail": "Chat is only available during live auctions."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = AuctionChatPostSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        text = serializer.validated_data["text"].strip()
+        if not text:
+            return Response({"detail": "Message cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+
+        msg = AuctionChatMessage.objects.create(auction=auction, user=request.user, text=text)
+
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            payload = AuctionChatMessageSerializer(msg).data
+            async_to_sync(channel_layer.group_send)(
+                f"auction_{auction.pk}",
+                {"type": "chat_message", "message": payload},
+            )
+
+        return Response(AuctionChatMessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+
 class GlobalLeaderboardView(APIView):
-    """Top auction winners across all ended auctions."""
     permission_classes = [AllowAny]
 
     def get(self, request):
         now = timezone.now()
-        ended = Auction.objects.filter(ends_at__lt=now).prefetch_related(
-            "bids__user"
-        )
+        ended = Auction.objects.filter(ends_at__lt=now).prefetch_related("bids__user")
 
         wins: dict = {}
         for auction in ended:
@@ -128,7 +190,6 @@ class GlobalLeaderboardView(APIView):
             entry["rank"] = i
             entry["total_spent"] = round(entry["total_spent"], 2)
 
-        # If no ended auctions, fall back to top bidders across all auctions
         if not leaderboard:
             from django.db.models import Sum, Count
             top_bidders = (
@@ -149,3 +210,76 @@ class GlobalLeaderboardView(APIView):
             ]
 
         return Response(leaderboard)
+
+
+class VendorAuctionMixin:
+    def get_vendor(self):
+        user = self.request.user
+        if hasattr(user, "vendor_profile"):
+            return user.vendor_profile
+        return None
+
+    def get_queryset(self):
+        vendor = self.get_vendor()
+        qs = Auction.objects.prefetch_related("bids__user").select_related("product", "vendor", "winner")
+        if vendor and not self.request.user.is_staff:
+            return qs.filter(vendor=vendor)
+        return qs
+
+
+class VendorAuctionListView(VendorAuctionMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminOrVendor]
+    pagination_class = None
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return AuctionWriteSerializer
+        return AuctionSerializer
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["vendor"] = self.get_vendor()
+        ctx["include_all_bids"] = True
+        return ctx
+
+    def perform_create(self, serializer):
+        vendor = self.get_vendor()
+        if not vendor and not self.request.user.is_staff:
+            raise ValidationError({"detail": "Vendor profile required."})
+        serializer.save()
+
+
+class VendorAuctionDetailView(VendorAuctionMixin, generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminOrVendor]
+
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return AuctionWriteSerializer
+        return AuctionSerializer
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["include_all_bids"] = True
+        return ctx
+
+
+class VendorAuctionMarkPaidView(VendorAuctionMixin, APIView):
+    permission_classes = [IsAdminOrVendor]
+
+    def post(self, request, pk):
+        vendor = self.get_vendor()
+        try:
+            auction = self.get_queryset().get(pk=pk)
+        except Auction.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if vendor and auction.vendor_id != vendor.id and not request.user.is_staff:
+            return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+
+        auction.winner_payment_status = Auction.PAYMENT_PAID
+        auction.status = Auction.STATUS_BOUGHT
+        auction.paid_at = timezone.now()
+        if not auction.winning_amount:
+            auction.winning_amount = auction.current_bid
+        auction.save()
+        return Response(AuctionSerializer(auction, context={"include_all_bids": True}).data)

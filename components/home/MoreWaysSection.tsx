@@ -29,17 +29,19 @@ const WAYS = [
   },
 ]
 
-export default function MoreWaysSection() {
+export default function MoreWaysSection({ content }: { content?: { heading?: string; cards?: typeof WAYS } }) {
+  const ways = content?.cards ?? WAYS
+  const heading = content?.heading ?? "More Ways to Kolekcia"
   return (
     <section className="dp-container py-14" aria-labelledby="more-ways-heading">
       <h2
         className="font-display text-3xl md:text-4xl text-center text-dp-text-primary mb-8 uppercase tracking-tight"
         id="more-ways-heading"
       >
-        More Ways to Kolekcia
+        {heading}
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {WAYS.map((way) => (
+        {ways.map((way) => (
           <Link
             key={way.id}
             href={way.href}
@@ -53,7 +55,7 @@ export default function MoreWaysSection() {
               className="object-cover group-hover:scale-105 transition-transform duration-500"
               sizes="(max-width: 768px) 100vw, 33vw"
             />
-            <div className={`absolute inset-0 ${way.overlay}`} aria-hidden />
+            <div className={`absolute inset-0 ${"overlay" in way && way.overlay ? way.overlay : "bg-gradient-to-t from-black/80 via-black/20 to-transparent"}`} aria-hidden />
             <div className="absolute bottom-0 left-0 right-0 p-5">
               <p className="font-display text-xl font-black uppercase tracking-tight text-white mb-1">
                 {way.label}

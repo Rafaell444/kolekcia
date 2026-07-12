@@ -4,6 +4,7 @@ from django.db.models.functions import TruncMonth, TruncDate
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework import generics, status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +13,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .permissions import IsAdminUser, IsAdminOrVendor
 from .models import AuditLog
+from .audit import log_action
 
 
 class AdminNoPaginationMixin:
@@ -57,24 +59,46 @@ class AdminLoginView(APIView):
         })
 
 
-def log_action(admin_user, action, target_type, target_id, detail=None):
-    AuditLog.objects.create(
-        admin_user=admin_user,
-        action=action,
-        target_type=target_type,
-        target_id=str(target_id),
-        detail=detail or {},
-    )
-
-
 # ── Serializers ──────────────────────────────────────────────────────────────
 
 class AuditLogSerializer(serializers.ModelSerializer):
     admin_email = serializers.CharField(source="admin_user.email", read_only=True, allow_null=True)
+    summary = serializers.SerializerMethodField()
+    category = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
-        fields = ("id", "admin_email", "action", "target_type", "target_id", "detail", "timestamp")
+        fields = ("id", "admin_email", "action", "target_type", "target_id", "detail", "summary", "category", "timestamp")
+
+    def get_summary(self, obj):
+        d = obj.detail or {}
+        if obj.action == "order_created":
+            return f"Order {d.get('order_number', obj.target_id)} — {d.get('total', '')} {d.get('currency', '')}".strip()
+        if obj.action == "order_status_change":
+            return f"Order status → {d.get('new_status', '')}"
+        if obj.action == "payment_received":
+            return f"Payment {d.get('payment_ref', '')} — {d.get('amount', '')} {d.get('currency', '')}".strip()
+        if obj.action == "settings_update":
+            return f"Updated settings: {', '.join(d.get('keys', []))}"
+        if obj.action == "vendor_ops_update":
+            return f"Vendor {d.get('vendor_slug', '')} settings updated"
+        if obj.action in ("create", "update", "delete") and obj.target_type == "page_section":
+            return f"{obj.action.title()} section {d.get('section_key', obj.target_id)}"
+        return f"{obj.action} on {obj.target_type} #{obj.target_id}"
+
+    def get_category(self, obj):
+        t = obj.target_type.lower()
+        if t == "order" or obj.action.startswith("order"):
+            return "Order"
+        if "payment" in obj.action or t == "customorder":
+            return "Payment"
+        if t in ("product", "productvariant"):
+            return "Product"
+        if t in ("sitesettings", "vendor") or obj.action == "settings_update":
+            return "Settings"
+        if t in ("page_section", "blog_post", "hero_slide", "banner"):
+            return "Content"
+        return "System"
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -324,7 +348,16 @@ class AdminOrderUpdateView(APIView):
         if new_status and new_status != prev_status:
             order.status = new_status
             OrderStatusHistory.objects.create(order=order, status=new_status, note=note, changed_by=request.user)
-            log_action(request.user, "order_status_change", "Order", order.pk, {"new_status": new_status})
+            log_action(request.user, "order_status_change", "Order", order.pk, {
+                "new_status": new_status,
+                "order_number": order.order_number,
+            })
+            if new_status == "processing":
+                log_action(request.user, "payment_received", "Order", order.pk, {
+                    "order_number": order.order_number,
+                    "amount": str(order.total),
+                    "currency": order.currency,
+                })
 
         if tracking is not None:
             order.tracking_code = tracking
@@ -339,35 +372,54 @@ class AdminOrderUpdateView(APIView):
 
 
 def _send_shipping_email(order):
-    """Send a shipping confirmation email to the customer."""
+    """Send a shipping confirmation email to the customer using vendor template when available."""
     try:
         from django.core.mail import send_mail
-        from django.conf import settings
+        from django.conf import settings as django_settings
+
+        first_item = order.items.select_related("vendor").first()
+        vendor = first_item.vendor if first_item else None
 
         tracking_info = (
             f"\n\nTracking number: {order.tracking_code}"
             if order.tracking_code else ""
         )
-        items_list = "\n".join(
-            f"  • {item.product_title} × {item.quantity}"
-            for item in order.items.all()
-        )
-        body = (
-            f"Hi {order.shipping_name},\n\n"
-            f"Great news — your Kolekcia order {order.order_number} has been shipped!{tracking_info}\n\n"
-            f"Items in your order:\n{items_list}\n\n"
-            f"Shipping to:\n"
-            f"  {order.shipping_line1}"
-            + (f", {order.shipping_line2}" if order.shipping_line2 else "")
-            + f"\n  {order.shipping_city}, {order.shipping_state} {order.shipping_zip}\n"
-            f"  {order.shipping_country}\n\n"
-            f"Thank you for shopping with Kolekcia!\n"
-            f"— The Kolekcia Team"
-        )
+        customer_name = order.shipping_name or "there"
+        order_number = order.order_number
+
+        if vendor and vendor.shipping_email_body:
+            body = vendor.shipping_email_body
+            body = body.replace("{{customer_name}}", customer_name)
+            body = body.replace("{{order_number}}", order_number)
+            body = body.replace("{{tracking_code}}", order.tracking_code or "")
+            body = body.replace("{{tracking_info}}", tracking_info)
+            subject = (vendor.shipping_email_subject or f"Your order {order_number} has shipped!")
+            subject = subject.replace("{{order_number}}", order_number)
+            from_email = vendor.payment_email or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@kolekcia.com")
+        else:
+            items_list = "\n".join(
+                f"  • {item.product_title} × {item.quantity}"
+                for item in order.items.all()
+            )
+            body = (
+                f"Hi {customer_name},\n\n"
+                f"Great news — your Kolekcia order {order_number} has been shipped!{tracking_info}\n\n"
+                f"Items in your order:\n{items_list}\n\n"
+                f"Shipping to:\n"
+                f"  {order.shipping_line1}"
+                + (f", {order.shipping_line2}" if order.shipping_line2 else "")
+                + f"\n  {order.shipping_city}, {order.shipping_state} {order.shipping_zip}\n"
+                f"  {order.shipping_country}\n\n"
+                f"Thank you for shopping with Kolekcia!\n"
+                f"— The Kolekcia Team"
+            )
+            subject = f"Your order {order_number} has shipped!"
+            from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@kolekcia.com")
+
         send_mail(
-            subject=f"Your order {order.order_number} has shipped!",
+            subject=subject,
             message=body,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@kolekcia.com"),
+            from_email=from_email,
             recipient_list=[order.shipping_email],
             fail_silently=True,
         )
@@ -443,6 +495,42 @@ class AdminProductStockView(APIView):
             return Response({"detail": "stock or surcharge is required."}, status=status.HTTP_400_BAD_REQUEST)
         variant.save(update_fields=update_fields)
         return Response({"id": variant.pk, "stock": variant.stock, "surcharge": str(variant.surcharge)})
+
+
+ALLOWED_MEDIA_FOLDERS = frozenset({"blog", "hero", "categories", "auctions", "artists", "cms"})
+
+
+class AdminMediaUploadView(APIView):
+    """Generic admin media upload for CMS and catalog assets."""
+    permission_classes = [IsAdminOrVendor]
+
+    def post(self, request):
+        import os
+        import uuid as uuid_lib
+        from django.conf import settings as django_settings
+
+        uploaded_file = request.FILES.get("file")
+        folder = (request.data.get("folder") or "cms").strip().lower()
+
+        if not uploaded_file:
+            return Response({"detail": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+        if folder not in ALLOWED_MEDIA_FOLDERS:
+            return Response(
+                {"detail": f"folder must be one of: {', '.join(sorted(ALLOWED_MEDIA_FOLDERS))}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ext = os.path.splitext(uploaded_file.name)[1] or ".bin"
+        filename = f"{uuid_lib.uuid4().hex}{ext}"
+        save_dir = os.path.join(django_settings.MEDIA_ROOT, folder)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            for chunk in uploaded_file.chunks():
+                f.write(chunk)
+
+        url = request.build_absolute_uri(f"{django_settings.MEDIA_URL}{folder}/{filename}")
+        return Response({"url": url, "folder": folder}, status=status.HTTP_201_CREATED)
 
 
 class AdminProductMediaView(APIView):
@@ -615,6 +703,82 @@ class AdminPromoDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 # ── Reviews ───────────────────────────────────────────────────────────────────
 
+class AdminHomepageReviewListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.cms.serializers import HomepageReviewSerializer
+        return HomepageReviewSerializer
+
+    def get_queryset(self):
+        from apps.cms.models import HomepageReview
+        return HomepageReview.objects.all()
+
+
+class AdminHomepageReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.cms.serializers import HomepageReviewSerializer
+        return HomepageReviewSerializer
+
+    def get_queryset(self):
+        from apps.cms.models import HomepageReview
+        return HomepageReview.objects.all()
+
+
+class AdminCommunitySocialLinkListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.cms.serializers import CommunitySocialLinkSerializer
+        return CommunitySocialLinkSerializer
+
+    def get_queryset(self):
+        from apps.cms.models import CommunitySocialLink
+        return CommunitySocialLink.objects.all()
+
+
+class AdminCommunitySocialLinkDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.cms.serializers import CommunitySocialLinkSerializer
+        return CommunitySocialLinkSerializer
+
+    def get_queryset(self):
+        from apps.cms.models import CommunitySocialLink
+        return CommunitySocialLink.objects.all()
+
+
+class AdminFAQListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.cms.serializers import FAQSerializer
+        return FAQSerializer
+
+    def get_queryset(self):
+        from apps.cms.models import FAQ
+        qs = FAQ.objects.all()
+        category = self.request.query_params.get("category")
+        if category:
+            return qs.filter(category=category)
+        return qs
+
+
+class AdminFAQDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.cms.serializers import FAQSerializer
+        return FAQSerializer
+
+    def get_queryset(self):
+        from apps.cms.models import FAQ
+        return FAQ.objects.all()
+
+
 class AdminReviewListView(AdminNoPaginationMixin, generics.ListAPIView):
     permission_classes = [IsAdminUser]
 
@@ -649,24 +813,38 @@ class AdminAuctionListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
     permission_classes = [IsAdminUser]
 
     def get_serializer_class(self):
-        from apps.auctions.serializers import AuctionSerializer
+        from apps.auctions.serializers import AuctionSerializer, AuctionWriteSerializer
+        if self.request.method == "POST":
+            return AuctionWriteSerializer
         return AuctionSerializer
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["include_all_bids"] = True
+        return ctx
 
     def get_queryset(self):
         from apps.auctions.models import Auction
-        return Auction.objects.prefetch_related("bids__user").all()
+        return Auction.objects.prefetch_related("bids__user").select_related("product", "vendor", "winner").all()
 
 
 class AdminAuctionDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminUser]
 
     def get_serializer_class(self):
-        from apps.auctions.serializers import AuctionSerializer
+        from apps.auctions.serializers import AuctionSerializer, AuctionWriteSerializer
+        if self.request.method in ("PUT", "PATCH"):
+            return AuctionWriteSerializer
         return AuctionSerializer
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["include_all_bids"] = True
+        return ctx
 
     def get_queryset(self):
         from apps.auctions.models import Auction
-        return Auction.objects.prefetch_related("bids__user").all()
+        return Auction.objects.prefetch_related("bids__user").select_related("product", "vendor", "winner").all()
 
 
 # ── CMS (Hero / Banners) ──────────────────────────────────────────────────────
@@ -719,6 +897,35 @@ class AdminBannerDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Banner.objects.all()
 
 
+class AdminAnnouncementBarView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.cms.models import AnnouncementBar
+        from apps.cms.serializers import AnnouncementBarSerializer
+        bar, _ = AnnouncementBar.objects.get_or_create(
+            pk=1,
+            defaults={
+                "messages": [
+                    "FREE SHIPPING on orders over $49 — use code FREESHIP",
+                    "LIMITED EDITIONS: New drops every Friday at noon",
+                    "EARN XP with every purchase — unlock exclusive badges",
+                ],
+                "is_active": True,
+            },
+        )
+        return Response(AnnouncementBarSerializer(bar).data)
+
+    def patch(self, request):
+        from apps.cms.models import AnnouncementBar
+        from apps.cms.serializers import AnnouncementBarSerializer
+        bar, _ = AnnouncementBar.objects.get_or_create(pk=1)
+        ser = AnnouncementBarSerializer(bar, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
+
+
 # ── Newsletter ────────────────────────────────────────────────────────────────
 
 class AdminNewsletterListView(AdminNoPaginationMixin, generics.ListAPIView):
@@ -760,8 +967,11 @@ class AdminSettingsView(APIView):
 
     def patch(self, request):
         from apps.cms.models import SiteSettings
+        keys = []
         for key, value in request.data.items():
             SiteSettings.objects.update_or_create(key=key, defaults={"value": str(value)})
+            keys.append(key)
+        log_action(request.user, "settings_update", "SiteSettings", "global", {"keys": keys})
         return Response({"detail": "Settings updated."})
 
 
@@ -771,34 +981,121 @@ class AdminBadgeListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
     permission_classes = [IsAdminUser]
 
     def get_serializer_class(self):
-        from apps.gamification.serializers import BadgeSerializer
+        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
+        if self.request.method == "POST":
+            return BadgeWriteSerializer
         return BadgeSerializer
 
     def get_queryset(self):
         from apps.gamification.models import Badge
-        return Badge.objects.all()
+        return Badge.objects.select_related("prize_promo").all()
+
+    def create(self, request, *args, **kwargs):
+        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
+        write_ser = BadgeWriteSerializer(data=request.data)
+        write_ser.is_valid(raise_exception=True)
+        badge = write_ser.save()
+        badge = self.get_queryset().get(pk=badge.pk)
+        return Response(BadgeSerializer(badge).data, status=status.HTTP_201_CREATED)
 
 
-class AdminXPRuleListView(AdminNoPaginationMixin, generics.ListAPIView):
+class AdminBadgeDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
+        if self.request.method in ("PUT", "PATCH"):
+            return BadgeWriteSerializer
+        return BadgeSerializer
+
+    def get_queryset(self):
+        from apps.gamification.models import Badge
+        return Badge.objects.select_related("prize_promo").all()
+
+    def update(self, request, *args, **kwargs):
+        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        write_ser = BadgeWriteSerializer(instance, data=request.data, partial=partial)
+        write_ser.is_valid(raise_exception=True)
+        write_ser.save()
+        instance = self.get_queryset().get(pk=instance.pk)
+        return Response(BadgeSerializer(instance).data)
+
+
+class AdminXPRuleListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.gamification.serializers import XPRuleSerializer
+        return XPRuleSerializer
+
+    def get_queryset(self):
+        from apps.gamification.models import XPRule
+        return XPRule.objects.all().order_by("action_key")
+
+
+class AdminXPRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        from apps.gamification.serializers import XPRuleSerializer
+        return XPRuleSerializer
 
     def get_queryset(self):
         from apps.gamification.models import XPRule
         return XPRule.objects.all()
 
-    def list(self, request, *args, **kwargs):
-        from apps.gamification.models import XPRule
-        rules = XPRule.objects.all()
-        data = [{"id": r.pk, "action_key": r.action_key, "xp_amount": r.xp_amount, "is_one_time": r.is_one_time} for r in rules]
-        return Response(data)
-
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
 
-class AdminAuditLogView(AdminNoPaginationMixin, generics.ListAPIView):
-    queryset = AuditLog.objects.select_related("admin_user").all()
+class AuditLogPagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = "page_size"
+    max_page_size = 500
+
+
+class AdminAuditLogView(generics.ListAPIView):
     serializer_class = AuditLogSerializer
     permission_classes = [IsAdminUser]
+    pagination_class = AuditLogPagination
+
+    def get_queryset(self):
+        qs = AuditLog.objects.select_related("admin_user").all()
+        action = self.request.query_params.get("action")
+        target_type = self.request.query_params.get("target_type")
+        category = self.request.query_params.get("category")
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        search = self.request.query_params.get("search", "").strip()
+
+        if action:
+            qs = qs.filter(action=action)
+        if target_type:
+            qs = qs.filter(target_type__iexact=target_type)
+        if date_from:
+            qs = qs.filter(timestamp__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(timestamp__date__lte=date_to)
+        if search:
+            qs = qs.filter(
+                Q(target_id__icontains=search)
+                | Q(detail__icontains=search)
+                | Q(admin_user__email__icontains=search)
+            )
+        if category:
+            cat = category.lower()
+            if cat == "order":
+                qs = qs.filter(Q(target_type__iexact="Order") | Q(action__startswith="order"))
+            elif cat == "payment":
+                qs = qs.filter(Q(action__icontains="payment") | Q(target_type__iexact="CustomOrder"))
+            elif cat == "product":
+                qs = qs.filter(target_type__in=["Product", "ProductVariant"])
+            elif cat == "settings":
+                qs = qs.filter(Q(target_type__in=["SiteSettings", "Vendor"]) | Q(action="settings_update"))
+            elif cat == "content":
+                qs = qs.filter(target_type__in=["page_section", "blog_post", "HeroSlide", "Banner"])
+        return qs
 
 
 class AdminBlogPostSerializer(serializers.ModelSerializer):
@@ -811,6 +1108,7 @@ class AdminBlogPostSerializer(serializers.ModelSerializer):
             "slug",
             "excerpt",
             "content",
+            "content_blocks",
             "cover_image_url",
             "is_published",
             "published_at",
@@ -926,16 +1224,34 @@ class AdminDeliveryOptionDetailView(APIView):
 class AdminProcessingOptionListView(APIView):
     permission_classes = [IsAdminUser]
 
+    def _vendor_from_request(self, request):
+        from apps.vendors.models import Vendor
+        slug = request.query_params.get("vendor") or request.data.get("vendor_slug")
+        if slug:
+            return Vendor.objects.filter(slug=slug).first()
+        return None
+
     def get(self, request):
         from apps.orders.models import ProcessingOption
         from apps.orders.serializers import ProcessingOptionSerializer
-        opts = ProcessingOption.objects.all()
+        vendor = self._vendor_from_request(request)
+        opts = ProcessingOption.objects.select_related("vendor").all()
+        if vendor:
+            opts = opts.filter(vendor=vendor)
         return Response(ProcessingOptionSerializer(opts, many=True).data)
 
     def post(self, request):
         from apps.orders.models import ProcessingOption
         from apps.orders.serializers import ProcessingOptionSerializer
-        ser = ProcessingOptionSerializer(data=request.data)
+        from apps.vendors.models import Vendor
+        data = request.data.copy()
+        vendor = self._vendor_from_request(request)
+        slug = data.pop("vendor_slug", None)
+        if not vendor and slug:
+            vendor = Vendor.objects.filter(slug=slug).first()
+        if vendor and "vendor" not in data:
+            data["vendor"] = vendor.id
+        ser = ProcessingOptionSerializer(data=data)
         ser.is_valid(raise_exception=True)
         opt = ser.save()
         return Response(ProcessingOptionSerializer(opt).data, status=status.HTTP_201_CREATED)
@@ -1012,7 +1328,7 @@ class AdminSizeVariantView(APIView):
 # ── Product export / import ────────────────────────────────────────────────────
 
 class AdminProductExportView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def get(self, request):
         try:
@@ -1032,25 +1348,37 @@ class AdminProductExportView(APIView):
             "status", "is_limited", "is_sale", "is_new", "is_exclusive",
             "tags", "vendor_slug",
             "image_url_1", "image_url_2", "image_url_3",
-            "size_1_label", "size_1_price",
-            "size_2_label", "size_2_price",
-            "size_3_label", "size_3_price",
-            "size_4_label", "size_4_price",
-            "size_5_label", "size_5_price",
+            "size_1_label", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
+            "size_2_label", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
+            "size_3_label", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
+            "size_4_label", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
+            "size_5_label", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
         ]
         ws.append(headers)
 
         products = Product.objects.prefetch_related("images", "size_variants", "categories", "vendor").filter(status="active")
+        if not request.user.is_staff and hasattr(request.user, "vendor_profile"):
+            products = products.filter(vendor=request.user.vendor_profile)
         for p in products:
             images = list(p.images.values_list("url", flat=True))[:3]
             while len(images) < 3:
                 images.append("")
-            svs = list(p.size_variants.filter(is_active=True).values_list("label", "price_usd"))[:5]
+            svs = list(
+                p.size_variants.filter(is_active=True).values_list(
+                    "label", "price_usd", "price_gel", "sale_price_usd", "sale_price_gel"
+                )
+            )[:5]
             while len(svs) < 5:
-                svs.append(("", ""))
+                svs.append(("", "", "", "", ""))
             flat_svs = []
-            for lbl, pr in svs:
-                flat_svs.extend([lbl, str(pr) if pr is not None else ""])
+            for lbl, pr_usd, pr_gel, sale_usd, sale_gel in svs:
+                flat_svs.extend([
+                    lbl,
+                    str(pr_usd) if pr_usd is not None else "",
+                    str(pr_gel) if pr_gel is not None else "",
+                    str(sale_usd) if sale_usd is not None else "",
+                    str(sale_gel) if sale_gel is not None else "",
+                ])
             rp = p.regional_prices or {}
             row = [
                 p.id, p.title, p.description, p.material,
@@ -1083,7 +1411,7 @@ class AdminProductExportView(APIView):
 
 
 class AdminProductImportView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def get(self, request):
         """Download blank template."""
@@ -1103,22 +1431,25 @@ class AdminProductImportView(APIView):
             "status", "is_limited", "is_sale", "is_new", "is_exclusive",
             "tags", "vendor_slug",
             "image_url_1", "image_url_2", "image_url_3",
-            "size_1_label", "size_1_price",
-            "size_2_label", "size_2_price",
-            "size_3_label", "size_3_price",
-            "size_4_label", "size_4_price",
-            "size_5_label", "size_5_price",
+            "size_1_label", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
+            "size_2_label", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
+            "size_3_label", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
+            "size_4_label", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
+            "size_5_label", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
         ]
         ws.append(headers)
-        # Add an example row
         ws.append([
             "Example Product", "A beautiful piece.", "Canvas",
             "49.99", "135.00", "46.00", "39.50",
             "figures", "no",
-            "active", "no", "no", "yes", "no",
+            "active", "no", "yes", "yes", "no",
             "art,modern", "example-vendor",
             "https://example.com/img1.jpg", "", "",
-            "S", "39.99", "M", "49.99", "L", "59.99", "", "", "", "",
+            "S", "39.99", "108.00", "34.99", "95.00",
+            "M", "49.99", "135.00", "44.99", "120.00",
+            "L", "59.99", "162.00", "", "",
+            "", "", "", "", "",
+            "", "", "", "", "",
         ])
         from io import BytesIO
         buf = BytesIO()
@@ -1187,6 +1518,8 @@ class AdminProductImportView(APIView):
 
                 vendor_slug = cell(row, "vendor_slug")
                 vendor = Vendor.objects.filter(slug=vendor_slug).first() if vendor_slug else None
+                if not vendor and not request.user.is_staff and hasattr(request.user, "vendor_profile"):
+                    vendor = request.user.vendor_profile
 
                 cat_raw = cell(row, "categories") or ""
                 cat_slugs = [s.strip() for s in str(cat_raw).split(",") if str(s).strip()]
@@ -1219,13 +1552,19 @@ class AdminProductImportView(APIView):
 
                 for n in range(1, 6):
                     lbl = cell(row, f"size_{n}_label")
-                    pr = cell(row, f"size_{n}_price")
-                    if lbl and pr:
+                    pr_usd = cell(row, f"size_{n}_price_usd") or cell(row, f"size_{n}_price")
+                    pr_gel = cell(row, f"size_{n}_price_gel")
+                    sale_usd = cell(row, f"size_{n}_sale_usd")
+                    sale_gel = cell(row, f"size_{n}_sale_gel")
+                    if lbl and pr_usd:
                         try:
                             SizeVariant.objects.create(
                                 product=product,
                                 label=str(lbl),
-                                price_usd=D(str(pr)),
+                                price_usd=D(str(pr_usd)),
+                                price_gel=D(str(pr_gel)) if pr_gel else None,
+                                sale_price_usd=D(str(sale_usd)) if sale_usd else None,
+                                sale_price_gel=D(str(sale_gel)) if sale_gel else None,
                                 sort_order=n - 1,
                             )
                         except Exception:
@@ -1236,3 +1575,127 @@ class AdminProductImportView(APIView):
                 errors.append({"row": i, "error": str(e)})
 
         return Response({"created": created_count, "errors": errors}, status=status.HTTP_200_OK)
+
+
+# ── Catalog filter visibility ─────────────────────────────────────────────────
+
+class AdminCatalogFilterConfigView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.products.models import CatalogFilterConfig, DEFAULT_VISIBLE_FILTERS
+        from apps.products.filter_config import _apply_config
+
+        merged_global = dict(DEFAULT_VISIBLE_FILTERS)
+        categories: dict[str, dict] = {}
+        for cfg in CatalogFilterConfig.objects.filter(vendor__isnull=True):
+            if cfg.scope == "global":
+                merged_global = _apply_config(merged_global, cfg)
+            elif cfg.scope == "category" and cfg.category_slug:
+                base = dict(DEFAULT_VISIBLE_FILTERS)
+                categories[cfg.category_slug] = _apply_config(base, cfg)
+        return Response({"global": merged_global, "categories": categories})
+
+    def patch(self, request):
+        from apps.products.models import CatalogFilterConfig
+
+        scope = request.data.get("scope")
+        category_slug = (request.data.get("category_slug") or "").strip()
+        visible_filters = request.data.get("visible_filters", {})
+        if scope not in ("global", "category"):
+            return Response({"detail": "Invalid scope."}, status=status.HTTP_400_BAD_REQUEST)
+        if scope == "category" and not category_slug:
+            return Response({"detail": "category_slug required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cfg, _ = CatalogFilterConfig.objects.update_or_create(
+            scope=scope,
+            category_slug=category_slug if scope == "category" else "",
+            vendor=None,
+            defaults={"visible_filters": visible_filters},
+        )
+        return Response(cfg.resolved_filters())
+
+
+# ── Vendor ops (superadmin) ───────────────────────────────────────────────────
+
+class AdminVendorOpsView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, slug):
+        from apps.vendors.models import Vendor
+        from apps.vendors.serializers import VendorSerializer
+        try:
+            vendor = Vendor.objects.get(slug=slug)
+        except Vendor.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        allowed = (
+            "payment_email", "gift_wrap_price_gel", "gift_wrap_price_usd",
+            "shipping_email_subject", "shipping_email_body",
+        )
+        for field in allowed:
+            if field in request.data:
+                setattr(vendor, field, request.data[field])
+        vendor.save()
+        log_action(request.user, "vendor_ops_update", "Vendor", vendor.pk, {"vendor_slug": slug})
+        return Response(VendorSerializer(vendor).data)
+
+
+# ── Page sections CMS ─────────────────────────────────────────────────────────
+
+class AdminPageSectionListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.cms.models import PageSection
+        from apps.cms.serializers import PageSectionSerializer
+        page = request.query_params.get("page")
+        qs = PageSection.objects.all().order_by("page", "sort_order")
+        if page:
+            qs = qs.filter(page=page)
+        return Response(PageSectionSerializer(qs, many=True).data)
+
+    def post(self, request):
+        from apps.cms.models import PageSection
+        from apps.cms.serializers import PageSectionSerializer
+        ser = PageSectionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        section = ser.save()
+        log_action(request.user, "create", "page_section", section.pk, {
+            "section_key": section.section_key,
+            "page": section.page,
+        })
+        return Response(PageSectionSerializer(section).data, status=status.HTTP_201_CREATED)
+
+
+class AdminPageSectionDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        from apps.cms.models import PageSection
+        from apps.cms.serializers import PageSectionSerializer
+        try:
+            section = PageSection.objects.get(pk=pk)
+        except PageSection.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        ser = PageSectionSerializer(section, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        section = ser.save()
+        log_action(request.user, "update", "page_section", section.pk, {
+            "section_key": section.section_key,
+            "page": section.page,
+        })
+        return Response(PageSectionSerializer(section).data)
+
+    def delete(self, request, pk):
+        from apps.cms.models import PageSection
+        try:
+            section = PageSection.objects.get(pk=pk)
+        except PageSection.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        log_action(request.user, "delete", "page_section", section.pk, {
+            "section_key": section.section_key,
+            "page": section.page,
+        })
+        section.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

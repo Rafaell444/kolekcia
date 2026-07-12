@@ -10,6 +10,7 @@ import NewsletterSection from "@/components/home/NewsletterSection"
 import HomeProductCard from "@/components/home/HomeProductCard"
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
+import { fetchPageSections, sectionContent } from "@/lib/page-sections"
 
 type ApiProduct = {
   id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string
@@ -30,7 +31,14 @@ async function getTrendingProducts(): Promise<ApiProduct[]> {
 }
 
 export default async function HomePage() {
-  const trendingProducts = await getTrendingProducts()
+  const [trendingProducts, sections] = await Promise.all([
+    getTrendingProducts(),
+    fetchPageSections("home"),
+  ])
+  const moreWays = sectionContent<{ heading?: string; cards?: Array<{ id: string; label: string; desc: string; href: string; imageUrl: string; accent?: string }> }>(sections, "more_ways")
+  const video = sectionContent<{ heading?: string; cards?: Array<{ id: string; label: string; thumb: string }> }>(sections, "video")
+  const newsletter = sectionContent<{ heading?: string; subheading?: string; promoText?: string; imageUrl?: string }>(sections, "newsletter")
+  const stats = sectionContent<{ stats?: Array<{ stat: string; label: string }> }>(sections, "stats")
 
   return (
     <SiteShell>
@@ -52,20 +60,19 @@ export default async function HomePage() {
         </section>
       )}
 
-      <MoreWaysSection />
+      <MoreWaysSection content={moreWays ?? undefined} />
       <TrendingArtists />
-      <VideoSection />
+      <VideoSection content={video ?? undefined} />
       <ReviewsSection />
-      <NewsletterSection />
+      <NewsletterSection content={newsletter ?? undefined} />
 
       <section className="dp-container py-12" aria-label="Social proof statistics">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-          {[
+          {(stats?.stats ?? [
             { stat: "2.5M+", label: "Designs available" },
             { stat: "150K+", label: "Artist creators" },
-            { stat: "4.8★",  label: "Average rating" },
-            { stat: "100+",  label: "Countries shipped" },
-          ].map(({ stat, label }) => (
+            { stat: "100+", label: "Countries shipped" },
+          ]).map(({ stat, label }) => (
             <div key={label} className="flex flex-col gap-1">
               <span className="font-display text-4xl md:text-5xl text-dp-text-primary">{stat}</span>
               <span className="text-[12px] text-dp-text-tertiary uppercase tracking-widest">{label}</span>

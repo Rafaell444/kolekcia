@@ -12,6 +12,8 @@ type SizeVariantItem = {
   price_gel?: string | null
   price_eur?: string | null
   price_gbp?: string | null
+  sale_price_usd?: string | null
+  sale_price_gel?: string | null
   sort_order: number
   is_active: boolean
 }
@@ -47,6 +49,8 @@ type PendingVariant = {
   label: string
   priceUsd: string
   priceGel: string
+  salePriceUsd: string
+  salePriceGel: string
 }
 
 type ProductDraft = {
@@ -159,8 +163,8 @@ function ProductModal({
   // Size variants - existing (saved) and pending (to be created on save)
   const [sizeVariants, setSizeVariants] = useState<SizeVariantItem[]>(editProduct?.size_variants ?? [])
   const [pendingVariants, setPendingVariants] = useState<PendingVariant[]>([])
-  const newVarRef = useRef({ label: "", priceUsd: "", priceGel: "" })
-  const [newVarDraft, setNewVarDraft] = useState({ label: "", priceUsd: "", priceGel: "" })
+  const newVarRef = useRef({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
+  const [newVarDraft, setNewVarDraft] = useState({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
 
   // Categories
   const [categories, setCategories] = useState<CategoryOption[]>([])
@@ -297,7 +301,7 @@ function ProductModal({
       ...prev,
       { _key: `${Date.now()}-${Math.random()}`, ...newVarDraft },
     ])
-    setNewVarDraft({ label: "", priceUsd: "", priceGel: "" })
+    setNewVarDraft({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
   }
 
   function removePendingVariant(key: string) {
@@ -368,6 +372,8 @@ function ProductModal({
               label: v.label,
               price_usd: v.priceUsd,
               price_gel: v.priceGel || null,
+              sale_price_usd: draft.isSale ? (v.salePriceUsd || null) : null,
+              sale_price_gel: draft.isSale ? (v.salePriceGel || null) : null,
               price_eur: null,
               price_gbp: null,
               sort_order: sizeVariants.length + pendingVariants.indexOf(v),
@@ -634,6 +640,12 @@ function ProductModal({
                       <th className="text-left px-3 py-2">Label</th>
                       <th className="text-right px-3 py-2">Other market (USD $)</th>
                       <th className="text-right px-3 py-2">Georgian market (GEL ₾)</th>
+                      {draft.isSale && (
+                        <>
+                          <th className="text-right px-3 py-2">Sale USD $</th>
+                          <th className="text-right px-3 py-2">Sale GEL ₾</th>
+                        </>
+                      )}
                       <th className="px-3 py-2 w-8" />
                     </tr>
                   </thead>
@@ -643,6 +655,12 @@ function ProductModal({
                         <td className="px-3 py-2 font-semibold text-dp-text-primary">{sv.label}</td>
                         <td className="px-3 py-2 text-right text-dp-text-primary">${parseFloat(sv.price_usd).toFixed(2)}</td>
                         <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.price_gel ? `₾${parseFloat(sv.price_gel).toFixed(2)}` : <span className="text-dp-text-tertiary">—</span>}</td>
+                        {draft.isSale && (
+                          <>
+                            <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.sale_price_usd ? `$${parseFloat(sv.sale_price_usd).toFixed(2)}` : "—"}</td>
+                            <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.sale_price_gel ? `₾${parseFloat(sv.sale_price_gel).toFixed(2)}` : "—"}</td>
+                          </>
+                        )}
                         <td className="px-3 py-2 text-right">
                           <button type="button" onClick={() => void handleDeleteSizeVariant(sv.id)}
                             className="text-dp-text-tertiary hover:text-red-400 transition-colors" aria-label="Delete">
@@ -665,6 +683,12 @@ function ProductModal({
                       <th className="text-left px-3 py-1.5 text-dp-accent-cta">Pending (saved on submit)</th>
                       <th className="text-right px-3 py-1.5">USD $</th>
                       <th className="text-right px-3 py-1.5">GEL ₾</th>
+                      {draft.isSale && (
+                        <>
+                          <th className="text-right px-3 py-1.5">Sale USD $</th>
+                          <th className="text-right px-3 py-1.5">Sale GEL ₾</th>
+                        </>
+                      )}
                       <th className="px-3 py-1.5 w-8" />
                     </tr>
                   </thead>
@@ -674,6 +698,12 @@ function ProductModal({
                         <td className="px-3 py-1.5 font-semibold text-dp-text-primary">{v.label}</td>
                         <td className="px-3 py-1.5 text-right">{v.priceUsd ? `$${v.priceUsd}` : "—"}</td>
                         <td className="px-3 py-1.5 text-right">{v.priceGel ? `₾${v.priceGel}` : "—"}</td>
+                        {draft.isSale && (
+                          <>
+                            <td className="px-3 py-1.5 text-right">{v.salePriceUsd ? `$${v.salePriceUsd}` : "—"}</td>
+                            <td className="px-3 py-1.5 text-right">{v.salePriceGel ? `₾${v.salePriceGel}` : "—"}</td>
+                          </>
+                        )}
                         <td className="px-3 py-1.5 text-right">
                           <button type="button" onClick={() => removePendingVariant(v._key)}
                             className="text-dp-text-tertiary hover:text-red-400 transition-colors" aria-label="Remove">
@@ -688,7 +718,7 @@ function ProductModal({
             )}
 
             {/* Add new variant row */}
-            <div className="border border-dp-border rounded-sm p-3 grid grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
+            <div className={`border border-dp-border rounded-sm p-3 grid gap-2 items-end ${draft.isSale ? "grid-cols-2 lg:grid-cols-6" : "grid-cols-2 lg:grid-cols-4"}`}>
               <div>
                 <label className={LABEL_CLS}>Label *</label>
                 <input value={newVarDraft.label} onChange={(e) => setNewVarDraft((d) => ({ ...d, label: e.target.value }))}
@@ -707,15 +737,31 @@ function ProductModal({
                   onChange={(e) => setNewVarDraft((d) => ({ ...d, priceGel: e.target.value }))}
                   placeholder="0.00" className={INPUT_CLS} />
               </div>
+              {draft.isSale && (
+                <>
+                  <div>
+                    <label className={LABEL_CLS}>Sale other market (USD $)</label>
+                    <input type="number" min={0} step={0.01} value={newVarDraft.salePriceUsd}
+                      onChange={(e) => setNewVarDraft((d) => ({ ...d, salePriceUsd: e.target.value }))}
+                      placeholder="0.00" className={INPUT_CLS} />
+                  </div>
+                  <div>
+                    <label className={LABEL_CLS}>Sale Georgian market (GEL ₾)</label>
+                    <input type="number" min={0} step={0.01} value={newVarDraft.salePriceGel}
+                      onChange={(e) => setNewVarDraft((d) => ({ ...d, salePriceGel: e.target.value }))}
+                      placeholder="0.00" className={INPUT_CLS} />
+                  </div>
+                </>
+              )}
               <div>
                 <button type="button" onClick={addPendingVariant}
                   disabled={!newVarDraft.label.trim() || !newVarDraft.priceUsd.trim()}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[11px] font-bold rounded-sm transition-colors whitespace-nowrap">
+                  className="flex items-center gap-1.5 px-3 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[11px] font-bold rounded-sm transition-colors whitespace-nowrap w-full justify-center">
                   <Plus size={12} /> Add
                 </button>
               </div>
             </div>
-            <p className="text-[10px] text-dp-text-tertiary mt-1.5">Leave GEL blank to auto-convert from USD on the storefront for Georgian users.</p>
+            <p className="text-[10px] text-dp-text-tertiary mt-1.5">Georgian storefront uses the GEL values you enter here — no conversion when GEL is set.</p>
           </div>
         </div>
 
@@ -775,39 +821,53 @@ export default function AdminProductsPage(): React.ReactElement {
   function handleExport() {
     const token = typeof window !== "undefined" ? localStorage.getItem("adm_access") : null
     const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
-    // Trigger download via hidden anchor
-    const a = document.createElement("a")
-    a.href = `${base}/admin/products/export/`
-    a.download = "products_export.xlsx"
-    if (token) {
-      // Fetch with auth then blob-download
-      fetch(`${base}/admin/products/export/`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => r.blob())
-        .then((blob) => {
-          const url = URL.createObjectURL(blob)
-          a.href = url
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-          URL.revokeObjectURL(url)
-        })
-        .catch(() => {})
-    }
+    fetch(`${base}/admin/products/export/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({})) as { detail?: string }
+          throw new Error(err.detail ?? `Export failed (${r.status})`)
+        }
+        return r.blob()
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(new Blob([blob], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }))
+        const a = document.createElement("a")
+        a.href = url
+        a.download = "products_export.xlsx"
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      })
+      .catch((err: unknown) => {
+        alert(err instanceof Error ? err.message : "Export failed.")
+      })
   }
 
   function handleDownloadTemplate() {
     const token = typeof window !== "undefined" ? localStorage.getItem("adm_access") : null
     const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
     fetch(`${base}/admin/products/import/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((r) => r.blob())
+      .then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({})) as { detail?: string }
+          throw new Error(err.detail ?? `Template download failed (${r.status})`)
+        }
+        return r.blob()
+      })
       .then((blob) => {
-        const url = URL.createObjectURL(blob)
+        const url = URL.createObjectURL(new Blob([blob], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }))
         const a = document.createElement("a")
-        a.href = url; a.download = "products_template.xlsx"
-        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        a.href = url
+        a.download = "products_template.xlsx"
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
         URL.revokeObjectURL(url)
       })
-      .catch(() => {})
+      .catch((err: unknown) => {
+        alert(err instanceof Error ? err.message : "Template download failed.")
+      })
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {

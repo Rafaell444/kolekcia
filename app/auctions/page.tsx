@@ -21,9 +21,12 @@ type ApiAuction = {
   current_bid: string
   bid_count: number
   top_bidder: string
+  starts_at: string
   ends_at: string
   is_live: boolean
   is_ended: boolean
+  is_upcoming?: boolean
+  is_biddable?: boolean
   recent_bids: Array<{ id: number; user_name: string; amount: string; placed_at: string }>
 }
 
@@ -84,6 +87,8 @@ function AuctionCard({ a }: { a: ApiAuction }) {
   const { formatPrice } = useLocale()
   const img = a.effective_image || a.image_url || "/placeholder.svg"
   const price = parseFloat(a.current_bid)
+  const isBiddable = a.is_biddable ?? a.is_live
+  const isUpcoming = a.is_upcoming ?? (!a.is_ended && !isBiddable)
 
   return (
     <Link
@@ -105,14 +110,18 @@ function AuctionCard({ a }: { a: ApiAuction }) {
             <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm bg-black/60 text-white/60">
               Ended
             </span>
-          ) : a.is_live ? (
+          ) : isBiddable ? (
             <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm bg-dp-accent-cta text-white">
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               Live
             </span>
+          ) : isUpcoming ? (
+            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm bg-blue-600/90 text-white">
+              Upcoming
+            </span>
           ) : (
             <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm bg-dp-bg-elevated/90 text-dp-text-secondary border border-dp-border">
-              Upcoming
+              Scheduled
             </span>
           )}
         </div>
@@ -136,7 +145,13 @@ function AuctionCard({ a }: { a: ApiAuction }) {
             <p className="text-[11px] text-dp-text-tertiary flex items-center justify-end gap-1 mb-1">
               <Users size={11} /> {a.bid_count} bids
             </p>
-            <CountdownChip endsAt={a.ends_at} ended={a.is_ended} />
+            {isUpcoming && !a.is_ended ? (
+              <p className="text-[11px] text-blue-400 font-semibold">
+                Starts {new Date(a.starts_at).toLocaleString()}
+              </p>
+            ) : (
+              <CountdownChip endsAt={a.ends_at} ended={a.is_ended} />
+            )}
           </div>
         </div>
       </div>
@@ -219,13 +234,15 @@ export default function AuctionsPage(): React.ReactElement {
   }, [])
 
   const filtered = auctions.filter((a) => {
-    if (filter === "live") return !a.is_ended && a.is_live
-    if (filter === "upcoming") return !a.is_ended && !a.is_live
+    const isBiddable = a.is_biddable ?? a.is_live
+    const isUpcoming = a.is_upcoming ?? (!a.is_ended && !isBiddable)
+    if (filter === "live") return !a.is_ended && isBiddable
+    if (filter === "upcoming") return !a.is_ended && isUpcoming
     if (filter === "ended") return a.is_ended
     return true
   })
 
-  const liveCount = auctions.filter((a) => !a.is_ended && a.is_live).length
+  const liveCount = auctions.filter((a) => !a.is_ended && (a.is_biddable ?? a.is_live)).length
 
   return (
     <SiteShell>

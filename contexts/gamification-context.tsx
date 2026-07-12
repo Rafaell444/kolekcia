@@ -9,11 +9,23 @@ export type GamificationProfile = {
   points: number
   level: number
   streak_days: number
+  unseen_badge_count?: number
   recent_xp: Array<{ id: number; action: string; xp_amount: number; created_at: string }>
   earned_badges: Array<{
     id: number
-    badge: { id: number; name: string; icon: string; rarity: string; description: string }
+    badge: {
+      id: number
+      name: string
+      icon: string
+      rarity: string
+      description: string
+      prize_promo_code?: string | null
+      prize_description?: string
+    }
     earned_at: string
+    seen_at?: string | null
+    is_new?: boolean
+    granted_promo_code?: string | null
   }>
 }
 

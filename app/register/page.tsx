@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { Suspense, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
@@ -9,6 +9,7 @@ import { apiFetch } from "@/lib/api"
 import { storeTokens, storeUser } from "@/lib/auth-storage"
 import { useAuth } from "@/contexts/auth-context"
 import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
+import { captureReferralFromUrl, claimPendingReferral } from "@/lib/referral"
 
 const PERKS = [
   "Free shipping on your first order",
@@ -20,15 +21,28 @@ const PERKS = [
 ]
 
 export default function RegisterPage(): React.ReactElement {
+  return (
+    <Suspense fallback={null}>
+      <RegisterPageInner />
+    </Suspense>
+  )
+}
+
+function RegisterPageInner(): React.ReactElement {
   const router = useRouter()
-  const { refreshUser } = useAuth()
+  const { refreshUser, loginWithGoogle } = useAuth()
   const [name, setName]         = useState("")
   const [email, setEmail]       = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm]   = useState("")
   const [showPw, setShowPw]     = useState(false)
   const [loading, setLoading]   = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [errors, setErrors]     = useState<Record<string, string>>({})
+
+  React.useEffect(() => {
+    captureReferralFromUrl()
+  }, [])
 
   function validate() {
     const e: Record<string, string> = {}
@@ -37,6 +51,22 @@ export default function RegisterPage(): React.ReactElement {
     if (password.length < 8)   e.password = "Password must be at least 8 characters."
     if (password !== confirm)  e.confirm  = "Passwords do not match."
     return e
+  }
+
+  async function handleGoogleSuccess(idToken: string) {
+    setErrors({})
+    setGoogleLoading(true)
+    try {
+      await loginWithGoogle(idToken, false)
+      await refreshUser()
+      await claimPendingReferral()
+      router.push("/account")
+    } catch (err: unknown) {
+      const apiErr = err as { data?: { detail?: string } }
+      setErrors({ detail: apiErr?.data?.detail ?? "Google sign-up failed. Please try again." })
+    } finally {
+      setGoogleLoading(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,6 +84,7 @@ export default function RegisterPage(): React.ReactElement {
       storeTokens(data.access, data.refresh, false)
       storeUser(data.user)
       await refreshUser()
+      await claimPendingReferral()
       router.push("/account")
     } catch (err: unknown) {
       const apiErr = err as { data?: Record<string, string[]> }
@@ -94,7 +125,11 @@ export default function RegisterPage(): React.ReactElement {
           </div>
 
           <form onSubmit={handleSubmit} className="bg-dp-bg-surface border border-dp-border rounded-sm p-8 flex flex-col gap-5" noValidate>
-            {errors.general && <p className="text-[12px] text-dp-accent-cta bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm px-3 py-2">{errors.general}</p>}
+            {(errors.general || errors.detail) && (
+              <p className="text-[12px] text-dp-accent-cta bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm px-3 py-2">
+                {errors.general ?? errors.detail}
+              </p>
+            )}
 
             {/* Name */}
             <div>
@@ -208,7 +243,7 @@ export default function RegisterPage(): React.ReactElement {
             {/* Submit */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || googleLoading}
               className="flex items-center justify-center gap-2 w-full py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors"
             >
               {loading ? (
@@ -227,7 +262,12 @@ export default function RegisterPage(): React.ReactElement {
               <div className="flex-1 border-t border-dp-border" />
             </div>
 
-            <GoogleAuthButton label="Sign up with Google" />
+            <GoogleAuthButton
+              mode="signup"
+              disabled={loading || googleLoading}
+              onSuccess={handleGoogleSuccess}
+              onError={(message) => setErrors({ detail: message })}
+            />
 
             <p className="text-center text-[13px] text-dp-text-secondary">
               Already have an account?{" "}

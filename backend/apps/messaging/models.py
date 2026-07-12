@@ -28,9 +28,18 @@ class Conversation(models.Model):
 
 class Message(models.Model):
     FROM_CHOICES = [("customer", "Customer"), ("admin", "Admin")]
+    SENDER_KIND_CHOICES = [
+        ("customer", "Customer"),
+        ("superadmin", "Superadmin"),
+        ("vendor", "Vendor"),
+    ]
 
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     from_role = models.CharField(max_length=10, choices=FROM_CHOICES)
+    sender_kind = models.CharField(max_length=12, choices=SENDER_KIND_CHOICES, default="customer")
+    sender_user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="sent_messages"
+    )
     text = models.TextField(blank=True)
     sent_at = models.DateTimeField(auto_now_add=True)
     read = models.BooleanField(default=False)

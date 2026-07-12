@@ -1,8 +1,12 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
-import { apiFetch } from "@/lib/api"
+import { apiFetch, authFetch } from "@/lib/api"
+import { useAuth } from "@/contexts/auth-context"
+import { useLocale } from "@/contexts/locale-context"
+import { getAccessToken } from "@/lib/auth-storage"
 import Image from "next/image"
 import {
   Upload, CheckCircle, Clock, CreditCard, Mail, Phone,
@@ -36,7 +40,8 @@ const STEPS = [
 function StepBar({ current }: { current: Step }) {
   const currentIdx = STEPS.findIndex((s) => s.id === current)
   return (
-    <ol className="flex items-center justify-center gap-0 mb-10" aria-label="Progress">
+    <div className="overflow-x-auto -mx-4 px-4 mb-10">
+    <ol className="flex items-center justify-center gap-0 min-w-max mx-auto" aria-label="Progress">
       {STEPS.map((step, idx) => {
         const done   = currentIdx > idx
         const active = step.id === current
@@ -53,17 +58,18 @@ function StepBar({ current }: { current: Step }) {
               >
                 {done ? <CheckCircle size={14} /> : idx + 1}
               </div>
-              <span className={`mt-1.5 text-[11px] font-semibold uppercase tracking-widest whitespace-nowrap ${
+              <span className={`mt-1.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-widest text-center max-w-[4.5rem] leading-tight whitespace-normal ${
                 active ? "text-dp-text-primary" : "text-dp-text-tertiary"
               }`}>{step.label}</span>
             </div>
             {idx < STEPS.length - 1 && (
-              <div className={`w-12 sm:w-20 h-0.5 mb-5 mx-1 transition-colors ${done ? "bg-dp-success" : "bg-dp-border"}`} aria-hidden />
+              <div className={`w-6 sm:w-12 md:w-20 h-0.5 mb-5 mx-0.5 sm:mx-1 transition-colors ${done ? "bg-dp-success" : "bg-dp-border"}`} aria-hidden />
             )}
           </li>
         )
       })}
     </ol>
+    </div>
   )
 }
 
@@ -89,17 +95,17 @@ function PickStep({
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <p className="text-center text-[14px] text-dp-text-secondary mb-8">
+    <div className="max-w-2xl mx-auto w-full px-1 sm:px-0">
+      <p className="text-center text-[13px] sm:text-[14px] text-dp-text-secondary mb-8">
         Choose the type of custom product you'd like to order.
         Each is handled by a specialist vendor.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         {vendors.map((v) => (
           <button
             key={v.id}
             onClick={() => onSelect(v)}
-            className="group relative overflow-hidden rounded-sm border border-dp-border bg-dp-bg-surface dp-card-hover text-left flex flex-col transition-all duration-200 hover:border-dp-accent-cta hover:shadow-xl"
+            className="group relative overflow-hidden rounded-sm border border-dp-border bg-dp-bg-surface dp-card-hover text-left flex flex-col transition-all duration-200 hover:border-dp-accent-cta hover:shadow-xl min-w-0"
           >
             {/* Cover image */}
             <div className="relative h-48 overflow-hidden bg-dp-bg-elevated shrink-0">
@@ -121,9 +127,9 @@ function PickStep({
             </div>
 
             {/* Info */}
-            <div className="px-5 py-4 flex-1 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[16px] font-black text-dp-text-primary group-hover:text-dp-accent-cta transition-colors">
+            <div className="px-4 sm:px-5 py-4 flex-1 flex flex-col gap-2 min-w-0">
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <h3 className="text-[14px] sm:text-[16px] font-black text-dp-text-primary group-hover:text-dp-accent-cta transition-colors truncate">
                   {v.custom_product_type}
                 </h3>
                 <ChevronRight size={16} className="text-dp-text-tertiary group-hover:text-dp-accent-cta transition-colors shrink-0" />
@@ -155,13 +161,15 @@ function UploadStep({
   onBack,
 }: {
   vendor: Vendor
-  onSubmit: (data: { name: string; email: string; phone: string; note: string; imageDataUrl: string }) => void
+  onSubmit: (data: { name: string; email: string; phone: string; note: string; imageFile: File }) => void
   onBack: () => void
 }) {
+  const { user } = useAuth()
   const [preview, setPreview]  = useState<string | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
-  const [name, setName]   = useState("")
-  const [email, setEmail] = useState("")
+  const [name, setName]   = useState(user?.name ?? "")
+  const [email, setEmail] = useState(user?.email ?? "")
   const [phone, setPhone] = useState("")
   const [note, setNote]   = useState("")
   const [drag, setDrag]   = useState(false)
@@ -170,6 +178,7 @@ function UploadStep({
   function handleFile(file: File) {
     if (!file.type.startsWith("image/")) return
     setFileName(file.name)
+    setImageFile(file)
     const reader = new FileReader()
     reader.onload = (e) => setPreview(e.target?.result as string)
     reader.readAsDataURL(file)
@@ -184,8 +193,8 @@ function UploadStep({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!preview) return
-    onSubmit({ name, email, phone, note, imageDataUrl: preview })
+    if (!preview || !imageFile) return
+    onSubmit({ name, email, phone, note, imageFile })
   }
 
   return (
@@ -353,14 +362,14 @@ function PaymentStep() {
   const mockRef = "KOL-CUSTOM-" + Math.random().toString(36).slice(2, 8).toUpperCase()
 
   return (
-    <div className="flex flex-col items-center text-center gap-6 max-w-sm mx-auto py-6">
+    <div className="flex flex-col items-center text-center gap-6 w-full max-w-sm mx-auto py-6 px-4">
       {paid ? (
         <>
           <div className="w-20 h-20 rounded-full bg-dp-success/20 flex items-center justify-center">
             <CheckCircle size={40} className="text-dp-success" />
           </div>
           <div>
-            <h2 className="font-display text-3xl text-dp-text-primary mb-2">Payment Received!</h2>
+            <h2 className="font-display text-2xl sm:text-3xl text-dp-text-primary mb-2">Payment Received!</h2>
             <p className="text-[13px] text-dp-text-secondary">
               Your custom order is now in production. You'll receive a tracking link by email.
             </p>
@@ -372,7 +381,7 @@ function PaymentStep() {
             <CreditCard size={36} className="text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <h2 className="font-display text-3xl text-dp-text-primary mb-2">Complete Your Order</h2>
+            <h2 className="font-display text-2xl sm:text-3xl text-dp-text-primary mb-2">Complete Your Order</h2>
             <p className="text-[13px] text-dp-text-secondary">
               Your design was approved! Click below to complete payment securely.
             </p>
@@ -408,6 +417,9 @@ function PaymentStep() {
 // ─── Page ────────────────────────────────────────────────────
 
 export default function CustomPage(): React.ReactElement {
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
+  const { currency } = useLocale()
   const [step, setStep] = useState<Step>("pick")
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorsLoading, setVendorsLoading] = useState(true)
@@ -423,17 +435,36 @@ export default function CustomPage(): React.ReactElement {
   }, [])
 
   function handleVendorSelect(v: Vendor) {
+    if (!getAccessToken()) {
+      router.push(`/login?next=${encodeURIComponent("/custom")}`)
+      return
+    }
     setSelectedVendor(v)
     setStep("upload")
   }
 
   async function handleUploadSubmit(data: {
-    name: string; email: string; phone: string; note: string; imageDataUrl: string
+    name: string; email: string; phone: string; note: string; imageFile: File
   }) {
-    if (!selectedVendor) return
+    if (!selectedVendor || !getAccessToken()) {
+      router.push(`/login?next=${encodeURIComponent("/custom")}`)
+      return
+    }
     setSubmitting(true)
     try {
-      await apiFetch("/orders/custom/", {
+      const form = new FormData()
+      form.append("file", data.imageFile)
+      const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+      const token = getAccessToken()
+      const uploadRes = await fetch(`${base}/orders/custom/upload/`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      if (!uploadRes.ok) throw new Error("Upload failed")
+      const { url: imageUrl } = await uploadRes.json() as { url: string }
+
+      await authFetch("/orders/custom/", {
         method: "POST",
         body: JSON.stringify({
           vendor: selectedVendor.id,
@@ -442,16 +473,17 @@ export default function CustomPage(): React.ReactElement {
           email: data.email,
           phone: data.phone,
           notes: data.note,
-          image_url: data.imageDataUrl.slice(0, 200) + "…",
+          image_url: imageUrl,
+          currency,
         }),
       })
+      setSubmittedEmail(data.email)
+      setStep("pending")
     } catch {
-      // non-blocking — proceed to pending state regardless
+      alert("Could not submit your design. Please try again.")
     } finally {
       setSubmitting(false)
     }
-    setSubmittedEmail(data.email)
-    setStep("pending")
   }
 
   return (
@@ -469,6 +501,12 @@ export default function CustomPage(): React.ReactElement {
         </div>
 
         <StepBar current={step} />
+
+        {!authLoading && !user && step !== "pick" && (
+          <p className="text-center text-[13px] text-amber-400 mb-4">
+            Please <button type="button" onClick={() => router.push(`/login?next=${encodeURIComponent("/custom")}`)} className="underline">log in</button> to submit a custom order.
+          </p>
+        )}
 
         {step === "pick" && (
           <PickStep vendors={vendors} loading={vendorsLoading} onSelect={handleVendorSelect} />

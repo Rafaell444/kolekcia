@@ -2,6 +2,19 @@ from rest_framework import serializers
 from .models import Conversation, Message, MessageAttachment
 
 
+SHOP_LABELS = {
+    "wallpanels": "Wallpanels",
+    "figures": "Figures",
+}
+
+
+def shop_label_for_vendor(vendor):
+    if not vendor:
+        return None
+    slug = getattr(vendor, "catalog_category_slug", "") or ""
+    return SHOP_LABELS.get(slug, vendor.name)
+
+
 class MessageAttachmentSerializer(serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
 
@@ -18,11 +31,34 @@ class MessageAttachmentSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     attachments = MessageAttachmentSerializer(many=True, read_only=True)
+    sender_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ("id", "from_role", "text", "sent_at", "read", "attachments")
-        read_only_fields = ("id", "from_role", "sent_at", "read")
+        fields = ("id", "from_role", "sender_kind", "text", "sent_at", "read", "attachments", "sender_label")
+        read_only_fields = ("id", "from_role", "sender_kind", "sent_at", "read", "sender_label")
+
+    def get_sender_label(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+        is_superadmin_viewer = request.user.is_staff and not (
+            hasattr(request.user, "vendor_profile") and request.user.vendor_profile is not None
+        )
+        if not is_superadmin_viewer:
+            return None
+        if obj.sender_kind == "customer":
+            return "Customer"
+        if obj.sender_kind == "superadmin":
+            return "Superadmin"
+        if obj.sender_kind == "vendor":
+            vendor = None
+            if obj.sender_user and hasattr(obj.sender_user, "vendor_profile"):
+                vendor = obj.sender_user.vendor_profile
+            if not vendor and obj.conversation.vendor_id:
+                vendor = obj.conversation.vendor
+            return f"{shop_label_for_vendor(vendor)} shop" if vendor else "Vendor"
+        return None
 
 
 class ConversationSerializer(serializers.ModelSerializer):
@@ -34,6 +70,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     vendor_id = serializers.IntegerField(source="vendor.id", read_only=True, allow_null=True)
     vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True)
     vendor_slug = serializers.CharField(source="vendor.slug", read_only=True, allow_null=True)
+    shop_label = serializers.SerializerMethodField()
     product_id = serializers.IntegerField(source="product.id", read_only=True, allow_null=True)
     product_slug = serializers.CharField(source="product.slug", read_only=True, allow_null=True)
     product_title = serializers.CharField(source="product.title", read_only=True, allow_null=True)
@@ -44,11 +81,22 @@ class ConversationSerializer(serializers.ModelSerializer):
         fields = (
             "id", "subject",
             "customer_name", "customer_email", "customer_avatar",
-            "vendor_id", "vendor_name", "vendor_slug",
+            "vendor_id", "vendor_name", "vendor_slug", "shop_label",
             "product_id", "product_slug", "product_title", "product_image_url",
             "unread_count", "messages", "created_at", "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_shop_label(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+        is_superadmin_viewer = request.user.is_staff and not (
+            hasattr(request.user, "vendor_profile") and request.user.vendor_profile is not None
+        )
+        if not is_superadmin_viewer:
+            return None
+        return shop_label_for_vendor(obj.vendor)
 
     def get_product_image_url(self, obj):
         if not obj.product:

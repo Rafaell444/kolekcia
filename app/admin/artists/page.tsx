@@ -2,9 +2,10 @@
 
 import React, { useEffect, useState } from "react"
 import Image from "next/image"
-import { CheckCircle, Pencil } from "lucide-react"
+import { CheckCircle, Pencil, X } from "lucide-react"
 import { adminFetch } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
+import AdminMediaUpload from "@/components/admin/AdminMediaUpload"
 
 type AdminArtist = {
   id: number; name: string; handle: string; avatar_url: string; cover_url: string
@@ -22,6 +23,9 @@ const BADGE_COLOR: Record<string, string> = {
 export default function AdminArtistsPage(): React.ReactElement {
   const [artists, setArtists] = useState<AdminArtist[]>([])
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<AdminArtist | null>(null)
+  const [form, setForm] = useState({ avatar_url: "", cover_url: "" })
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -35,6 +39,29 @@ export default function AdminArtistsPage(): React.ReactElement {
   async function toggleVerified(id: number) {
     const res = await adminFetch<AdminArtist>(`/admin/artists/${id}/`, { method: "PATCH", body: JSON.stringify({ verified: !artists.find((a) => a.id === id)?.verified }) }).catch(() => null)
     if (res) setArtists((prev) => prev.map((a) => a.id === id ? { ...a, verified: res.verified } : a))
+  }
+
+  function openEdit(a: AdminArtist) {
+    setEditing(a)
+    setForm({ avatar_url: a.avatar_url ?? "", cover_url: a.cover_url ?? "" })
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editing) return
+    setSaving(true)
+    try {
+      const updated = await adminFetch<AdminArtist>(`/admin/artists/${editing.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(form),
+      })
+      setArtists((prev) => prev.map((a) => (a.id === editing.id ? { ...a, ...updated } : a)))
+      setEditing(null)
+    } catch {
+      alert("Failed to save artist.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -68,7 +95,7 @@ export default function AdminArtistsPage(): React.ReactElement {
                     <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm border ${BADGE_COLOR[a.badge] ?? ""}`}>{a.badge}</span>
                   ) : <span />}
                   <div className="flex gap-1">
-                    <button className="w-7 h-7 flex items-center justify-center rounded-sm border border-dp-border text-dp-text-tertiary hover:text-dp-text-primary transition-colors" aria-label="Edit"><Pencil size={12} /></button>
+                    <button onClick={() => openEdit(a)} className="w-7 h-7 flex items-center justify-center rounded-sm border border-dp-border text-dp-text-tertiary hover:text-dp-text-primary transition-colors" aria-label="Edit"><Pencil size={12} /></button>
                     <button onClick={() => toggleVerified(a.id)} className={`w-7 h-7 flex items-center justify-center rounded-sm border transition-colors ${a.verified ? "border-dp-success/40 text-dp-success" : "border-dp-border text-dp-text-tertiary hover:text-dp-text-primary"}`} aria-label="Toggle verified">
                       <CheckCircle size={12} />
                     </button>
@@ -77,6 +104,25 @@ export default function AdminArtistsPage(): React.ReactElement {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-md bg-dp-bg-surface border border-dp-border rounded-sm shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border">
+              <h2 className="font-display text-xl text-dp-text-primary">Edit {editing.name}</h2>
+              <button onClick={() => setEditing(null)} className="text-dp-text-tertiary hover:text-dp-text-primary"><X size={18} /></button>
+            </div>
+            <form onSubmit={saveEdit} className="p-5 flex flex-col gap-4">
+              <AdminMediaUpload label="Avatar" previewUrl={form.avatar_url} folder="artists" onUploaded={(url) => setForm((f) => ({ ...f, avatar_url: url }))} previewClassName="w-16 h-16 rounded-full" />
+              <AdminMediaUpload label="Cover" previewUrl={form.cover_url} folder="artists" onUploaded={(url) => setForm((f) => ({ ...f, cover_url: url }))} previewClassName="w-full h-24" />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setEditing(null)} className="flex-1 py-2.5 border border-dp-border text-[12px] font-bold uppercase tracking-widest rounded-sm">Cancel</button>
+                <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-dp-accent-cta text-white text-[12px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-60">{saving ? "Saving…" : "Save"}</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -1,8 +1,8 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { adminFetch } from "@/lib/admin-auth"
-import { Save, Store } from "lucide-react"
+import { adminFetch, getAdminToken } from "@/lib/admin-auth"
+import { Save, Store, Upload, Mail } from "lucide-react"
 
 type VendorProfile = {
   name: string
@@ -41,6 +41,96 @@ function Field({
         <input value={value} onChange={(e) => onChange(e.target.value)} className={cls} />
       )}
       {hint ? <p className="text-[11px] text-dp-text-tertiary">{hint}</p> : null}
+    </div>
+  )
+}
+
+function MediaUpload({
+  label,
+  previewUrl,
+  kind,
+  onUploaded,
+}: {
+  label: string
+  previewUrl: string
+  kind: "logo" | "banner"
+  onUploaded: (url: string) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+
+  async function handleFile(file: File) {
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      form.append("kind", kind)
+      const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+      const token = getAdminToken()
+      const res = await fetch(`${base}/vendors/me/upload/`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      if (!res.ok) throw new Error("upload failed")
+      const data = await res.json() as { url: string }
+      onUploaded(data.url)
+    } catch {
+      alert("Upload failed. Please try again.")
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">{label}</label>
+      <div className="flex items-center gap-4">
+        {previewUrl ? (
+          <img src={previewUrl} alt={label} className={`object-cover border border-dp-border rounded-sm ${kind === "logo" ? "w-16 h-16" : "w-40 h-20"}`} />
+        ) : (
+          <div className={`bg-dp-bg-elevated border border-dp-border rounded-sm flex items-center justify-center text-dp-text-tertiary ${kind === "logo" ? "w-16 h-16" : "w-40 h-20"}`}>
+            <Upload size={18} />
+          </div>
+        )}
+        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-dp-border rounded-sm text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
+          <Upload size={13} />
+          {uploading ? "Uploading…" : "Upload image"}
+          <input type="file" accept="image/*" className="sr-only" disabled={uploading}
+            onChange={(e) => e.target.files?.[0] && void handleFile(e.target.files[0])} />
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function EmailTemplateSandbox({ storeName }: { storeName: string }) {
+  const [subject, setSubject] = useState(`Your order from ${storeName || "our store"} has shipped!`)
+  const [body, setBody] = useState(
+    `Hi {{customer_name}},\n\nGreat news — your order {{order_number}} is on its way.\n\nTracking: {{tracking_code}}\n\nThank you for shopping with ${storeName || "us"}!`
+  )
+
+  return (
+    <div className="border border-dp-border rounded-sm overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-dp-border bg-dp-bg-elevated">
+        <Mail size={14} className="text-dp-accent-cta" />
+        <p className="text-[12px] font-bold uppercase tracking-widest text-dp-text-tertiary">Email template preview</p>
+      </div>
+      <div className="p-4 flex flex-col gap-3">
+        <input value={subject} onChange={(e) => setSubject(e.target.value)}
+          className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6}
+          className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary resize-none font-mono" />
+        <div className="rounded-sm border border-dp-border bg-white text-gray-900 p-5 text-left">
+          <p className="text-[11px] text-gray-500 mb-2">Preview</p>
+          <p className="font-semibold text-[15px] mb-3">{subject.replace("{{customer_name}}", "Alex").replace("{{order_number}}", "KOL-2024-123456")}</p>
+          <p className="text-[13px] leading-relaxed whitespace-pre-wrap">
+            {body
+              .replace(/\{\{customer_name\}\}/g, "Alex")
+              .replace(/\{\{order_number\}\}/g, "KOL-2024-123456")
+              .replace(/\{\{tracking_code\}\}/g, "GE123456789GE")}
+          </p>
+        </div>
+      </div>
     </div>
   )
 }
@@ -94,10 +184,10 @@ export function VendorStorefrontForm({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Field label="Store name" value={draft.name} onChange={(v) => set("name", v)} />
-      <Field label="Logo URL" value={draft.logo_url} onChange={(v) => set("logo_url", v)} hint="Square logo shown on category pages." />
-      <Field label="Banner URL" value={draft.banner_url} onChange={(v) => set("banner_url", v)} hint="Wide banner image for your category page header." />
+      <MediaUpload label="Logo" previewUrl={draft.logo_url} kind="logo" onUploaded={(url) => set("logo_url", url)} />
+      <MediaUpload label="Banner" previewUrl={draft.banner_url} kind="banner" onUploaded={(url) => set("banner_url", url)} />
       <Field label="Short description" value={draft.description} onChange={(v) => set("description", v)} multiline />
       {allowCategory && (
         <Field label="Catalog category slug" value={draft.catalog_category_slug} onChange={(v) => set("catalog_category_slug", v)} hint="e.g. figures or wallpanels" />
@@ -108,6 +198,7 @@ export function VendorStorefrontForm({
         <Field label="TikTok" value={draft.social_tiktok} onChange={(v) => set("social_tiktok", v)} />
         <Field label="YouTube" value={draft.social_youtube} onChange={(v) => set("social_youtube", v)} />
       </div>
+      <EmailTemplateSandbox storeName={draft.name} />
       <button
         type="button"
         onClick={() => { void handleSave() }}
@@ -130,7 +221,7 @@ export function VendorStorefrontSection({ isVendor }: { isVendor: boolean }) {
       </div>
       <div className="p-5">
         <p className="text-[13px] text-dp-text-tertiary mb-4">
-          Logo, banner, company description and social links shown on your category catalog page.
+          Upload your logo and banner, edit your description and social links, and preview shipping emails.
         </p>
         <VendorStorefrontForm />
       </div>

@@ -18,6 +18,7 @@ type AuthContextValue = {
   user: AuthUser | null
   loading: boolean
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>
+  loginWithGoogle: (idToken: string, rememberMe?: boolean) => Promise<{ isNewUser: boolean }>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -57,6 +58,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     storeUser(data.user)
   }, [])
 
+  const loginWithGoogle = useCallback(async (idToken: string, rememberMe = false) => {
+    const data = await apiFetch<{ access: string; refresh: string; user: AuthUser; is_new_user?: boolean }>("/auth/google/", {
+      method: "POST",
+      body: JSON.stringify({ id_token: idToken }),
+    })
+    storeTokens(data.access, data.refresh, rememberMe)
+    setUser(data.user)
+    storeUser(data.user)
+    return { isNewUser: Boolean(data.is_new_user) }
+  }, [])
+
   const logout = useCallback(async () => {
     try {
       const { getRefreshToken } = await import("@/lib/auth-storage")
@@ -73,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )
