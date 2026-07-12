@@ -20,8 +20,8 @@ __pycache__/
 *.py[cod]
 *.pyo
 
-# Django
-backend/db.sqlite3
+# Django — db.sqlite3 is committed intentionally (seeded demo data)
+# backend/db.sqlite3  ← keep tracked
 backend/media/
 
 # Editor / IDE
