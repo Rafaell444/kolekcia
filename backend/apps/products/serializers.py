@@ -107,7 +107,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "id", "slug", "title", "artist_name", "category_slug", "category_slugs", "image_url",
             "vendor_slug", "vendor_name",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "allow_custom_size", "status", "tags",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "allow_custom_size", "status", "tags",
             "description", "material",
             "default_variant_id", "default_size_variant_id", "size_variants",
         )
@@ -171,7 +171,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "category", "category_slug", "category_name", "categories_data", "category_slugs",
             "vendor_id", "vendor_slug", "vendor_name", "images", "variants", "size_variants",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "allow_custom_size", "status", "tags",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "allow_custom_size", "status", "tags",
             "description", "material", "created_at",
             "category_slug_input", "categories_input", "artist_handle", "image_url", "vendor_slug_input",
         )

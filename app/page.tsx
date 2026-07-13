@@ -14,8 +14,9 @@ import { fetchPageSections, sectionContent } from "@/lib/page-sections"
 
 type ApiProduct = {
   id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string
-  original_price: string | null; rating: string; review_count: number
-  image_url: string; is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean
+  original_price: string | null; regional_prices?: Record<string, unknown>; rating: string; review_count: number
+  image_url: string; is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean; is_featured?: boolean
+  size_variants?: Array<{ id: number; label: string; price_usd: string; price_gel?: string | null; price_eur?: string | null; price_gbp?: string | null; sale_price_usd?: string | null; sale_price_gel?: string | null; is_active?: boolean }>
 }
 
 async function getTrendingProducts(): Promise<ApiProduct[]> {

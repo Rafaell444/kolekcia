@@ -779,6 +779,7 @@ function CatalogPageInner(): React.ReactElement {
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
                 {products.map((p) => {
                   const resolved = resolveListProductPrice(p, currency, rates)
+                  const activeVariants = (p.size_variants ?? []).filter((sv) => sv.is_active !== false)
                   return (
                   <ProductCard key={p.id} product={{
                     id: String(p.id), title: p.title, artistName: p.artist_name,
@@ -791,6 +792,7 @@ function CatalogPageInner(): React.ReactElement {
                     defaultVariantId: p.default_variant_id,
                     defaultSizeVariantId: p.default_size_variant_id ?? p.size_variants?.find((sv) => sv.is_active !== false)?.id ?? null,
                     priceIsLocalized: true,
+                    hasMultipleVariants: activeVariants.length > 1,
                   }} />
                 )})}
               </div>
@@ -798,6 +800,8 @@ function CatalogPageInner(): React.ReactElement {
               <div className="flex flex-col gap-3">
                 {products.map((p) => {
                   const resolved = resolveListProductPrice(p, currency, rates)
+                  const activeVariants = (p.size_variants ?? []).filter((sv) => sv.is_active !== false)
+                  const showFrom = activeVariants.length > 1
                   return (
                   <div key={p.id} className="flex gap-4 bg-dp-bg-surface border border-dp-border rounded-sm p-3 dp-card-hover">
                     <div className="relative w-20 h-28 shrink-0 overflow-hidden rounded-sm">
@@ -810,7 +814,9 @@ function CatalogPageInner(): React.ReactElement {
                         <p className="text-[12px] text-dp-text-secondary mt-1">{p.tags.join(" · ")}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-base font-bold text-dp-text-primary">{formatAmount(resolved.price, currency)}</span>
+                        <span className="text-base font-bold text-dp-text-primary">
+                          {formatAmount(resolved.price, currency)}{showFrom && <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">–დან</span>}
+                        </span>
                         {resolved.original != null && (
                           <span className="text-[12px] text-dp-text-tertiary line-through">{formatAmount(resolved.original, currency)}</span>
                         )}

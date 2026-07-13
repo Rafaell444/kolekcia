@@ -102,6 +102,7 @@ class Product(models.Model):
     is_sale = models.BooleanField(default=False)
     is_new = models.BooleanField(default=False)
     is_exclusive = models.BooleanField(default=False)
+    is_featured = models.BooleanField(default=False, db_index=True)
     allow_custom_size = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
     description = models.TextField(blank=True)

@@ -22,7 +22,7 @@ type AdminProduct = {
   id: number; title: string; artist_name: string; base_price: string
   regional_prices?: Record<string, { price?: string; original?: string | null }>
   image_url?: string
-  images: { id?: number; url: string; src?: string; media_type?: string }[]; is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean
+  images: { id?: number; url: string; src?: string; media_type?: string }[]; is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean; is_featured?: boolean
   allow_custom_size?: boolean
   category_slug: string
   category_slugs?: string[]
@@ -59,7 +59,7 @@ type ProductDraft = {
   tags: string
   vendorSlug: string
   status: "active" | "paused" | "sold"
-  isLimited: boolean; isSale: boolean; isNew: boolean; isExclusive: boolean
+  isLimited: boolean; isSale: boolean; isNew: boolean; isExclusive: boolean; isFeatured: boolean
   allowCustomSize: boolean
   description: string
   material: string
@@ -110,7 +110,7 @@ const BLANK_DRAFT: ProductDraft = {
   title: "",
   categories: "", tags: "", vendorSlug: "",
   status: "active",
-  isLimited: false, isSale: false, isNew: true, isExclusive: false,
+  isLimited: false, isSale: false, isNew: true, isExclusive: false, isFeatured: false,
   allowCustomSize: false,
   description: "", material: "",
 }
@@ -145,6 +145,7 @@ function ProductModal({
           isSale: editProduct.is_sale,
           isNew: editProduct.is_new,
           isExclusive: editProduct.is_exclusive,
+          isFeatured: editProduct.is_featured ?? false,
           allowCustomSize: editProduct.allow_custom_size ?? false,
           description: editProduct.description ?? "",
           material: editProduct.material ?? "",
@@ -199,6 +200,7 @@ function ProductModal({
           isSale: p.is_sale ?? prev.isSale,
           isNew: p.is_new ?? prev.isNew,
           isExclusive: p.is_exclusive ?? prev.isExclusive,
+          isFeatured: p.is_featured ?? prev.isFeatured,
           allowCustomSize: p.allow_custom_size ?? prev.allowCustomSize,
           description: p.description ?? prev.description,
           material: p.material ?? prev.material,
@@ -336,6 +338,7 @@ function ProductModal({
         is_sale: draft.isSale,
         is_new: draft.isNew,
         is_exclusive: draft.isExclusive,
+        is_featured: draft.isFeatured,
         allow_custom_size: draft.allowCustomSize,
         description: draft.description,
         material: draft.material,
@@ -493,6 +496,10 @@ function ProductModal({
                       <span className="text-[11px] text-dp-text-secondary">{label}</span>
                     </label>
                   ))}
+                  <label className="flex items-center gap-1.5 cursor-pointer border border-dp-accent-gold/40 bg-dp-accent-gold/10 rounded px-2 py-1">
+                    <input type="checkbox" checked={draft.isFeatured} onChange={() => set("isFeatured", !draft.isFeatured)} className="w-3.5 h-3.5 accent-dp-accent-cta" />
+                    <span className="text-[11px] font-semibold text-dp-accent-gold">⭐ Trending Now (homepage)</span>
+                  </label>
                 </div>
               </div>
             </div>

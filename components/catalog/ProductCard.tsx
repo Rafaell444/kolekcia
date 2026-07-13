@@ -34,6 +34,7 @@ export type ProductCardProps = {
     defaultVariantId?: number | null
     defaultSizeVariantId?: number | null
     priceIsLocalized?: boolean
+    hasMultipleVariants?: boolean
   }
 }
 
@@ -203,7 +204,7 @@ export default function ProductCard({ product: p }: ProductCardProps) {
       <div className="flex flex-col gap-1 px-3 pb-3 mt-auto">
         <div className="flex items-center gap-2">
           <span className="text-[15px] font-bold text-dp-text-primary">
-            {displayPrice(p.price)}
+            {displayPrice(p.price)}{p.hasMultipleVariants && <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">–დან</span>}
           </span>
           {p.originalPrice && p.originalPrice > p.price && (
             <span className="text-[12px] text-dp-text-tertiary line-through">
