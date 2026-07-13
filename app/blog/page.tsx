@@ -13,7 +13,7 @@ type BlogPost = {
 async function getPosts(): Promise<BlogPost[]> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
   try {
-    const res = await fetch(`${apiUrl}/blog/`, { next: { revalidate: 120 } })
+    const res = await fetch(`${apiUrl}/blog/`, { next: { revalidate: 10 } })
     if (!res.ok) return []
     return (await res.json()) as BlogPost[]
   } catch {
