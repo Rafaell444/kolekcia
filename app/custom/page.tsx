@@ -191,9 +191,14 @@ function UploadStep({
     if (file) handleFile(file)
   }
 
+  const [formError, setFormError] = useState("")
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!preview || !imageFile) return
+    if (!email.trim()) { setFormError("Email is required."); return }
+    if (!phone.trim()) { setFormError("Phone number is required."); return }
+    setFormError("")
     onSubmit({ name, email, phone, note, imageFile })
   }
 
@@ -267,10 +272,10 @@ function UploadStep({
         {/* Contact details */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
-            { id: "custom-name",  label: "Full Name *",           type: "text",  value: name,  set: setName,  placeholder: "Your name",        required: true },
-            { id: "custom-email", label: "Email *",               type: "email", value: email, set: setEmail, placeholder: "you@email.com",    required: true },
-            { id: "custom-phone", label: "Phone (for SMS link)",  type: "tel",   value: phone, set: setPhone, placeholder: "+1 555 000 0000",   required: false },
-            { id: "custom-note",  label: "Notes / requests",      type: "text",  value: note,  set: setNote,  placeholder: "Size, finish, special requests…", required: false },
+            { id: "custom-name",  label: "Full Name *",  type: "text",  value: name,  set: setName,  placeholder: "Your name",                        required: true },
+            { id: "custom-email", label: "Email *",      type: "email", value: email, set: setEmail, placeholder: "you@email.com",                    required: true },
+            { id: "custom-phone", label: "Phone *",      type: "tel",   value: phone, set: setPhone, placeholder: "+995 555 000 000",                  required: true },
+            { id: "custom-note",  label: "Notes / requests", type: "text", value: note, set: setNote, placeholder: "Size, finish, special requests…", required: false },
           ].map(({ id, label, type, value, set, placeholder, required }) => (
             <div key={id} className="flex flex-col gap-1">
               <label htmlFor={id} className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">{label}</label>
@@ -301,6 +306,9 @@ function UploadStep({
           </div>
         </div>
 
+        {formError && (
+          <p className="text-[12px] text-red-500 font-semibold">{formError}</p>
+        )}
         <button
           type="submit"
           disabled={!preview}

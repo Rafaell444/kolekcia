@@ -519,7 +519,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
           {/* Left: image gallery */}
           <div className="space-y-3">
-            <div className="relative aspect-[4/5] rounded-xl overflow-hidden bg-dp-bg-elevated">
+            <div className="relative aspect-square rounded-xl overflow-hidden bg-dp-bg-elevated">
               {thumbMedia.length > 0 && thumbMedia[activeImage]?.media_type === "video" ? (
                 <video
                   ref={mainVideoRef}

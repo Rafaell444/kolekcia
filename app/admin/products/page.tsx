@@ -259,14 +259,30 @@ function ProductModal({
     finally { setCreatingCat(false) }
   }
 
-  function addPendingFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function addPendingFile(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
+    if (mediaInputRef.current) mediaInputRef.current.value = ""
+    if (!files.length) return
+
+    // In edit mode, upload immediately so images are available for variant assignment right away
+    if (editProduct?.id) {
+      for (const file of files) {
+        const isVideo = file.type.startsWith("video/")
+        try {
+          const uploaded = await uploadFile(editProduct.id, { file, media_type: isVideo ? "video" : "image" }) as { id: number; src?: string; url?: string; media_type?: string }
+          const src = uploaded.src ?? uploaded.url ?? (isVideo ? "" : URL.createObjectURL(file))
+          setMediaItems((prev) => [...prev, { id: uploaded.id, src, media_type: uploaded.media_type ?? (isVideo ? "video" : "image") }])
+        } catch { /* silently fall back to pending */ }
+      }
+      return
+    }
+
+    // New product — queue for upload on save
     const newItems = files.map((file) => {
       const isVideo = file.type.startsWith("video/")
       return { file, preview: isVideo ? "" : URL.createObjectURL(file), media_type: isVideo ? "video" : "image" }
     })
     setPendingFiles((prev) => [...prev, ...newItems])
-    if (mediaInputRef.current) mediaInputRef.current.value = ""
   }
 
   function removePendingFile(idx: number) {
