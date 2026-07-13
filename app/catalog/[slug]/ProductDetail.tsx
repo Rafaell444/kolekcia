@@ -306,10 +306,6 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     return () => { cancelled = true }
   }, [isFigure, isWallpanel])
 
-  useEffect(() => {
-    setActiveImage(0)
-  }, [selectedSizeVariantId])
-
   useEffect(() => () => {
     if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
   }, [giftWrapLocalPreview])
@@ -318,11 +314,26 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
   const hasSizeVariants = activeSizeVariants.length > 0
 
-  const variantImages = selectedSizeVariant
-    ? (selectedSizeVariant as unknown as { images?: Array<{ id: number; url: string; src?: string; media_type?: string }> }).images ?? []
-    : []
-  const gallerySource = variantImages.length > 0 ? variantImages : (product.images ?? [])
-  const thumbMedia = gallerySource.map((i) => ({ src: (i as { src?: string; url: string }).src ?? (i as { url: string }).url, media_type: (i as { media_type?: string }).media_type ?? "image" }))
+  // Thumbnails always show the full product gallery
+  const thumbMedia = (product.images ?? []).map((i) => ({
+    src: (i as { src?: string; url: string }).src ?? (i as { url: string }).url,
+    media_type: (i as { media_type?: string }).media_type ?? "image",
+    id: (i as { id?: number }).id,
+  }))
+
+  // When variant changes, jump to its first assigned image (or back to 0)
+  useEffect(() => {
+    if (!selectedSizeVariantId) { setActiveImage(0); return }
+    const sv = activeSizeVariants.find((s) => s.id === selectedSizeVariantId)
+    const varImgs = (sv as unknown as { images?: Array<{ id: number }> })?.images ?? []
+    if (varImgs.length > 0) {
+      const idx = thumbMedia.findIndex((m) => m.id === varImgs[0].id)
+      setActiveImage(idx >= 0 ? idx : 0)
+    } else {
+      setActiveImage(0)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSizeVariantId])
 
   useEffect(() => {
     const active = thumbMedia[activeImage]
