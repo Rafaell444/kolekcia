@@ -306,15 +306,23 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     return () => { cancelled = true }
   }, [isFigure, isWallpanel])
 
+  useEffect(() => {
+    setActiveImage(0)
+  }, [selectedSizeVariantId])
+
+  useEffect(() => () => {
+    if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
+  }, [giftWrapLocalPreview])
+
+  // New size variant system
+  const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
+  const hasSizeVariants = activeSizeVariants.length > 0
+
   const variantImages = selectedSizeVariant
     ? (selectedSizeVariant as unknown as { images?: Array<{ id: number; url: string; src?: string; media_type?: string }> }).images ?? []
     : []
   const gallerySource = variantImages.length > 0 ? variantImages : (product.images ?? [])
   const thumbMedia = gallerySource.map((i) => ({ src: (i as { src?: string; url: string }).src ?? (i as { url: string }).url, media_type: (i as { media_type?: string }).media_type ?? "image" }))
-
-  useEffect(() => {
-    setActiveImage(0)
-  }, [selectedSizeVariantId])
 
   useEffect(() => {
     const active = thumbMedia[activeImage]
@@ -327,14 +335,6 @@ export default function ProductDetail({ product, categoryContext }: { product: A
       video.pause()
     }
   }, [activeImage, thumbMedia])
-
-  useEffect(() => () => {
-    if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
-  }, [giftWrapLocalPreview])
-
-  // New size variant system
-  const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
-  const hasSizeVariants = activeSizeVariants.length > 0
 
   // Legacy poster variant selectors
   const size    = product.sizes?.find((s) => s.id === selectedSize)
