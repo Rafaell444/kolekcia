@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -321,6 +321,26 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     id: (i as { id?: number }).id,
   }))
 
+  // Map: image id → variant id (first variant that owns this image wins)
+  const imageVariantMap = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const sv of activeSizeVariants) {
+      const imgs = (sv as unknown as { images?: Array<{ id: number }> }).images ?? []
+      for (const img of imgs) {
+        if (!map.has(img.id)) map.set(img.id, sv.id)
+      }
+    }
+    return map
+  }, [activeSizeVariants])
+
+  function handleThumbnailClick(i: number) {
+    setActiveImage(i)
+    const imgId = thumbMedia[i]?.id
+    if (imgId != null && imageVariantMap.has(imgId)) {
+      setSelectedSizeVariantId(imageVariantMap.get(imgId)!)
+    }
+  }
+
   // When variant changes, jump to its first assigned image (or back to 0)
   useEffect(() => {
     if (!selectedSizeVariantId) { setActiveImage(0); return }
@@ -564,7 +584,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               {thumbMedia.map((media, i) => (
                 <button
                   key={i}
-                  onClick={() => setActiveImage(i)}
+                  onClick={() => handleThumbnailClick(i)}
                   className={`relative w-16 h-20 rounded-md overflow-hidden border-2 transition-colors ${activeImage === i ? "border-dp-accent-cta" : "border-dp-border hover:border-dp-border-hover"}`}
                   aria-label={`View item ${i + 1}`}
                   aria-pressed={activeImage === i}
