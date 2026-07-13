@@ -225,7 +225,14 @@ export default function AuctionsPage(): React.ReactElement {
       apiFetch<LeaderboardEntry[]>("/auctions/leaderboard/").catch(() => []),
     ]).then(([aList, lList]) => {
       if (!cancelled) {
-        setAuctions(aList)
+        const auctionRank = (a: ApiAuction) => {
+          const isBiddable = a.is_biddable ?? a.is_live
+          if (!a.is_ended && isBiddable) return 0
+          if (!a.is_ended) return 1
+          return 2
+        }
+        const sorted = [...aList].sort((a, b) => auctionRank(a) - auctionRank(b))
+        setAuctions(sorted)
         setLeaderboard(Array.isArray(lList) ? lList : [])
         setLoading(false)
       }

@@ -579,6 +579,27 @@ class AdminProductMediaView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class AdminProductMediaReorderView(APIView):
+    """PATCH /admin/products/media/reorder/ — accept [{id, order}] and bulk-update ProductImage.order."""
+    permission_classes = [IsAdminOrVendor]
+
+    def patch(self, request):
+        from apps.products.models import ProductImage
+        items = request.data if isinstance(request.data, list) else request.data.get("items", [])
+        if not items:
+            return Response({"detail": "items list required."}, status=status.HTTP_400_BAD_REQUEST)
+        ids = [item["id"] for item in items if "id" in item]
+        images = {img.pk: img for img in ProductImage.objects.filter(pk__in=ids)}
+        updated = []
+        for item in items:
+            img = images.get(item.get("id"))
+            if img is not None and "order" in item:
+                img.order = item["order"]
+                updated.append(img)
+        ProductImage.objects.bulk_update(updated, ["order"])
+        return Response({"updated": len(updated)})
+
+
 # ── Categories ────────────────────────────────────────────────────────────────
 
 class AdminCategoryListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
@@ -1301,7 +1322,10 @@ class AdminSizeVariantView(APIView):
                 return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
         ser = SizeVariantSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        image_ids = ser.validated_data.pop("images", None)
         sv = SizeVariant.objects.create(product=product, **ser.validated_data)
+        if image_ids is not None:
+            sv.images.set(image_ids)
         return Response(SizeVariantSerializer(sv).data, status=status.HTTP_201_CREATED)
 
     def patch(self, request, sv_id):
@@ -1313,8 +1337,11 @@ class AdminSizeVariantView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         ser = SizeVariantSerializer(sv, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
+        image_ids = ser.validated_data.pop("images", None)
         ser.save()
-        return Response(ser.data)
+        if image_ids is not None:
+            sv.images.set(image_ids)
+        return Response(SizeVariantSerializer(sv).data)
 
     def delete(self, request, sv_id):
         from apps.products.models import SizeVariant

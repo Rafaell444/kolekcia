@@ -17,7 +17,7 @@ import {
   ChevronLeft, ShoppingCart, Heart, Share2, Shield, Truck,
   RotateCcw, Check, Zap, ArrowRight, Award, Package,
   Sparkles, Clock, ChevronDown, ChevronUp, Loader2,
-  MessageSquare, X, Send, Layers, Box, Palette, Gift, Play, Upload, ImageIcon,
+  MessageSquare, X, Send, Layers, Box, Palette, Gift, Play, Upload, ImageIcon, PackageCheck,
 } from "lucide-react"
 import ProductCmsSections, { type ProductCmsContent } from "@/components/product/ProductCmsSections"
 
@@ -306,9 +306,15 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     return () => { cancelled = true }
   }, [isFigure, isWallpanel])
 
-  const thumbMedia = product.images?.length
-    ? product.images.map((i) => ({ src: i.src ?? i.url, media_type: i.media_type ?? "image" }))
+  const variantImages = selectedSizeVariant
+    ? (selectedSizeVariant as unknown as { images?: Array<{ id: number; url: string; src?: string; media_type?: string }> }).images ?? []
     : []
+  const gallerySource = variantImages.length > 0 ? variantImages : (product.images ?? [])
+  const thumbMedia = gallerySource.map((i) => ({ src: (i as { src?: string; url: string }).src ?? (i as { url: string }).url, media_type: (i as { media_type?: string }).media_type ?? "image" }))
+
+  useEffect(() => {
+    setActiveImage(0)
+  }, [selectedSizeVariantId])
 
   useEffect(() => {
     const active = thumbMedia[activeImage]
@@ -513,7 +519,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
           {/* Left: image gallery */}
           <div className="space-y-3">
-            <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-dp-bg-elevated">
+            <div className="relative aspect-[4/5] rounded-xl overflow-hidden bg-dp-bg-elevated">
               {thumbMedia.length > 0 && thumbMedia[activeImage]?.media_type === "video" ? (
                 <video
                   ref={mainVideoRef}
@@ -908,7 +914,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               <p className="text-[12px] text-red-500 -mt-1">{addError}</p>
             )}
 
-            {product.is_limited && (
+            {(product as {is_ready_to_ship?: boolean}).is_ready_to_ship ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-sm">
+                <PackageCheck size={14} className="text-emerald-500 shrink-0" />
+                <p className="text-[12px] font-semibold text-emerald-500">Ready to ship — ships within 5–10 business days.</p>
+              </div>
+            ) : product.is_limited && (
               <div className="flex items-center gap-2 px-3 py-2.5 bg-dp-accent-gold/10 border border-dp-accent-gold/30 rounded-sm">
                 <Clock size={14} className="text-dp-accent-gold shrink-0" />
                 <p className="text-[12px] font-semibold text-dp-accent-gold">Limited edition — only a few remaining at this price.</p>

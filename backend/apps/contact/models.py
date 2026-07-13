@@ -8,6 +8,7 @@ class ContactMessage(models.Model):
     email = models.EmailField()
     order_number = models.CharField(max_length=50, blank=True)
     message = models.TextField()
+    attachment = models.ImageField(upload_to="contact_attachments/", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react"
 import Image from "next/image"
-import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus, ChevronUp, ChevronDown, Check } from "lucide-react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 
 type SizeVariantItem = {
@@ -16,6 +16,7 @@ type SizeVariantItem = {
   sale_price_gel?: string | null
   sort_order: number
   is_active: boolean
+  images?: { id: number; url: string; src?: string; media_type?: string }[]
 }
 
 type AdminProduct = {
@@ -59,7 +60,7 @@ type ProductDraft = {
   tags: string
   vendorSlug: string
   status: "active" | "paused" | "sold"
-  isLimited: boolean; isSale: boolean; isNew: boolean; isExclusive: boolean; isFeatured: boolean
+  isLimited: boolean; isSale: boolean; isNew: boolean; isExclusive: boolean; isFeatured: boolean; isReadyToShip: boolean
   allowCustomSize: boolean
   description: string
   material: string
@@ -110,7 +111,7 @@ const BLANK_DRAFT: ProductDraft = {
   title: "",
   categories: "", tags: "", vendorSlug: "",
   status: "active",
-  isLimited: false, isSale: false, isNew: true, isExclusive: false, isFeatured: false,
+  isLimited: false, isSale: false, isNew: true, isExclusive: false, isFeatured: false, isReadyToShip: false,
   allowCustomSize: false,
   description: "", material: "",
 }
@@ -146,6 +147,7 @@ function ProductModal({
           isNew: editProduct.is_new,
           isExclusive: editProduct.is_exclusive,
           isFeatured: editProduct.is_featured ?? false,
+          isReadyToShip: (editProduct as {is_ready_to_ship?: boolean}).is_ready_to_ship ?? false,
           allowCustomSize: editProduct.allow_custom_size ?? false,
           description: editProduct.description ?? "",
           material: editProduct.material ?? "",
@@ -164,6 +166,7 @@ function ProductModal({
   // Size variants - existing (saved) and pending (to be created on save)
   const [sizeVariants, setSizeVariants] = useState<SizeVariantItem[]>(editProduct?.size_variants ?? [])
   const [pendingVariants, setPendingVariants] = useState<PendingVariant[]>([])
+  const [variantImagePickerOpen, setVariantImagePickerOpen] = useState<number | null>(null)
   const newVarRef = useRef({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
   const [newVarDraft, setNewVarDraft] = useState({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
 
@@ -201,6 +204,7 @@ function ProductModal({
           isNew: p.is_new ?? prev.isNew,
           isExclusive: p.is_exclusive ?? prev.isExclusive,
           isFeatured: p.is_featured ?? prev.isFeatured,
+          isReadyToShip: (p as {is_ready_to_ship?: boolean}).is_ready_to_ship ?? prev.isReadyToShip,
           allowCustomSize: p.allow_custom_size ?? prev.allowCustomSize,
           description: p.description ?? prev.description,
           material: p.material ?? prev.material,
@@ -278,6 +282,21 @@ function ProductModal({
     setMediaItems((prev) => prev.filter((m) => m.id !== id))
   }
 
+  async function handleMoveMedia(index: number, direction: "up" | "down") {
+    const newItems = [...mediaItems]
+    const targetIndex = direction === "up" ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= newItems.length) return
+    ;[newItems[index], newItems[targetIndex]] = [newItems[targetIndex], newItems[index]]
+    setMediaItems(newItems)
+    const payload = newItems
+      .filter((m) => m.id)
+      .map((m, i) => ({ id: m.id!, order: i }))
+    await adminFetch("/admin/products/media/reorder/", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }).catch(() => {})
+  }
+
   async function uploadFile(productId: number, item: { file: File; media_type: string }) {
     const token = typeof window !== "undefined" ? localStorage.getItem("adm_access") : null
     const form = new FormData()
@@ -315,6 +334,20 @@ function ProductModal({
     setSizeVariants((prev) => prev.filter((sv) => sv.id !== id))
   }
 
+  async function handleAssignVariantImages(svId: number, imageIds: number[]) {
+    const res = await adminFetch(`/admin/size-variants/${svId}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ image_ids: imageIds }),
+    }).catch(() => null)
+    if (res) {
+      setSizeVariants((prev) => prev.map((sv) =>
+        sv.id === svId
+          ? { ...sv, images: mediaItems.filter((m) => m.id && imageIds.includes(m.id)) as SizeVariantItem["images"] }
+          : sv,
+      ))
+    }
+  }
+
   async function handleSave() {
     if (!draft.title) { setError("Title is required."); return }
     setSaving(true)
@@ -339,6 +372,7 @@ function ProductModal({
         is_new: draft.isNew,
         is_exclusive: draft.isExclusive,
         is_featured: draft.isFeatured,
+        is_ready_to_ship: draft.isReadyToShip,
         allow_custom_size: draft.allowCustomSize,
         description: draft.description,
         material: draft.material,
@@ -489,6 +523,7 @@ function ProductModal({
                     { key: "isSale", label: "Sale" },
                     { key: "isNew", label: "New" },
                     { key: "isExclusive", label: "Exclusive" },
+                    { key: "isReadyToShip", label: "Ready to ship" },
                     { key: "allowCustomSize", label: "Allow custom size" },
                   ] as const).map(({ key, label }) => (
                     <label key={key} className="flex items-center gap-1.5 cursor-pointer">
@@ -522,9 +557,20 @@ function ProductModal({
                         ) : (
                           m.src && <Image src={m.src} alt="" fill className="object-cover" sizes="80px" />
                         )}
+                        <span className="absolute bottom-0.5 left-0.5 text-[7px] text-white bg-black/50 px-0.5 rounded">{i + 1}</span>
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 flex flex-col transition-opacity">
+                          <button type="button" onClick={() => void handleMoveMedia(i, "up")} disabled={i === 0}
+                            className="flex-1 flex items-center justify-center bg-black/40 hover:bg-black/60 disabled:opacity-30" aria-label="Move up">
+                            <ChevronUp size={12} className="text-white" />
+                          </button>
+                          <button type="button" onClick={() => void handleMoveMedia(i, "down")} disabled={i === mediaItems.length - 1}
+                            className="flex-1 flex items-center justify-center bg-black/40 hover:bg-black/60 disabled:opacity-30" aria-label="Move down">
+                            <ChevronDown size={12} className="text-white" />
+                          </button>
+                        </div>
                         {m.id && (
                           <button type="button" onClick={() => void handleDeleteMedia(m.id!)}
-                            className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity" aria-label="Delete">
+                            className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Delete">
                             <X size={8} className="text-white" />
                           </button>
                         )}
@@ -653,12 +699,16 @@ function ProductModal({
                           <th className="text-right px-3 py-2">Sale GEL ₾</th>
                         </>
                       )}
+                      <th className="text-left px-3 py-2">Images</th>
                       <th className="px-3 py-2 w-8" />
                     </tr>
                   </thead>
                   <tbody>
-                    {sizeVariants.map((sv) => (
-                      <tr key={sv.id} className="border-b border-dp-border last:border-0 hover:bg-dp-bg-elevated/40 transition-colors">
+                    {sizeVariants.map((sv) => {
+                      const assignedIds = new Set((sv.images ?? []).map((img) => img.id))
+                      const isPickerOpen = variantImagePickerOpen === sv.id
+                      return (
+                      <tr key={sv.id} className="border-b border-dp-border last:border-0 hover:bg-dp-bg-elevated/40 transition-colors align-top">
                         <td className="px-3 py-2 font-semibold text-dp-text-primary">{sv.label}</td>
                         <td className="px-3 py-2 text-right text-dp-text-primary">${parseFloat(sv.price_usd).toFixed(2)}</td>
                         <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.price_gel ? `₾${parseFloat(sv.price_gel).toFixed(2)}` : <span className="text-dp-text-tertiary">—</span>}</td>
@@ -668,6 +718,41 @@ function ProductModal({
                             <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.sale_price_gel ? `₾${parseFloat(sv.sale_price_gel).toFixed(2)}` : "—"}</td>
                           </>
                         )}
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {(sv.images ?? []).map((img) => (
+                                <div key={img.id} className="relative w-8 h-8 rounded-sm overflow-hidden border border-dp-border shrink-0">
+                                  {img.media_type === "video" ? <Play size={12} className="m-auto mt-1.5 text-dp-text-tertiary" /> : img.src && <Image src={img.src} alt="" fill className="object-cover" sizes="32px" />}
+                                </div>
+                              ))}
+                              <button type="button" onClick={() => setVariantImagePickerOpen(isPickerOpen ? null : sv.id)}
+                                className="text-[9px] text-dp-accent-cta hover:underline whitespace-nowrap px-1">
+                                {(sv.images?.length ?? 0) > 0 ? "Edit" : "+ Assign"}
+                              </button>
+                            </div>
+                            {isPickerOpen && mediaItems.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1 p-2 border border-dp-border rounded-sm bg-dp-bg-elevated">
+                                {mediaItems.filter((m) => m.id).map((m, mi) => {
+                                  const selected = assignedIds.has(m.id!)
+                                  return (
+                                    <button key={m.id ?? mi} type="button"
+                                      onClick={() => {
+                                        const newIds = selected
+                                          ? [...assignedIds].filter((id) => id !== m.id!)
+                                          : [...assignedIds, m.id!]
+                                        void handleAssignVariantImages(sv.id, newIds)
+                                      }}
+                                      className={`relative w-10 h-10 rounded-sm overflow-hidden border-2 transition-colors ${selected ? "border-dp-accent-cta" : "border-dp-border hover:border-dp-border-hover"}`}>
+                                      {m.media_type === "video" ? <Play size={12} className="m-auto mt-2 text-dp-text-tertiary" /> : <Image src={m.src} alt="" fill className="object-cover" sizes="40px" />}
+                                      {selected && <div className="absolute inset-0 bg-dp-accent-cta/20 flex items-center justify-center"><Check size={10} className="text-dp-accent-cta" /></div>}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-3 py-2 text-right">
                           <button type="button" onClick={() => void handleDeleteSizeVariant(sv.id)}
                             className="text-dp-text-tertiary hover:text-red-400 transition-colors" aria-label="Delete">
@@ -675,7 +760,8 @@ function ProductModal({
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

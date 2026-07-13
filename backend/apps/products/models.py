@@ -103,6 +103,7 @@ class Product(models.Model):
     is_new = models.BooleanField(default=False)
     is_exclusive = models.BooleanField(default=False)
     is_featured = models.BooleanField(default=False, db_index=True)
+    is_ready_to_ship = models.BooleanField(default=False)
     allow_custom_size = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
     description = models.TextField(blank=True)
@@ -155,6 +156,7 @@ class SizeVariant(models.Model):
     sale_price_gel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    images = models.ManyToManyField("ProductImage", blank=True, related_name="size_variants")
 
     class Meta:
         db_table = "size_variants"

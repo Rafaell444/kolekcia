@@ -7,7 +7,7 @@ import Link from "next/link"
 import {
   Mail, Phone, MapPin, Package,
   RotateCcw, Truck, Brush, ArrowRight, ChevronDown,
-  ChevronUp, CheckCircle2, Clock, Zap,
+  ChevronUp, CheckCircle2, Clock, Zap, Upload,
 } from "lucide-react"
 
 // ── Contact reason cards ──────────────────────────────────
@@ -98,31 +98,46 @@ function ContactForm() {
   const [submitted, setSubmitted] = useState(false)
   const [sending, setSending] = useState(false)
   const [formError, setFormError] = useState("")
+  const [attachment, setAttachment] = useState<File | null>(null)
+  const fileRef = React.useRef<HTMLInputElement>(null)
   const fnameRef = React.useRef<HTMLInputElement>(null)
   const lnameRef = React.useRef<HTMLInputElement>(null)
   const emailRef = React.useRef<HTMLInputElement>(null)
   const orderRef = React.useRef<HTMLInputElement>(null)
   const msgRef   = React.useRef<HTMLTextAreaElement>(null)
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    if (file && file.size > 5 * 1024 * 1024) {
+      setFormError("Image must be smaller than 5 MB.")
+      return
+    }
+    setFormError("")
+    setAttachment(file)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSending(true)
     setFormError("")
     try {
-      await apiFetch("/contact/", {
-        method: "POST",
-        body: JSON.stringify({
-          reason: reason || "General Enquiry",
-          first_name: fnameRef.current?.value ?? "",
-          last_name: lnameRef.current?.value ?? "",
-          email: emailRef.current?.value ?? "",
-          order_number: orderRef.current?.value ?? "",
-          message: msgRef.current?.value ?? "",
-        }),
-      })
+      const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+      const form = new FormData()
+      form.append("reason", reason || "General Enquiry")
+      form.append("first_name", fnameRef.current?.value ?? "")
+      form.append("last_name", lnameRef.current?.value ?? "")
+      form.append("email", emailRef.current?.value ?? "")
+      form.append("order_number", orderRef.current?.value ?? "")
+      form.append("message", msgRef.current?.value ?? "")
+      if (attachment) form.append("attachment", attachment)
+      const res = await fetch(`${base}/contact/`, { method: "POST", body: form })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { detail?: string }
+        throw new Error(err.detail ?? "Failed to send.")
+      }
       setSubmitted(true)
-    } catch {
-      setFormError("Failed to send. Please try again.")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to send. Please try again.")
     } finally {
       setSending(false)
     }
@@ -227,6 +242,21 @@ function ContactForm() {
           placeholder="Tell us as much as you can — the more detail, the faster we can help."
           className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors resize-none"
         />
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">Attach Image <span className="font-normal normal-case tracking-normal">(optional, max 5 MB)</span></label>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => fileRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2.5 border border-dashed border-dp-border hover:border-dp-accent-cta/50 rounded-sm text-[12px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">
+            <Upload size={14} /> {attachment ? attachment.name : "Choose image…"}
+          </button>
+          {attachment && (
+            <button type="button" onClick={() => { setAttachment(null); if (fileRef.current) fileRef.current.value = "" }}
+              className="text-[11px] text-red-400 hover:text-red-500">Remove</button>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
       </div>
 
       {formError && <p className="text-[12px] text-dp-accent-cta">{formError}</p>}
