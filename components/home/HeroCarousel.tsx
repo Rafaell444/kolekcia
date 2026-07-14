@@ -178,6 +178,17 @@ export default function HeroCarousel(): React.ReactElement {
                   style={{ position: "relative", background: "var(--dp-bg-elevated)" }}
                   className="aspect-[4/3] sm:aspect-[16/9] lg:aspect-[16/7]"
                 >
+                  {/* Full-slide clickable overlay for active slide */}
+                  {active && s.cta_href && (
+                    <Link
+                      href={s.cta_href}
+                      aria-label={s.cta || "Shop Now"}
+                      draggable={false}
+                      onClick={(e) => { if (Math.abs(dragX) > 5) e.preventDefault() }}
+                      className="absolute inset-0 z-10"
+                    />
+                  )}
+
                   {isVideo && s.video_url ? (
                     <video
                       src={s.video_url}
@@ -207,7 +218,7 @@ export default function HeroCarousel(): React.ReactElement {
                   {/* Text content — only on the active slide */}
                   {active && (
                     <div
-                      className="absolute inset-0 flex flex-col justify-end p-4 sm:p-7 md:p-10 pointer-events-none"
+                      className="absolute inset-0 flex flex-col justify-end p-4 sm:p-7 md:p-10 pointer-events-none z-20"
                       key={current}
                       style={{ animation: "hcFadeUp 0.4s ease both" }}
                     >
@@ -231,13 +242,6 @@ export default function HeroCarousel(): React.ReactElement {
                           onClick={(e) => { if (Math.abs(dragX) > 5) e.preventDefault() }}
                         >
                           {s.cta || "Shop Now"}
-                        </Link>
-                        <Link
-                          href="/catalog"
-                          className="hidden sm:inline-flex items-center px-6 py-3 border border-white/30 hover:border-white/60 text-white text-[13px] font-semibold uppercase tracking-widest rounded-sm transition-colors backdrop-blur-sm"
-                          draggable={false}
-                        >
-                          Browse All
                         </Link>
                       </div>
                     </div>

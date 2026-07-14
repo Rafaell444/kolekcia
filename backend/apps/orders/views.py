@@ -88,6 +88,8 @@ class CartItemView(APIView):
                 size_variant = SizeVariant.objects.select_related("product").get(pk=size_variant_id, is_active=True)
             except SizeVariant.DoesNotExist:
                 return Response({"detail": "Size variant not found."}, status=status.HTTP_404_NOT_FOUND)
+            if size_variant.stock is not None and size_variant.stock < quantity:
+                return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
         elif variant_id:
             try:
                 variant = ProductVariant.objects.select_related("product").get(pk=variant_id)
@@ -224,22 +226,39 @@ class CheckoutView(APIView):
             return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Atomically lock and deduct stock
-        items_to_process = list(cart.items.select_related("variant"))
-        variant_ids = [item.variant_id for item in items_to_process]
+        items_to_process = list(cart.items.select_related("variant", "size_variant__product"))
+        variant_ids = [item.variant_id for item in items_to_process if item.variant_id]
+        size_variant_ids = [item.size_variant_id for item in items_to_process if item.size_variant_id]
         locked_variants = {
             v.pk: v for v in ProductVariant.objects.select_for_update().filter(pk__in=variant_ids)
         }
+        locked_size_variants = {
+            sv.pk: sv for sv in SizeVariant.objects.select_for_update().select_related("product").filter(pk__in=size_variant_ids)
+        }
 
         for item in items_to_process:
-            variant = locked_variants[item.variant_id]
-            if variant.stock < item.quantity:
-                return Response(
-                    {"detail": f"'{variant.product.title}' has insufficient stock."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            if item.variant_id:
+                variant = locked_variants.get(item.variant_id)
+                if variant and variant.stock < item.quantity:
+                    return Response(
+                        {"detail": f"'{variant.product.title}' has insufficient stock."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            elif item.size_variant_id:
+                sv = locked_size_variants.get(item.size_variant_id)
+                if sv and sv.stock is not None and sv.stock < item.quantity:
+                    return Response(
+                        {"detail": f"'{sv.product.title}' has insufficient stock."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
         for item in items_to_process:
-            ProductVariant.objects.filter(pk=item.variant_id).update(stock=F("stock") - item.quantity)
+            if item.variant_id:
+                ProductVariant.objects.filter(pk=item.variant_id).update(stock=F("stock") - item.quantity)
+            elif item.size_variant_id:
+                sv = locked_size_variants.get(item.size_variant_id)
+                if sv and sv.stock is not None:
+                    SizeVariant.objects.filter(pk=item.size_variant_id).update(stock=F("stock") - item.quantity)
 
         subtotal = cart.subtotal
         discount = Decimal("0")

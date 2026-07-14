@@ -1668,6 +1668,75 @@ class AdminVendorOpsView(APIView):
         return Response(VendorSerializer(vendor).data)
 
 
+# ── Vendor bulk sale ──────────────────────────────────────────────────────────
+
+class AdminVendorBulkSaleView(APIView):
+    """Apply a percentage sale to all active SizeVariants of a vendor's products."""
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, slug):
+        from apps.vendors.models import Vendor
+        from apps.products.models import SizeVariant, Product
+        from decimal import Decimal, ROUND_HALF_UP
+
+        try:
+            vendor = Vendor.objects.get(slug=slug)
+        except Vendor.DoesNotExist:
+            return Response({"detail": "Vendor not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        discount_pct = request.data.get("discount_pct")
+        currency = request.data.get("currency", "both")  # "GEL", "USD", or "both"
+
+        if discount_pct is None:
+            return Response({"detail": "discount_pct is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            pct = Decimal(str(discount_pct))
+            if pct <= 0 or pct >= 100:
+                raise ValueError
+        except (ValueError, Exception):
+            return Response({"detail": "discount_pct must be between 1 and 99."}, status=status.HTTP_400_BAD_REQUEST)
+
+        multiplier = (Decimal("100") - pct) / Decimal("100")
+
+        products = Product.objects.filter(vendor=vendor, status="active")
+        updated_count = 0
+        for product in products:
+            product.is_sale = True
+            product.save(update_fields=["is_sale"])
+            svs = SizeVariant.objects.filter(product=product, is_active=True)
+            for sv in svs:
+                if currency in ("USD", "both") and sv.price_usd:
+                    sv.sale_price_usd = (sv.price_usd * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if currency in ("GEL", "both") and sv.price_gel:
+                    sv.sale_price_gel = (sv.price_gel * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                sv.save(update_fields=["sale_price_usd", "sale_price_gel"])
+                updated_count += 1
+
+        log_action(request.user, "vendor_bulk_sale", "Vendor", vendor.pk, {
+            "vendor": vendor.name, "discount_pct": str(pct), "currency": currency,
+            "variants_updated": updated_count,
+        })
+        return Response({"detail": f"Sale applied to {updated_count} variants.", "variants_updated": updated_count})
+
+    def delete(self, request, slug):
+        """Remove sale from all vendor products."""
+        from apps.vendors.models import Vendor
+        from apps.products.models import SizeVariant, Product
+
+        try:
+            vendor = Vendor.objects.get(slug=slug)
+        except Vendor.DoesNotExist:
+            return Response({"detail": "Vendor not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        products = Product.objects.filter(vendor=vendor)
+        for product in products:
+            product.is_sale = False
+            product.save(update_fields=["is_sale"])
+            SizeVariant.objects.filter(product=product).update(sale_price_usd=None, sale_price_gel=None)
+
+        return Response({"detail": "Sale removed from all vendor products."})
+
+
 # ── Page sections CMS ─────────────────────────────────────────────────────────
 
 class AdminPageSectionListView(APIView):

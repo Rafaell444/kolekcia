@@ -81,7 +81,7 @@ class SizeVariantSerializer(serializers.ModelSerializer):
         fields = (
             "id", "label", "price_usd", "price_gel", "price_eur", "price_gbp",
             "sale_price_usd", "sale_price_gel",
-            "sort_order", "is_active", "image_ids", "images",
+            "sort_order", "is_active", "stock", "image_ids", "images",
         )
 
 
@@ -115,7 +115,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "vendor_slug", "vendor_name",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
             "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags",
-            "description", "material",
+            "description", "material", "processing_time_label",
             "default_variant_id", "default_size_variant_id", "size_variants",
         )
 
@@ -179,7 +179,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "vendor_id", "vendor_slug", "vendor_name", "images", "variants", "size_variants",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
             "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags",
-            "description", "material", "created_at",
+            "description", "material", "processing_time_label", "created_at",
             "category_slug_input", "categories_input", "artist_handle", "image_url", "vendor_slug_input",
         )
 

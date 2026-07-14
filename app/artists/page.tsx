@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Link from "next/link"
 import Image from "next/image"
-import { Palette, ArrowRight } from "lucide-react"
+import { Palette, ArrowRight, Search } from "lucide-react"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
 
 type VendorArtist = {
@@ -27,6 +27,7 @@ const SHOWCASE_SLUGS = new Set(["figures", "wallpanels"])
 export default function ArtistsPage() {
   const [vendors, setVendors] = useState<VendorArtist[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
 
   useEffect(() => {
     apiFetch<VendorArtist[] | PaginatedResponse<VendorArtist>>("/vendors/public/")
@@ -37,6 +38,10 @@ export default function ArtistsPage() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  const filtered = search.trim()
+    ? vendors.filter((v) => v.name.toLowerCase().includes(search.toLowerCase()))
+    : vendors
 
   return (
     <SiteShell>
@@ -50,20 +55,31 @@ export default function ArtistsPage() {
       </div>
 
       <div className="dp-container py-10 pb-20">
+        {/* Search */}
+        <div className="relative max-w-md mb-8">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search artists…"
+            className="w-full pl-9 pr-4 py-2.5 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover"
+          />
+        </div>
+
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
             {[1, 2].map((i) => (
               <div key={i} className="h-64 bg-dp-bg-elevated animate-pulse rounded-sm" />
             ))}
           </div>
-        ) : vendors.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="py-20 text-center">
             <Palette size={36} className="opacity-20 mx-auto mb-3" />
-            <p className="text-dp-text-tertiary">No artist studios available.</p>
+            <p className="text-dp-text-tertiary">{search ? "No artists match your search." : "No artist studios available."}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
-            {vendors.map((vendor) => {
+            {filtered.map((vendor) => {
               const category = vendor.catalog_category_slug
               const label = CATEGORY_LABELS[category] ?? category
               const href = `/catalog?category=${category}`

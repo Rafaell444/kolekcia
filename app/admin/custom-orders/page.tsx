@@ -5,7 +5,7 @@ import { adminFetch } from "@/lib/admin-auth"
 import { getAdminUser } from "@/lib/admin-auth"
 import {
   Package, Clock, CheckCircle, Truck, XCircle, Eye,
-  ChevronDown, Loader2,
+  ChevronDown, Loader2, X,
 } from "lucide-react"
 
 type CustomOrder = {
@@ -79,6 +79,70 @@ function StatusSelect({
       ) : (
         <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-dp-text-tertiary pointer-events-none" />
       )}
+    </div>
+  )
+}
+
+function ShipModal({
+  order,
+  onConfirm,
+  onClose,
+}: {
+  order: CustomOrder
+  onConfirm: (trackingCode: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [tracking, setTracking] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    await onConfirm(tracking)
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-sm bg-dp-bg-surface border border-dp-border rounded-sm shadow-lg">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border">
+          <div className="flex items-center gap-2">
+            <Truck size={16} className="text-dp-accent-cta" />
+            <h2 className="font-display text-lg text-dp-text-primary">Mark as Shipped</h2>
+          </div>
+          <button onClick={onClose} className="text-dp-text-tertiary hover:text-dp-text-primary transition-colors" aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+        <form onSubmit={(e) => void handleSubmit(e)} className="p-5 flex flex-col gap-4">
+          <p className="text-[13px] text-dp-text-secondary">
+            Custom order <strong className="text-dp-text-primary">{order.payment_ref}</strong> for{" "}
+            <strong className="text-dp-text-primary">{order.name}</strong> will be marked as shipped.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">
+              Tracking Number
+            </label>
+            <input
+              value={tracking}
+              onChange={(e) => setTracking(e.target.value)}
+              placeholder="e.g. GE123456789GE"
+              className="w-full px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+            />
+            <p className="text-[11px] text-dp-text-tertiary">Optional — will be saved on the custom order.</p>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 border border-dp-border rounded-sm text-[12px] font-semibold text-dp-text-secondary hover:bg-dp-bg-elevated transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50">
+              <Truck size={13} /> {saving ? "Shipping…" : "Confirm Shipped"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -366,6 +430,7 @@ export default function AdminCustomOrdersPage(): React.ReactElement {
   const [manageOrder, setManageOrder] = useState<CustomOrder | null>(null)
   const [manageMode, setManageMode] = useState<ManageMode>("default")
   const [cancelOrder, setCancelOrder] = useState<CustomOrder | null>(null)
+  const [shipOrder, setShipOrder] = useState<CustomOrder | null>(null)
 
   const adminUser = getAdminUser()
   const isVendor = !!adminUser?.vendor
@@ -403,6 +468,10 @@ export default function AdminCustomOrdersPage(): React.ReactElement {
     if (newStatus === "approved") {
       setManageMode("approve")
       setManageOrder(order)
+      return
+    }
+    if (newStatus === "shipped") {
+      setShipOrder(order)
       return
     }
     void updateStatus(order.id, newStatus)
@@ -530,6 +599,16 @@ export default function AdminCustomOrdersPage(): React.ReactElement {
           order={cancelOrder}
           onClose={() => setCancelOrder(null)}
           onSaved={handleOrderSaved}
+        />
+      )}
+      {shipOrder && (
+        <ShipModal
+          order={shipOrder}
+          onClose={() => setShipOrder(null)}
+          onConfirm={async (trackingCode) => {
+            await updateStatus(shipOrder.id, "shipped", { tracking_code: trackingCode })
+            setShipOrder(null)
+          }}
         />
       )}
     </div>

@@ -113,7 +113,7 @@ type ApiProduct = {
   vendor_slug?: string | null
   base_price: string; original_price: string | null
   regional_prices?: Record<string, { price?: string | number | null; original?: string | number | null }>
-  description?: string; material?: string
+  description?: string; material?: string; processing_time_label?: string
   rating: string; review_count: number
   is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean
   allow_custom_size?: boolean
@@ -313,6 +313,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   // New size variant system
   const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
   const hasSizeVariants = activeSizeVariants.length > 0
+  const isSoldOut = selectedSizeVariant
+    ? (selectedSizeVariant as unknown as { stock?: number | null }).stock === 0
+    : activeSizeVariants.length > 0 && activeSizeVariants.every((sv) => (sv as unknown as { stock?: number | null }).stock === 0)
 
   // Thumbnails always show the full product gallery
   const thumbMedia = (product.images ?? []).map((i) => ({
@@ -640,7 +643,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               {discount != null && discount > 0 && <span className="text-sm font-bold text-dp-accent-cta">Save {discount}%</span>}
             </div>
 
-            <p className="text-[14px] text-dp-text-secondary leading-relaxed">
+            <p className="text-[14px] text-dp-text-secondary leading-relaxed whitespace-pre-wrap">
               {product.description
                 ? product.description
                 : `A high-quality metal print featuring ${product.title} by ${product.artist_name}. Printed on durable, damage-resistant aluminium with vibrant, UV-stable inks. Comes with our tool-free magnetic mounting system — hang it in seconds, rearrange anytime.`}
@@ -783,11 +786,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             )}
 
             {/* Processing time — figure products only (fixed, no choice) */}
-            {isFigure && (
+            {(isFigure || product.processing_time_label) && (
               <div className="flex items-center gap-3 px-4 py-3 border border-dp-border rounded-sm bg-dp-bg-elevated/40">
                 <Clock size={15} className="text-dp-accent-cta shrink-0" />
                 <div>
-                  <p className="text-[13px] font-semibold text-dp-text-primary">Processing Time: 20–25 business days</p>
+                  <p className="text-[13px] font-semibold text-dp-text-primary">
+                    Processing Time: {product.processing_time_label || "20–25 business days"}
+                  </p>
                   <p className="text-[11px] text-dp-text-tertiary mt-0.5">Each figure is hand-crafted and made to order</p>
                 </div>
               </div>
@@ -883,19 +888,23 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 <button onClick={() => setQty((q) => q + 1)} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Increase quantity">+</button>
               </div>
               <button
-                onClick={() => { void handleAddToCart() }}
-                disabled={adding}
+                onClick={() => { if (!isSoldOut) void handleAddToCart() }}
+                disabled={adding || isSoldOut}
                   className={`flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-3 rounded-sm text-[11px] sm:text-[13px] font-black uppercase tracking-widest transition-colors disabled:opacity-60 ${
-                  added
-                    ? "bg-dp-success text-white"
-                    : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"
+                  isSoldOut
+                    ? "bg-dp-bg-elevated border border-dp-border text-dp-text-tertiary cursor-not-allowed"
+                    : added
+                      ? "bg-dp-success text-white"
+                      : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"
                 }`}
               >
-                {adding
+                {isSoldOut
+                    ? <span className="truncate">Sold Out</span>
+                  : adding
                     ? <><Loader2 size={16} className="animate-spin shrink-0" /> <span className="truncate">Adding…</span></>
-                  : added
-                      ? <><Check size={16} className="shrink-0" /> <span className="truncate">Added to Cart</span></>
-                      : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(price * qty)}</span></>}
+                    : added
+                        ? <><Check size={16} className="shrink-0" /> <span className="truncate">Added to Cart</span></>
+                        : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(price * qty)}</span></>}
               </button>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">

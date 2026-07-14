@@ -1,9 +1,17 @@
 "use client"
 
-import React, { useEffect, useState, useRef } from "react"
+import React, { useEffect, useState, useRef, useCallback } from "react"
 import Image from "next/image"
-import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus, ChevronUp, ChevronDown, Check } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus, GripVertical, Check, Crop } from "lucide-react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import ReactCrop, { type Crop as CropType } from "react-image-crop"
+import "react-image-crop/dist/ReactCrop.css"
 
 type SizeVariantItem = {
   id: number
@@ -64,7 +72,10 @@ type ProductDraft = {
   allowCustomSize: boolean
   description: string
   material: string
+  processingTimeLabel: string
 }
+
+type ProcessingOptionItem = { id: number; label: string; est_days_min: number; est_days_max: number }
 
 type CategoryOption = { id: number; name: string; slug: string }
 
@@ -113,11 +124,208 @@ const BLANK_DRAFT: ProductDraft = {
   status: "active",
   isLimited: false, isSale: false, isNew: true, isExclusive: false, isFeatured: false, isReadyToShip: false,
   allowCustomSize: false,
+  processingTimeLabel: "",
   description: "", material: "",
 }
 
 const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
 const LABEL_CLS = "block text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1"
+
+const ASPECT_OPTIONS = [
+  { label: "Square 1:1", aspect: 1, cls: "aspect-square" },
+  { label: "Portrait 3:4", aspect: 3 / 4, cls: "aspect-[3/4]" },
+  { label: "Landscape 16:9", aspect: 16 / 9, cls: "aspect-video" },
+]
+
+function ThumbnailEditorModal({
+  image,
+  onConfirm,
+  onClose,
+}: {
+  image: { id?: number; src: string }
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  const [crop, setCrop] = useState<CropType>({ unit: "%", x: 0, y: 0, width: 100, height: 100 })
+  const [activeAspect, setActiveAspect] = useState<number | undefined>(1)
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  const handleAspect = useCallback((asp: number | undefined) => {
+    setActiveAspect(asp)
+    // Reset crop to full image with chosen aspect ratio
+    setCrop({ unit: "%", x: 0, y: 0, width: 100, height: 100 })
+  }, [])
+
+  // Compute object-position CSS from crop for previews
+  const objPos = `${50 + (crop.x ?? 0) / 100 * 0}% ${50 + (crop.y ?? 0) / 100 * 0}%`
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 overflow-y-auto py-6 px-4" role="dialog" aria-modal="true">
+      <div className="max-w-3xl mx-auto bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dp-border sticky top-0 bg-dp-bg-surface z-10">
+          <div className="flex items-center gap-2">
+            <Crop size={16} className="text-dp-accent-cta" />
+            <h2 className="font-display text-xl text-dp-text-primary">Set Thumbnail</h2>
+          </div>
+          <button onClick={onClose} className="text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6 flex flex-col gap-6">
+          {/* Aspect ratio buttons */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Crop Aspect Ratio</p>
+            <div className="flex gap-2 flex-wrap">
+              <button type="button"
+                onClick={() => handleAspect(undefined)}
+                className={`px-3 py-1.5 border rounded-sm text-[11px] font-bold uppercase tracking-wide transition-colors ${
+                  activeAspect === undefined ? "border-dp-accent-cta text-dp-accent-cta bg-dp-accent-cta/10" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
+                }`}>
+                Free
+              </button>
+              {ASPECT_OPTIONS.map(({ label, aspect }) => (
+                <button key={label} type="button"
+                  onClick={() => handleAspect(aspect)}
+                  className={`px-3 py-1.5 border rounded-sm text-[11px] font-bold uppercase tracking-wide transition-colors ${
+                    activeAspect === aspect ? "border-dp-accent-cta text-dp-accent-cta bg-dp-accent-cta/10" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Crop area + previews */}
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Cropper */}
+            <div className="flex-1 min-w-0 max-w-xs mx-auto lg:mx-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Drag to select crop area</p>
+              <ReactCrop
+                crop={crop}
+                onChange={(c) => setCrop(c)}
+                aspect={activeAspect}
+                className="rounded-sm overflow-hidden border border-dp-border"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  ref={imgRef}
+                  src={image.src}
+                  alt="Thumbnail editor"
+                  className="max-w-full max-h-72 object-contain"
+                />
+              </ReactCrop>
+            </div>
+
+            {/* Previews */}
+            <div className="flex flex-col gap-4 shrink-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Previews</p>
+              {ASPECT_OPTIONS.map(({ label, cls }) => (
+                <div key={label} className="flex flex-col gap-1">
+                  <p className="text-[10px] text-dp-text-tertiary">{label}</p>
+                  <div className={`relative ${cls} w-28 rounded-sm overflow-hidden border border-dp-border bg-dp-bg-elevated shrink-0`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={image.src}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={{ objectPosition: objPos }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-[11px] text-dp-text-tertiary">
+            Confirming will move this image to the first position (thumbnail). The crop is a visual hint — the full image is still stored.
+          </p>
+
+          {/* Footer */}
+          <div className="flex gap-3 justify-end border-t border-dp-border pt-4">
+            <button type="button" onClick={onClose}
+              className="px-5 py-2.5 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors">
+              Cancel
+            </button>
+            <button type="button" onClick={onConfirm}
+              className="px-6 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
+              Set as Thumbnail
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SortableMediaItem({
+  item, index, total,
+  onDelete, onSetVariant, onSetThumbnail,
+}: {
+  item: { id?: number; src: string; media_type: string; name?: string }
+  index: number
+  total: number
+  onDelete: () => void
+  onSetVariant?: () => void
+  onSetThumbnail?: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.id ?? `item-${index}`,
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="relative group w-20 h-16 rounded-sm overflow-hidden border border-dp-border bg-dp-bg-elevated flex items-center justify-center shrink-0"
+    >
+      {item.media_type === "video" ? (
+        <>
+          <Play size={18} className="text-dp-text-tertiary" />
+          <span className="absolute bottom-0.5 left-0 right-0 text-center text-[8px] text-dp-text-tertiary">video</span>
+        </>
+      ) : (
+        item.src && <Image src={item.src} alt="" fill className="object-cover" sizes="80px" />
+      )}
+      <span className="absolute bottom-0.5 left-0.5 text-[7px] text-white bg-black/50 px-0.5 rounded">{index + 1}</span>
+      {/* Drag handle */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute top-0.5 left-0.5 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing p-0.5 bg-black/40 rounded transition-opacity z-10"
+        aria-label="Drag to reorder"
+      >
+        <GripVertical size={10} className="text-white" />
+      </div>
+      {/* Delete */}
+      {item.id && (
+        <button type="button" onClick={onDelete}
+          className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Delete">
+          <X size={8} className="text-white" />
+        </button>
+      )}
+      {/* Assign to variant */}
+      {onSetVariant && (
+        <button type="button" onClick={onSetVariant}
+          className="absolute bottom-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-dp-accent-cta rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Assign to variant">
+          <Check size={8} className="text-white" />
+        </button>
+      )}
+      {/* Set thumbnail */}
+      {onSetThumbnail && item.media_type !== "video" && (
+        <button type="button" onClick={onSetThumbnail}
+          className="absolute bottom-0.5 left-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-dp-bg-surface border border-dp-border rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Set thumbnail">
+          <Crop size={7} className="text-dp-text-secondary" />
+        </button>
+      )}
+    </div>
+  )
+}
 
 function ProductModal({
   onClose,
@@ -151,6 +359,7 @@ function ProductModal({
           allowCustomSize: editProduct.allow_custom_size ?? false,
           description: editProduct.description ?? "",
           material: editProduct.material ?? "",
+          processingTimeLabel: (editProduct as {processing_time_label?: string}).processing_time_label ?? "",
         }
       : BLANK_DRAFT
   )
@@ -162,6 +371,8 @@ function ProductModal({
   // Pending files to upload on save (new product or additional files)
   const [pendingFiles, setPendingFiles] = useState<{ file: File; preview: string; media_type: string }[]>([])
   const mediaInputRef = useRef<HTMLInputElement>(null)
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const [thumbnailEditorItem, setThumbnailEditorItem] = useState<{ id?: number; src: string } | null>(null)
 
   // Size variants - existing (saved) and pending (to be created on save)
   const [sizeVariants, setSizeVariants] = useState<SizeVariantItem[]>(editProduct?.size_variants ?? [])
@@ -179,6 +390,7 @@ function ProductModal({
 
   // Available tags (fetched from filter-options)
   const [availableTags, setAvailableTags] = useState<string[]>([])
+  const [processingOptions, setProcessingOptions] = useState<ProcessingOptionItem[]>([])
 
   const [saving, setSaving] = useState(false)
   const [savingStep, setSavingStep] = useState("")
@@ -208,6 +420,7 @@ function ProductModal({
           allowCustomSize: p.allow_custom_size ?? prev.allowCustomSize,
           description: p.description ?? prev.description,
           material: p.material ?? prev.material,
+          processingTimeLabel: (p as {processing_time_label?: string}).processing_time_label ?? prev.processingTimeLabel,
         }))
       })
       .catch(() => {})
@@ -224,6 +437,17 @@ function ProductModal({
     fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"}/products/filter-options/`)
       .then((r) => r.json())
       .then((d: { themes?: string[] }) => { if (Array.isArray(d.themes)) setAvailableTags(d.themes) })
+      .catch(() => {})
+    // Fetch processing time options
+    const vendorSlug = editProduct?.vendor_slug ?? ""
+    const ptUrl = vendorSlug
+      ? `/admin/processing-options/?vendor=${vendorSlug}`
+      : "/admin/processing-options/"
+    adminFetch<ProcessingOptionItem[] | { results?: ProcessingOptionItem[] }>(ptUrl)
+      .then((r) => {
+        const list = Array.isArray(r) ? r : (r as { results?: ProcessingOptionItem[] }).results ?? []
+        setProcessingOptions(list)
+      })
       .catch(() => {})
   }, [])
 
@@ -303,10 +527,12 @@ function ProductModal({
     const targetIndex = direction === "up" ? index - 1 : index + 1
     if (targetIndex < 0 || targetIndex >= newItems.length) return
     ;[newItems[index], newItems[targetIndex]] = [newItems[targetIndex], newItems[index]]
+    await applyMediaOrder(newItems)
+  }
+
+  async function applyMediaOrder(newItems: typeof mediaItems) {
     setMediaItems(newItems)
-    const payload = newItems
-      .filter((m) => m.id)
-      .map((m, i) => ({ id: m.id!, order: i }))
+    const payload = newItems.filter((m) => m.id).map((m, i) => ({ id: m.id!, order: i }))
     await adminFetch("/admin/products/media/reorder/", {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -392,6 +618,7 @@ function ProductModal({
         allow_custom_size: draft.allowCustomSize,
         description: draft.description,
         material: draft.material,
+        processing_time_label: draft.processingTimeLabel,
       }
 
       let saved: AdminProduct
@@ -467,10 +694,23 @@ function ProductModal({
   }
 
   const selectedCatSlugs = draft.categories.split(",").map((s) => s.trim()).filter(Boolean)
+  const [tagInput, setTagInput] = useState("")
+
+  function commitTagInput() {
+    const typed = tagInput.split(",").map((t) => t.trim()).filter(Boolean)
+    if (!typed.length) return
+    const existing = draft.tags.split(",").map((t) => t.trim()).filter(Boolean)
+    const merged = [...existing]
+    for (const t of typed) {
+      if (!merged.map((x) => x.toLowerCase()).includes(t.toLowerCase())) merged.push(t)
+    }
+    set("tags", merged.join(", "))
+    setTagInput("")
+  }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center overflow-y-auto py-4 px-2 sm:px-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-5xl bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-black/80 overflow-y-auto py-4 px-2 sm:px-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-5xl mx-auto bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-dp-border sticky top-0 bg-dp-bg-surface z-10">
@@ -493,14 +733,40 @@ function ProductModal({
 
               <div>
                 <label className={LABEL_CLS}>Description</label>
-                <textarea rows={4} value={draft.description} onChange={(e) => set("description", e.target.value)}
+                <textarea rows={10} value={draft.description} onChange={(e) => set("description", e.target.value)}
                   placeholder="Product description shown on the product page…"
-                  className={`${INPUT_CLS} resize-none`} />
+                  className={`${INPUT_CLS} resize-y`} />
               </div>
 
               <div>
                 <label className={LABEL_CLS}>Material</label>
                 <input value={draft.material} onChange={(e) => set("material", e.target.value)} placeholder="e.g. Aluminium + UV ink" className={INPUT_CLS} />
+              </div>
+
+              {/* Processing time */}
+              <div>
+                <label className={LABEL_CLS}>Processing Time</label>
+                {processingOptions.length > 0 ? (
+                  <select
+                    value={draft.processingTimeLabel}
+                    onChange={(e) => set("processingTimeLabel", e.target.value)}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">— No processing time —</option>
+                    {processingOptions.map((opt) => (
+                      <option key={opt.id} value={opt.label}>
+                        {opt.label} ({opt.est_days_min}–{opt.est_days_max} days)
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={draft.processingTimeLabel}
+                    onChange={(e) => set("processingTimeLabel", e.target.value)}
+                    placeholder="e.g. 20–35 business days"
+                    className={INPUT_CLS}
+                  />
+                )}
               </div>
 
               {/* Tags as pill selector */}
@@ -526,8 +792,25 @@ function ProductModal({
                     )
                   })}
                 </div>
-                <input value={draft.tags} onChange={(e) => set("tags", e.target.value)}
-                  placeholder="Or type custom tags, comma-separated…" className={INPUT_CLS} />
+                <div className="flex gap-2">
+                  <input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitTagInput() } }}
+                    onBlur={commitTagInput}
+                    placeholder="Type a tag and press Enter…"
+                    className={INPUT_CLS + " flex-1"}
+                  />
+                  {draft.tags && (
+                    <button type="button" onClick={() => set("tags", "")}
+                      className="px-3 py-2 border border-dp-border rounded-sm text-[11px] text-dp-text-tertiary hover:text-red-400 hover:border-red-400/50 transition-colors">
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {draft.tags && (
+                  <p className="text-[10px] text-dp-text-tertiary mt-1">Tags: {draft.tags}</p>
+                )}
               </div>
 
               {/* Flags */}
@@ -560,39 +843,38 @@ function ProductModal({
               {/* Media upload */}
               <div>
                 <label className={LABEL_CLS}>Images &amp; Videos</label>
-                {/* Saved media */}
+                {/* Saved media — drag to reorder */}
                 {mediaItems.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {mediaItems.map((m, i) => (
-                      <div key={m.id ?? i} className="relative group w-20 h-16 rounded-sm overflow-hidden border border-dp-border bg-dp-bg-elevated flex items-center justify-center shrink-0">
-                        {m.media_type === "video" ? (
-                          <>
-                            <Play size={18} className="text-dp-text-tertiary" />
-                            <span className="absolute bottom-0.5 left-0 right-0 text-center text-[8px] text-dp-text-tertiary">video</span>
-                          </>
-                        ) : (
-                          m.src && <Image src={m.src} alt="" fill className="object-cover" sizes="80px" />
-                        )}
-                        <span className="absolute bottom-0.5 left-0.5 text-[7px] text-white bg-black/50 px-0.5 rounded">{i + 1}</span>
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 flex flex-col transition-opacity">
-                          <button type="button" onClick={() => void handleMoveMedia(i, "up")} disabled={i === 0}
-                            className="flex-1 flex items-center justify-center bg-black/40 hover:bg-black/60 disabled:opacity-30" aria-label="Move up">
-                            <ChevronUp size={12} className="text-white" />
-                          </button>
-                          <button type="button" onClick={() => void handleMoveMedia(i, "down")} disabled={i === mediaItems.length - 1}
-                            className="flex-1 flex items-center justify-center bg-black/40 hover:bg-black/60 disabled:opacity-30" aria-label="Move down">
-                            <ChevronDown size={12} className="text-white" />
-                          </button>
-                        </div>
-                        {m.id && (
-                          <button type="button" onClick={() => void handleDeleteMedia(m.id!)}
-                            className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Delete">
-                            <X size={8} className="text-white" />
-                          </button>
-                        )}
+                  <DndContext
+                    sensors={dndSensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(event: DragEndEvent) => {
+                      const { active, over } = event
+                      if (!over || active.id === over.id) return
+                      const oldIdx = mediaItems.findIndex((m, i) => (m.id ?? `item-${i}`) === active.id)
+                      const newIdx = mediaItems.findIndex((m, i) => (m.id ?? `item-${i}`) === over.id)
+                      if (oldIdx === -1 || newIdx === -1) return
+                      void applyMediaOrder(arrayMove(mediaItems, oldIdx, newIdx))
+                    }}
+                  >
+                    <SortableContext
+                      items={mediaItems.map((m, i) => m.id ?? `item-${i}`)}
+                      strategy={rectSortingStrategy}
+                    >
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {mediaItems.map((m, i) => (
+                          <SortableMediaItem
+                            key={m.id ?? i}
+                            item={m}
+                            index={i}
+                            total={mediaItems.length}
+                            onDelete={() => m.id && void handleDeleteMedia(m.id)}
+                            onSetThumbnail={m.media_type !== "video" ? () => setThumbnailEditorItem({ id: m.id, src: m.src }) : undefined}
+                          />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </SortableContext>
+                  </DndContext>
                 )}
                 {/* Pending files */}
                 {pendingFiles.length > 0 && (
@@ -716,6 +998,7 @@ function ProductModal({
                         </>
                       )}
                       <th className="text-left px-3 py-2">Images</th>
+                      <th className="text-right px-3 py-2">Stock</th>
                       <th className="px-3 py-2 w-8" />
                     </tr>
                   </thead>
@@ -768,6 +1051,25 @@ function ProductModal({
                               </div>
                             )}
                           </div>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="∞"
+                            value={(sv as {stock?: number | null}).stock ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value === "" ? null : parseInt(e.target.value)
+                              setSizeVariants((prev) => prev.map((s) => s.id === sv.id ? { ...s, stock: val } as typeof s : s))
+                              if (sv.id) {
+                                void adminFetch(`/admin/size-variants/${sv.id}/`, {
+                                  method: "PATCH",
+                                  body: JSON.stringify({ stock: val }),
+                                }).catch(() => {})
+                              }
+                            }}
+                            className="w-16 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
+                          />
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button type="button" onClick={() => void handleDeleteSizeVariant(sv.id)}
@@ -891,6 +1193,21 @@ function ProductModal({
         </div>
       </div>
     </div>
+
+    {thumbnailEditorItem && (
+      <ThumbnailEditorModal
+        image={thumbnailEditorItem}
+        onClose={() => setThumbnailEditorItem(null)}
+        onConfirm={() => {
+          // Move this image to position 0
+          const idx = mediaItems.findIndex((m) => m.id === thumbnailEditorItem.id || m.src === thumbnailEditorItem.src)
+          if (idx > 0) {
+            void applyMediaOrder(arrayMove(mediaItems, idx, 0))
+          }
+          setThumbnailEditorItem(null)
+        }}
+      />
+    )}
   )
 }
 

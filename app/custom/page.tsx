@@ -192,12 +192,38 @@ function UploadStep({
   }
 
   const [formError, setFormError] = useState("")
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+
+  function fieldError(id: string, value: string, type: string): string {
+    if (!touched[id]) return ""
+    if ((id === "custom-email" || id === "custom-phone" || id === "custom-name") && !value.trim()) {
+      if (id === "custom-name")  return "Full name is required."
+      if (id === "custom-email") return "Email address is required."
+      if (id === "custom-phone") return "Phone number is required."
+    }
+    if (id === "custom-email" && value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      return "Enter a valid email address."
+    }
+    if (id === "custom-phone" && value.trim() && !/^[+\d][\d\s\-().]{6,}$/.test(value)) {
+      return "Enter a valid phone number (e.g. +995 555 000 000)."
+    }
+    return ""
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!preview || !imageFile) return
-    if (!email.trim()) { setFormError("Email is required."); return }
-    if (!phone.trim()) { setFormError("Phone number is required."); return }
+    // Mark all required fields as touched so errors show
+    setTouched({ "custom-name": true, "custom-email": true, "custom-phone": true })
+    if (!name.trim()) { setFormError("Please fill in all required fields."); return }
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFormError("Please enter a valid email address.")
+      return
+    }
+    if (!phone.trim() || !/^[+\d][\d\s\-().]{6,}$/.test(phone)) {
+      setFormError("Please enter a valid phone number.")
+      return
+    }
     setFormError("")
     onSubmit({ name, email, phone, note, imageFile })
   }
@@ -272,24 +298,43 @@ function UploadStep({
         {/* Contact details */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
-            { id: "custom-name",  label: "Full Name *",  type: "text",  value: name,  set: setName,  placeholder: "Your name",                        required: true },
-            { id: "custom-email", label: "Email *",      type: "email", value: email, set: setEmail, placeholder: "you@email.com",                    required: true },
-            { id: "custom-phone", label: "Phone *",      type: "tel",   value: phone, set: setPhone, placeholder: "+995 555 000 000",                  required: true },
+            { id: "custom-name",  label: "Full Name",  type: "text",  value: name,  set: setName,  placeholder: "Your name",               required: true },
+            { id: "custom-email", label: "Email",      type: "email", value: email, set: setEmail, placeholder: "you@email.com",           required: true },
+            { id: "custom-phone", label: "Phone",      type: "tel",   value: phone, set: setPhone, placeholder: "+995 555 000 000",        required: true },
             { id: "custom-note",  label: "Notes / requests", type: "text", value: note, set: setNote, placeholder: "Size, finish, special requests…", required: false },
-          ].map(({ id, label, type, value, set, placeholder, required }) => (
-            <div key={id} className="flex flex-col gap-1">
-              <label htmlFor={id} className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">{label}</label>
-              <input
-                id={id}
-                type={type}
-                required={required}
-                value={value}
-                onChange={(e) => set(e.target.value)}
-                placeholder={placeholder}
-                className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-accent-cta"
-              />
-            </div>
-          ))}
+          ].map(({ id, label, type, value, set, placeholder, required }) => {
+            const err = fieldError(id, value, type)
+            const hasError = !!err
+            return (
+              <div key={id} className="flex flex-col gap-1">
+                <label htmlFor={id} className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary flex items-center gap-1">
+                  {label}
+                  {required && <span className="text-red-500 font-black">*</span>}
+                </label>
+                <input
+                  id={id}
+                  type={type}
+                  required={required}
+                  value={value}
+                  onChange={(e) => { set(e.target.value); if (formError) setFormError("") }}
+                  onBlur={() => setTouched((t) => ({ ...t, [id]: true }))}
+                  placeholder={placeholder}
+                  aria-invalid={hasError}
+                  aria-describedby={hasError ? `${id}-error` : undefined}
+                  className={`px-3 py-2.5 bg-dp-bg-elevated border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none transition-colors ${
+                    hasError
+                      ? "border-red-500 focus:border-red-500 bg-red-500/5"
+                      : "border-dp-border focus:border-dp-accent-cta"
+                  }`}
+                />
+                {hasError && (
+                  <p id={`${id}-error`} className="text-[11px] text-red-500 font-medium flex items-center gap-1">
+                    <AlertCircle size={11} /> {err}
+                  </p>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         {/* How it works */}
@@ -307,7 +352,9 @@ function UploadStep({
         </div>
 
         {formError && (
-          <p className="text-[12px] text-red-500 font-semibold">{formError}</p>
+          <p className="text-[12px] text-red-500 font-semibold flex items-center gap-1.5">
+            <AlertCircle size={13} /> {formError}
+          </p>
         )}
         <button
           type="submit"

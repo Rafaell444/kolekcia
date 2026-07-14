@@ -134,104 +134,62 @@ function PriceRangeSlider({
   const step = absMax <= 100 ? 1 : absMax <= 500 ? 5 : 10
   const pct = (v: number) => absMax === absMin ? 0 : ((v - absMin) / (absMax - absMin)) * 100
   const sym = currency === "GEL" ? "₾" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "$"
-  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
-
-  // Local draft state so the number inputs feel responsive while typing
-  const [draftMin, setDraftMin] = useState(String(min))
-  const [draftMax, setDraftMax] = useState(String(max))
-
-  // Keep drafts in sync when sliders move
-  useEffect(() => { setDraftMin(String(min)) }, [min])
-  useEffect(() => { setDraftMax(String(max)) }, [max])
-
-  const commitMin = () => {
-    const v = clamp(Number(draftMin) || absMin, absMin, max)
-    setDraftMin(String(v))
-    onChange(v, max)
-  }
-  const commitMax = () => {
-    const v = clamp(Number(draftMax) || absMax, min, absMax)
-    setDraftMax(String(v))
-    onChange(min, v)
-  }
 
   const fillLeft  = pct(min)
   const fillWidth = pct(max) - pct(min)
 
   return (
     <div className="px-1">
-      {/* Selected range badge */}
-      <div className="flex items-center justify-center gap-1.5 mb-4 bg-dp-bg-elevated rounded px-3 py-2">
-        <span className="text-[11px] text-dp-text-tertiary">{sym}</span>
-        <input
-          type="number"
-          min={absMin} max={max} step={step}
-          value={draftMin}
-          onChange={(e) => setDraftMin(e.target.value)}
-          onBlur={commitMin}
-          onKeyDown={(e) => e.key === "Enter" && commitMin()}
-          className="w-12 text-[13px] font-bold text-dp-text-primary bg-transparent focus:outline-none text-center"
-          aria-label="Minimum price"
-        />
-        <span className="text-dp-text-tertiary text-[11px]">—</span>
-        <span className="text-[11px] text-dp-text-tertiary">{sym}</span>
-        <input
-          type="number"
-          min={min} max={absMax} step={step}
-          value={draftMax}
-          onChange={(e) => setDraftMax(e.target.value)}
-          onBlur={commitMax}
-          onKeyDown={(e) => e.key === "Enter" && commitMax()}
-          className="w-12 text-[13px] font-bold text-dp-text-primary bg-transparent focus:outline-none text-center"
-          aria-label="Maximum price"
-        />
+      {/* Range label */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[13px] font-bold text-dp-text-primary">{sym}{min}</span>
+        <span className="text-[11px] text-dp-text-tertiary">–</span>
+        <span className="text-[13px] font-bold text-dp-text-primary">{sym}{max}</span>
       </div>
 
-      {/* Shared visual track — sits between the two sliders */}
-      <div className="relative h-1.5 bg-dp-bg-elevated rounded-full mx-0.5 mb-4">
+      {/* Single track with dual handles */}
+      <div className="relative h-5 flex items-center">
+        {/* Track background */}
+        <div className="absolute inset-x-0 h-1.5 bg-dp-bg-elevated rounded-full" />
+        {/* Filled range */}
         <div
-          className="absolute h-full bg-dp-accent-cta rounded-full transition-all duration-75"
+          className="absolute h-1.5 bg-dp-accent-cta rounded-full pointer-events-none"
           style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
         />
-      </div>
-
-      {/* Min slider */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] text-dp-text-tertiary uppercase tracking-wide">From</span>
-          <span className="text-[11px] font-semibold text-dp-text-primary">{sym}{min}</span>
-        </div>
+        {/* Min handle */}
         <input
           type="range"
           min={absMin} max={absMax} step={step}
           value={min}
           onChange={(e) => {
             const v = Number(e.target.value)
-            onChange(v, Math.max(v, max))
+            if (v <= max) onChange(v, max)
           }}
-          className="w-full h-1.5 rounded-full appearance-none bg-transparent cursor-pointer accent-dp-accent-cta"
-          style={{ accentColor: "var(--dp-accent-cta, #6366f1)" }}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          style={{ zIndex: min > absMax - (absMax - absMin) * 0.1 ? 5 : 3 }}
           aria-label={`Min price: ${sym}${min}`}
         />
-      </div>
-
-      {/* Max slider */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] text-dp-text-tertiary uppercase tracking-wide">To</span>
-          <span className="text-[11px] font-semibold text-dp-text-primary">{sym}{max}</span>
-        </div>
+        {/* Max handle */}
         <input
           type="range"
           min={absMin} max={absMax} step={step}
           value={max}
           onChange={(e) => {
             const v = Number(e.target.value)
-            onChange(Math.min(min, v), v)
+            if (v >= min) onChange(min, v)
           }}
-          className="w-full h-1.5 rounded-full appearance-none bg-transparent cursor-pointer accent-dp-accent-cta"
-          style={{ accentColor: "var(--dp-accent-cta, #6366f1)" }}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          style={{ zIndex: 4 }}
           aria-label={`Max price: ${sym}${max}`}
+        />
+        {/* Visual handle dots */}
+        <div
+          className="absolute w-4 h-4 rounded-full bg-dp-accent-cta border-2 border-white shadow pointer-events-none -translate-x-1/2"
+          style={{ left: `${fillLeft}%`, zIndex: 6 }}
+        />
+        <div
+          className="absolute w-4 h-4 rounded-full bg-dp-accent-cta border-2 border-white shadow pointer-events-none -translate-x-1/2"
+          style={{ left: `${fillLeft + fillWidth}%`, zIndex: 6 }}
         />
       </div>
 
@@ -793,6 +751,7 @@ function CatalogPageInner(): React.ReactElement {
                     defaultSizeVariantId: p.default_size_variant_id ?? p.size_variants?.find((sv) => sv.is_active !== false)?.id ?? null,
                     priceIsLocalized: true,
                     hasMultipleVariants: activeVariants.length > 1,
+                    isSoldOut: activeVariants.length > 0 && activeVariants.every((sv) => (sv as {stock?: number | null}).stock === 0),
                   }} />
                 )})}
               </div>

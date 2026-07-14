@@ -35,6 +35,7 @@ export type ProductCardProps = {
     defaultSizeVariantId?: number | null
     priceIsLocalized?: boolean
     hasMultipleVariants?: boolean
+    isSoldOut?: boolean
   }
 }
 
@@ -144,12 +145,18 @@ export default function ProductCard({ product: p }: ProductCardProps) {
 
         {/* Badges */}
         <div className="absolute top-2 left-2 flex flex-col gap-1" aria-label="Product badges">
-          {p.isNew       && <span className="badge-sale">New</span>}
-          {p.isExclusive && <span className="badge-limited">Exclusive</span>}
-          {p.isSale && discountPct && (
-            <span className="badge-sale">-{discountPct}%</span>
+          {p.isSoldOut ? (
+            <span className="badge-limited">Sold Out</span>
+          ) : (
+            <>
+              {p.isNew       && <span className="badge-sale">New</span>}
+              {p.isExclusive && <span className="badge-limited">Exclusive</span>}
+              {p.isSale && discountPct && (
+                <span className="badge-sale">-{discountPct}%</span>
+              )}
+              {p.isLimited   && <span className="badge-limited">Limited</span>}
+            </>
           )}
-          {p.isLimited   && <span className="badge-limited">Limited</span>}
         </div>
 
         {/* Wishlist button */}
