@@ -709,6 +709,7 @@ function ProductModal({
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 bg-black/80 overflow-y-auto py-4 px-2 sm:px-4" role="dialog" aria-modal="true">
       <div className="w-full max-w-5xl mx-auto bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl">
 
@@ -1199,7 +1200,6 @@ function ProductModal({
         image={thumbnailEditorItem}
         onClose={() => setThumbnailEditorItem(null)}
         onConfirm={() => {
-          // Move this image to position 0
           const idx = mediaItems.findIndex((m) => m.id === thumbnailEditorItem.id || m.src === thumbnailEditorItem.src)
           if (idx > 0) {
             void applyMediaOrder(arrayMove(mediaItems, idx, 0))
@@ -1208,6 +1208,7 @@ function ProductModal({
         }}
       />
     )}
+    </>
   )
 }
 
