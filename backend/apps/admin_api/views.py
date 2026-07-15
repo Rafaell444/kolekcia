@@ -1265,6 +1265,8 @@ class AdminProcessingOptionListView(APIView):
         from apps.orders.models import ProcessingOption
         from apps.orders.serializers import ProcessingOptionSerializer
         from apps.vendors.models import Vendor
+        from django.utils.text import slugify
+        import uuid
         data = request.data.copy()
         vendor = self._vendor_from_request(request)
         slug = data.pop("vendor_slug", None)
@@ -1272,6 +1274,10 @@ class AdminProcessingOptionListView(APIView):
             vendor = Vendor.objects.filter(slug=slug).first()
         if vendor and "vendor" not in data:
             data["vendor"] = vendor.id
+        # Auto-generate slug from label if not provided
+        if "slug" not in data or not data["slug"]:
+            base = slugify(data.get("label", "option"))
+            data["slug"] = base or str(uuid.uuid4())[:8]
         ser = ProcessingOptionSerializer(data=data)
         ser.is_valid(raise_exception=True)
         opt = ser.save()

@@ -130,36 +130,45 @@ const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border ro
 const LABEL_CLS = "block text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1"
 
 // ─── Etsy-style Thumbnail Editor ─────────────────────────────────
+// Product card uses aspect-poster = 1/1.4 (width:height). We use the same ratio
+// for the editor viewport and for canvas export so what you see is what you get.
+const POSTER_W = 5
+const POSTER_H = 7 // 1 : 1.4
+
 function ThumbnailEditorModal({
   image,
-  onConfirm,
+  productId,
+  onApply,
   onClose,
 }: {
   image: { id?: number; src: string }
-  onConfirm: () => void
+  productId?: number
+  onApply: (newImageId?: number) => void
   onClose: () => void
 }) {
-  const VIEWPORT = 320
+  const VP_W = 280
+  const VP_H = Math.round(VP_W * POSTER_H / POSTER_W) // ~392 — matches product card ratio
+
   const [zoom, setZoom] = useState(1)
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
+  const [applying, setApplying] = useState(false)
   const isDragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
 
-  function clamp(val: number, min: number, max: number) {
-    return Math.min(Math.max(val, min), max)
-  }
+  function clamp(val: number, lo: number, hi: number) { return Math.min(Math.max(val, lo), hi) }
 
-  function getMaxOffset(z: number) {
-    const maxX = ((z - 1) * VIEWPORT) / 2 / z
-    const maxY = ((z - 1) * VIEWPORT) / 2 / z
-    return { maxX, maxY }
+  function maxOffset(z: number) {
+    return {
+      maxX: ((z - 1) * VP_W) / 2 / z,
+      maxY: ((z - 1) * VP_H) / 2 / z,
+    }
   }
 
   function applyZoom(z: number) {
-    const clamped = clamp(z, 1, 3)
-    const { maxX, maxY } = getMaxOffset(clamped)
-    setZoom(clamped)
+    const cz = clamp(z, 1, 3)
+    const { maxX, maxY } = maxOffset(cz)
+    setZoom(cz)
     setOffsetX((prev) => clamp(prev, -maxX, maxX))
     setOffsetY((prev) => clamp(prev, -maxY, maxY))
   }
@@ -174,13 +183,78 @@ function ThumbnailEditorModal({
     if (!isDragging.current) return
     const dx = (e.clientX - dragStart.current.x) / zoom
     const dy = (e.clientY - dragStart.current.y) / zoom
-    const { maxX, maxY } = getMaxOffset(zoom)
+    const { maxX, maxY } = maxOffset(zoom)
     setOffsetX(clamp(dragStart.current.ox + dx, -maxX, maxX))
     setOffsetY(clamp(dragStart.current.oy + dy, -maxY, maxY))
   }
 
-  function onPointerUp() {
-    isDragging.current = false
+  function onPointerUp() { isDragging.current = false }
+
+  // Export the current view to a canvas at high resolution (5× the viewport)
+  async function exportToBlob(): Promise<Blob> {
+    const SCALE = 5
+    const cW = VP_W * SCALE
+    const cH = VP_H * SCALE
+    const canvas = document.createElement("canvas")
+    canvas.width = cW
+    canvas.height = cH
+    const ctx = canvas.getContext("2d")!
+    const img = new window.Image()
+    img.crossOrigin = "anonymous"
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res()
+      img.onerror = () => rej(new Error("Image load failed"))
+      img.src = image.src
+    })
+    ctx.save()
+    ctx.translate(cW / 2, cH / 2)
+    ctx.scale(zoom, zoom)
+    ctx.translate(offsetX * SCALE, offsetY * SCALE)
+    // Draw image centred, covering the entire canvas
+    const imgAspect = img.naturalWidth / img.naturalHeight
+    const canvasAspect = cW / cH
+    let dw: number, dh: number
+    if (imgAspect > canvasAspect) {
+      dh = cH / zoom; dw = dh * imgAspect
+    } else {
+      dw = cW / zoom; dh = dw / imgAspect
+    }
+    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh)
+    ctx.restore()
+    return new Promise((res, rej) => {
+      canvas.toBlob((b) => b ? res(b) : rej(new Error("Canvas export failed")), "image/jpeg", 0.92)
+    })
+  }
+
+  async function handleApply() {
+    setApplying(true)
+    try {
+      const blob = await exportToBlob()
+      // If we have a product ID, upload the cropped image
+      if (productId) {
+        const token = typeof window !== "undefined" ? localStorage.getItem("adm_access") : null
+        const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+        const form = new FormData()
+        form.append("product_id", String(productId))
+        form.append("file", blob, "thumbnail.jpg")
+        form.append("media_type", "image")
+        const resp = await fetch(`${base}/admin/products/media/`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: form,
+        })
+        if (resp.ok) {
+          const data = await resp.json() as { id?: number }
+          onApply(data.id)
+          return
+        }
+      }
+      onApply(undefined)
+    } catch {
+      onApply(undefined)
+    } finally {
+      setApplying(false)
+    }
   }
 
   const imgStyle: React.CSSProperties = {
@@ -194,33 +268,26 @@ function ThumbnailEditorModal({
     display: "block",
   }
 
-  // Preview cards
-  const PreviewCard = ({ label, aspectClass, landscape }: { label: string; aspectClass: string; landscape?: boolean }) => (
-    <div className={`flex flex-col gap-1 ${landscape ? "w-full" : "w-28"}`}>
-      <p className="text-[10px] text-dp-text-tertiary font-semibold">{label}</p>
-      {landscape ? (
-        <div className="flex gap-2 p-2 bg-[#f4f4f4] rounded-sm border border-dp-border">
-          <div className="w-24 aspect-[4/3] overflow-hidden rounded-sm shrink-0">
+  // Small preview card using the exact product card ratio
+  const PreviewCard = ({ size }: { size: "lg" | "sm" }) => {
+    const w = size === "lg" ? "w-40" : "w-24"
+    return (
+      <div className={`flex flex-col gap-1.5 ${w} shrink-0`}>
+        <p className="text-[10px] text-dp-text-tertiary">{size === "lg" ? "Product card" : "Small"}</p>
+        <div className="bg-[#f4f4f4] rounded-sm border border-dp-border p-1.5">
+          {/* aspect-poster = 1/1.4 */}
+          <div className="overflow-hidden rounded-sm" style={{ aspectRatio: `${POSTER_W} / ${POSTER_H}` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={image.src} alt="" style={imgStyle} />
           </div>
-          <div className="flex flex-col gap-1.5 justify-center flex-1">
-            <div className="h-2 bg-dp-border rounded-sm w-3/4" />
-            <div className="h-2 bg-dp-border rounded-sm w-1/2" />
+          <div className="mt-1.5 space-y-1">
+            <div className="h-1.5 bg-dp-border rounded-sm w-3/4" />
+            <div className="h-1.5 bg-dp-border rounded-sm w-1/2" />
           </div>
         </div>
-      ) : (
-        <div className="flex flex-col gap-1.5 p-2 bg-[#f4f4f4] rounded-sm border border-dp-border">
-          <div className={`${aspectClass} overflow-hidden rounded-sm`}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image.src} alt="" style={imgStyle} />
-          </div>
-          <div className="h-2 bg-dp-border rounded-sm w-3/4" />
-          <div className="h-2 bg-dp-border rounded-sm w-1/2" />
-        </div>
-      )}
-    </div>
-  )
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/80 overflow-y-auto py-6 px-4" role="dialog" aria-modal="true">
@@ -236,14 +303,13 @@ function ThumbnailEditorModal({
           </button>
         </div>
 
-        <div className="p-6 flex flex-col lg:flex-row gap-6">
-          {/* Left — editor viewport */}
+        <div className="p-6 flex flex-col lg:flex-row gap-6 items-start">
+          {/* Left — editor viewport (product card ratio) */}
           <div className="shrink-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Drag to adjust</p>
-            {/* Viewport */}
+            <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Drag to adjust · Product card view</p>
             <div
               className="overflow-hidden rounded-sm border border-dp-border cursor-grab active:cursor-grabbing select-none"
-              style={{ width: VIEWPORT, height: VIEWPORT }}
+              style={{ width: VP_W, height: VP_H }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -252,49 +318,40 @@ function ThumbnailEditorModal({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={image.src} alt="Thumbnail editor" style={imgStyle} draggable={false} />
             </div>
-
             {/* Zoom slider */}
             <div className="flex items-center gap-2 mt-3">
               <button type="button" onClick={() => applyZoom(zoom - 0.1)}
-                className="w-6 h-6 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-secondary hover:border-dp-border-hover text-lg leading-none">
-                −
-              </button>
-              <input
-                type="range" min={1} max={3} step={0.01}
-                value={zoom}
-                onChange={(e) => applyZoom(parseFloat(e.target.value))}
-                className="flex-1"
-              />
+                className="w-6 h-6 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-secondary hover:border-dp-border-hover text-lg leading-none">−</button>
+              <input type="range" min={1} max={3} step={0.01} value={zoom}
+                onChange={(e) => applyZoom(parseFloat(e.target.value))} className="flex-1" />
               <button type="button" onClick={() => applyZoom(zoom + 0.1)}
-                className="w-6 h-6 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-secondary hover:border-dp-border-hover text-lg leading-none">
-                +
-              </button>
+                className="w-6 h-6 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-secondary hover:border-dp-border-hover text-lg leading-none">+</button>
             </div>
             <p className="text-[10px] text-dp-text-tertiary text-center mt-1">{Math.round(zoom * 100)}%</p>
           </div>
 
-          {/* Right — previews */}
+          {/* Right — previews at various card sizes */}
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-3">What buyers will see</p>
-            <div className="flex flex-wrap gap-4">
-              <PreviewCard label="Square" aspectClass="aspect-square" />
-              <PreviewCard label="Portrait" aspectClass="aspect-[4/5]" />
+            <div className="flex flex-wrap gap-4 items-start">
+              <PreviewCard size="lg" />
+              <PreviewCard size="sm" />
             </div>
-            <div className="mt-4">
-              <PreviewCard label="Landscape" aspectClass="aspect-[4/3]" landscape />
-            </div>
+            <p className="text-[11px] text-dp-text-tertiary mt-4">
+              The cropped image will be uploaded and set as the first (thumbnail) image. The original is kept.
+            </p>
           </div>
         </div>
 
         {/* Footer */}
         <div className="flex gap-3 justify-end px-6 py-4 border-t border-dp-border">
-          <button type="button" onClick={onClose}
-            className="px-5 py-2.5 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors">
+          <button type="button" onClick={onClose} disabled={applying}
+            className="px-5 py-2.5 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button type="button" onClick={onConfirm}
-            className="px-6 py-2.5 bg-dp-text-primary hover:opacity-80 text-dp-bg-surface text-[11px] font-bold uppercase tracking-widest rounded-sm transition-opacity">
-            Apply
+          <button type="button" onClick={() => void handleApply()} disabled={applying}
+            className="px-6 py-2.5 bg-dp-text-primary hover:opacity-80 disabled:opacity-50 text-dp-bg-surface text-[11px] font-bold uppercase tracking-widest rounded-sm transition-opacity">
+            {applying ? "Saving…" : "Apply"}
           </button>
         </div>
       </div>
@@ -1419,11 +1476,32 @@ function ProductModal({
     {thumbnailEditorItem && (
       <ThumbnailEditorModal
         image={thumbnailEditorItem}
+        productId={editProduct?.id}
         onClose={() => setThumbnailEditorItem(null)}
-        onConfirm={() => {
-          const idx = mediaItems.findIndex((m) => m.id === thumbnailEditorItem.id || m.src === thumbnailEditorItem.src)
-          if (idx > 0) {
-            void applyMediaOrder(arrayMove(mediaItems, idx, 0))
+        onApply={async (newImageId) => {
+          if (newImageId) {
+            // New cropped image uploaded — add it to the list and move to position 0
+            const newItem = { id: newImageId, src: "", media_type: "image" }
+            // Reload the product images to get the new item's src
+            try {
+              const detailBase2 = endpoint.endsWith("/") ? endpoint : endpoint + "/"
+              const refreshed = await adminFetch<AdminProduct>(`${detailBase2}${editProduct!.id}/`)
+              const newImg = refreshed.images?.find((i) => i.id === newImageId)
+              if (newImg) {
+                const updatedItems = [
+                  { id: newImg.id, src: newImg.src ?? newImg.url, media_type: "image" },
+                  ...mediaItems,
+                ]
+                await applyMediaOrder(updatedItems)
+              }
+            } catch {
+              // fallback: just prepend a placeholder
+              await applyMediaOrder([newItem, ...mediaItems])
+            }
+          } else {
+            // No upload (no productId yet) — just move existing image to position 0
+            const idx = mediaItems.findIndex((m) => m.id === thumbnailEditorItem.id || m.src === thumbnailEditorItem.src)
+            if (idx > 0) await applyMediaOrder(arrayMove(mediaItems, idx, 0))
           }
           setThumbnailEditorItem(null)
         }}
