@@ -12,3 +12,6 @@ DATABASES = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Disable rate throttling in local dev so 429s don't appear during development
+REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []  # type: ignore[index]

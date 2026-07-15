@@ -124,11 +124,12 @@ function FilterGroup({ title, children }: { title: string; children: React.React
 
 // ─── Price range slider ────────────────────────────────────
 function PriceRangeSlider({
-  absMin, absMax, min, max, currency,
+  absMin, absMax, min, max, currency, rate,
   onChange,
 }: {
   absMin: number; absMax: number; min: number; max: number
   currency: string
+  rate: number
   onChange: (min: number, max: number) => void
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
@@ -175,7 +176,9 @@ function PriceRangeSlider({
   const leftPct  = valueToPct(min)
   const rightPct = valueToPct(max)
 
-  function fmt(v: number) {
+  // Display values are in local currency (USD × rate)
+  function fmt(usd: number) {
+    const v = Math.round(usd * rate)
     return v >= 1000 ? `${sym}${(v / 1000).toFixed(1)}k` : `${sym}${v}`
   }
 
@@ -241,6 +244,7 @@ function FilterSidebar({
   filterOptions,
   hideCategoryFilter = false,
   currency,
+  rate = 1,
   filterVisibility = DEFAULT_FILTER_VISIBILITY,
 }: {
   filters: Filters
@@ -250,6 +254,7 @@ function FilterSidebar({
   filterOptions: FilterOptions | null
   hideCategoryFilter?: boolean
   currency: string
+  rate?: number
   filterVisibility?: FilterVisibility
 }) {
   const toggleArr = (key: "categories" | "materials" | "sizes" | "themes" | "artistHandles", value: string) => {
@@ -335,6 +340,7 @@ function FilterSidebar({
             min={Math.max(filters.priceMin, absMin)}
             max={Math.min(filters.priceMax < 999 ? filters.priceMax : absMax, absMax)}
             currency={currency}
+            rate={rate}
             onChange={(lo, hi) => onChange({ ...filters, priceMin: lo, priceMax: hi })}
           />
         </FilterGroup>
@@ -734,6 +740,7 @@ function CatalogPageInner(): React.ReactElement {
               filterOptions={filterOptions}
               hideCategoryFilter={hideCategoryFilter}
               currency={currency}
+              rate={rates[currency as keyof typeof rates] ?? 1}
               filterVisibility={filterVisibility}
             />
           </div>
@@ -909,6 +916,7 @@ function CatalogPageInner(): React.ReactElement {
                 filterOptions={filterOptions}
                 hideCategoryFilter={hideCategoryFilter}
                 currency={currency}
+                rate={rates[currency as keyof typeof rates] ?? 1}
                 filterVisibility={filterVisibility}
               />
             </div>
