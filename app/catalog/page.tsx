@@ -131,73 +131,95 @@ function PriceRangeSlider({
   currency: string
   onChange: (min: number, max: number) => void
 }) {
-  const range = absMax - absMin
-  const step = range <= 100 ? 1 : range <= 1000 ? 5 : range <= 10000 ? 10 : Math.max(50, Math.round(range / 200))
-  const pct = (v: number) => absMax === absMin ? 0 : ((v - absMin) / (absMax - absMin)) * 100
+  const trackRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef<"min" | "max" | null>(null)
   const sym = currency === "GEL" ? "₾" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "$"
+  const range = absMax - absMin
 
-  const fillLeft  = pct(min)
-  const fillWidth = pct(max) - pct(min)
+  function valueToPct(v: number) {
+    return range === 0 ? 0 : ((v - absMin) / range) * 100
+  }
+
+  function pctToValue(pct: number): number {
+    const clamped = Math.max(0, Math.min(100, pct))
+    const raw = absMin + (range * clamped) / 100
+    const step = range <= 100 ? 1 : range <= 1000 ? 5 : range <= 10000 ? 10 : Math.max(50, Math.round(range / 200))
+    return Math.round(raw / step) * step
+  }
+
+  function getPct(e: React.PointerEvent<HTMLDivElement> | PointerEvent): number {
+    const rect = trackRef.current!.getBoundingClientRect()
+    return ((e.clientX - rect.left) / rect.width) * 100
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const v = pctToValue(getPct(e))
+    // pick the thumb closest to click position
+    dragging.current = Math.abs(v - min) <= Math.abs(v - max) ? "min" : "max"
+    move(v)
+  }
+
+  function move(v: number) {
+    if (dragging.current === "min") onChange(Math.min(v, max), max)
+    else if (dragging.current === "max") onChange(min, Math.max(v, min))
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragging.current) return
+    move(pctToValue(getPct(e)))
+  }
+
+  function onPointerUp() { dragging.current = null }
+
+  const leftPct  = valueToPct(min)
+  const rightPct = valueToPct(max)
+
+  function fmt(v: number) {
+    return v >= 1000 ? `${sym}${(v / 1000).toFixed(1)}k` : `${sym}${v}`
+  }
 
   return (
-    <div className="px-1">
+    <div className="px-1 select-none">
       {/* Range label */}
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[13px] font-bold text-dp-text-primary">{sym}{min}</span>
+        <span className="text-[13px] font-bold text-dp-text-primary">{fmt(min)}</span>
         <span className="text-[11px] text-dp-text-tertiary">–</span>
-        <span className="text-[13px] font-bold text-dp-text-primary">{sym}{max}</span>
+        <span className="text-[13px] font-bold text-dp-text-primary">{fmt(max)}</span>
       </div>
 
-      {/* Single track with dual handles */}
-      <div className="relative h-5 flex items-center">
+      {/* Track */}
+      <div
+        ref={trackRef}
+        className="relative h-6 flex items-center cursor-pointer touch-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
         {/* Track background */}
         <div className="absolute inset-x-0 h-1.5 bg-dp-bg-elevated rounded-full" />
-        {/* Filled range */}
+        {/* Active range fill */}
         <div
-          className="absolute h-1.5 bg-dp-accent-cta rounded-full pointer-events-none"
-          style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
+          className="absolute h-1.5 bg-dp-accent-cta rounded-full"
+          style={{ left: `${leftPct}%`, width: `${rightPct - leftPct}%` }}
         />
-        {/* Min handle */}
-        <input
-          type="range"
-          min={absMin} max={absMax} step={step}
-          value={min}
-          onChange={(e) => {
-            const v = Number(e.target.value)
-            if (v <= max) onChange(v, max)
-          }}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          style={{ zIndex: min > absMax - (absMax - absMin) * 0.1 ? 5 : 3 }}
-          aria-label={`Min price: ${sym}${min}`}
-        />
-        {/* Max handle */}
-        <input
-          type="range"
-          min={absMin} max={absMax} step={step}
-          value={max}
-          onChange={(e) => {
-            const v = Number(e.target.value)
-            if (v >= min) onChange(min, v)
-          }}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          style={{ zIndex: 4 }}
-          aria-label={`Max price: ${sym}${max}`}
-        />
-        {/* Visual handle dots */}
+        {/* Min thumb */}
         <div
-          className="absolute w-4 h-4 rounded-full bg-dp-accent-cta border-2 border-white shadow pointer-events-none -translate-x-1/2"
-          style={{ left: `${fillLeft}%`, zIndex: 6 }}
+          className="absolute w-4 h-4 rounded-full bg-dp-accent-cta border-2 border-white shadow -translate-x-1/2"
+          style={{ left: `${leftPct}%` }}
         />
+        {/* Max thumb */}
         <div
-          className="absolute w-4 h-4 rounded-full bg-dp-accent-cta border-2 border-white shadow pointer-events-none -translate-x-1/2"
-          style={{ left: `${fillLeft + fillWidth}%`, zIndex: 6 }}
+          className="absolute w-4 h-4 rounded-full bg-dp-accent-cta border-2 border-white shadow -translate-x-1/2"
+          style={{ left: `${rightPct}%` }}
         />
       </div>
 
       {/* Absolute range labels */}
-      <div className="flex justify-between mt-2">
-        <span className="text-[10px] text-dp-text-tertiary">{sym}{absMin}</span>
-        <span className="text-[10px] text-dp-text-tertiary">{sym}{absMax}</span>
+      <div className="flex justify-between mt-1">
+        <span className="text-[10px] text-dp-text-tertiary">{fmt(absMin)}</span>
+        <span className="text-[10px] text-dp-text-tertiary">{fmt(absMax)}</span>
       </div>
     </div>
   )
