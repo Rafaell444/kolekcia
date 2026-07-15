@@ -1272,8 +1272,8 @@ class AdminProcessingOptionListView(APIView):
         slug = data.pop("vendor_slug", None)
         if not vendor and slug:
             vendor = Vendor.objects.filter(slug=slug).first()
-        if vendor and "vendor" not in data:
-            data["vendor"] = vendor.id
+        # Always set vendor (None if not found)
+        data["vendor"] = vendor.id if vendor else None
         # Auto-generate slug from label if not provided
         if "slug" not in data or not data["slug"]:
             base = slugify(data.get("label", "option"))

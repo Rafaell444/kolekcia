@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
 from apps.products.serializers import ProductVariantSerializer, SizeVariantSerializer
+from apps.vendors.models import Vendor
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -62,6 +63,10 @@ class DeliveryOptionSerializer(serializers.ModelSerializer):
 
 class ProcessingOptionSerializer(serializers.ModelSerializer):
     vendor_slug = serializers.CharField(source="vendor.slug", read_only=True, allow_null=True)
+    vendor = serializers.PrimaryKeyRelatedField(
+        queryset=Vendor.objects.all(), required=False, allow_null=True
+    )
+    slug = serializers.SlugField(required=False, allow_blank=True, default="")
 
     class Meta:
         model = ProcessingOption
