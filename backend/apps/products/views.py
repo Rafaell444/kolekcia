@@ -63,8 +63,15 @@ class ProductListView(generics.ListAPIView):
         qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images", "size_variants")
         sort = self.request.query_params.get("sort")
         if sort == "featured":
-            featured_qs = qs.filter(is_featured=True).order_by("-review_count")
-            qs = featured_qs if featured_qs.exists() else qs.order_by("-review_count")
+            # Show all products, featured ones first, then by review count
+            from django.db.models import Case, When, IntegerField
+            qs = qs.annotate(
+                _featured_order=Case(
+                    When(is_featured=True, then=0),
+                    default=1,
+                    output_field=IntegerField(),
+                )
+            ).order_by("_featured_order", "-review_count")
         elif sort == "newest":
             qs = qs.order_by("-created_at")
         elif sort == "price-low":
