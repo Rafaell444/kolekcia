@@ -131,7 +131,8 @@ function PriceRangeSlider({
   currency: string
   onChange: (min: number, max: number) => void
 }) {
-  const step = absMax <= 100 ? 1 : absMax <= 500 ? 5 : 10
+  const range = absMax - absMin
+  const step = range <= 100 ? 1 : range <= 1000 ? 5 : range <= 10000 ? 10 : Math.max(50, Math.round(range / 200))
   const pct = (v: number) => absMax === absMin ? 0 : ((v - absMin) / (absMax - absMin)) * 100
   const sym = currency === "GEL" ? "₾" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "$"
 
@@ -481,7 +482,7 @@ function CatalogPageInner(): React.ReactElement {
   const urlCategory = searchParams.get("category") ?? ""
   const { currency, rates } = useLocale()
 
-  // Local search input state — synced to URL on submit
+  // Local search input state — debounced auto-push to URL
   const [searchInput, setSearchInput] = useState(urlSearch)
 
   function commitSearch(value: string) {
@@ -494,6 +495,12 @@ function CatalogPageInner(): React.ReactElement {
     params.delete("page")
     router.push(`/catalog?${params.toString()}`)
   }
+
+  // Debounce: push URL 400ms after user stops typing
+  useEffect(() => {
+    const t = setTimeout(() => commitSearch(searchInput), 400)
+    return () => clearTimeout(t)
+  }, [searchInput]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep local input in sync if URL changes (e.g. browser back)
   useEffect(() => { setSearchInput(urlSearch) }, [urlSearch])
@@ -590,7 +597,7 @@ function CatalogPageInner(): React.ReactElement {
     const absMin = filterOptions ? Math.floor(filterOptions.price_range.min) : 0
     const absMax = filterOptions ? Math.ceil(filterOptions.price_range.max / 10) * 10 : 999
     if (filters.priceMin > absMin) params.set("min_price", String(filters.priceMin))
-    if (filters.priceMax < absMax && filters.priceMax < 999) params.set("max_price", String(filters.priceMax))
+    if (filters.priceMax < absMax) params.set("max_price", String(filters.priceMax))
     if (filters.isLimited) params.set("limited", "true")
     if (filters.isSale) params.set("sale", "true")
     if (filters.isNew) params.set("new", "true")
@@ -657,24 +664,22 @@ function CatalogPageInner(): React.ReactElement {
 
       <div className="dp-container py-8">
         {/* ── Mobile search ── */}
-        <form onSubmit={(e) => { e.preventDefault(); commitSearch(searchInput) }} className="flex gap-2 mb-3 lg:hidden">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary pointer-events-none" />
-            <input
-              type="search"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search products…"
-              className="w-full pl-9 pr-4 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover"
-            />
-            {searchInput && (
-              <button type="button" onClick={() => { setSearchInput(""); commitSearch("") }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dp-text-tertiary hover:text-dp-text-primary">
-                <X size={13} />
-              </button>
-            )}
-          </div>
-        </form>
+        <div className="relative mb-3 lg:hidden">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary pointer-events-none" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search products…"
+            className="w-full pl-9 pr-8 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover"
+          />
+          {searchInput && (
+            <button type="button" onClick={() => setSearchInput("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dp-text-tertiary hover:text-dp-text-primary">
+              <X size={13} />
+            </button>
+          )}
+        </div>
 
         {/* ── Mobile filter toggle ── */}
         <div className="flex items-center justify-between gap-3 mb-5 lg:hidden">
@@ -714,31 +719,22 @@ function CatalogPageInner(): React.ReactElement {
           {/* ── Product grid ── */}
           <div className="flex-1 min-w-0">
             {/* Search bar */}
-            <form
-              onSubmit={(e) => { e.preventDefault(); commitSearch(searchInput) }}
-              className="flex gap-2 mb-4"
-            >
-              <div className="relative flex-1">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary pointer-events-none" />
-                <input
-                  type="search"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search products…"
-                  className="w-full pl-9 pr-4 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
-                />
-                {searchInput && (
-                  <button type="button" onClick={() => { setSearchInput(""); commitSearch("") }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-              <button type="submit"
-                className="px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-                Search
-              </button>
-            </form>
+            <div className="relative mb-4">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary pointer-events-none" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search products…"
+                className="w-full pl-9 pr-8 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+              />
+              {searchInput && (
+                <button type="button" onClick={() => setSearchInput("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
 
             {/* Toolbar */}
             <div className="hidden lg:flex items-center justify-between mb-5">
