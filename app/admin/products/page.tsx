@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from "react"
 import Image from "next/image"
-import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus, GripVertical, Check, Crop } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus, GripVertical, Check, Crop, Tag } from "lucide-react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -10,8 +10,6 @@ import {
 } from "@dnd-kit/core"
 import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import ReactCrop, { type Crop as CropType } from "react-image-crop"
-import "react-image-crop/dist/ReactCrop.css"
 
 type SizeVariantItem = {
   id: number
@@ -131,12 +129,7 @@ const BLANK_DRAFT: ProductDraft = {
 const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
 const LABEL_CLS = "block text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1"
 
-const ASPECT_OPTIONS = [
-  { label: "Square 1:1", aspect: 1, cls: "aspect-square" },
-  { label: "Portrait 3:4", aspect: 3 / 4, cls: "aspect-[3/4]" },
-  { label: "Landscape 16:9", aspect: 16 / 9, cls: "aspect-video" },
-]
-
+// ─── Etsy-style Thumbnail Editor ─────────────────────────────────
 function ThumbnailEditorModal({
   image,
   onConfirm,
@@ -146,18 +139,88 @@ function ThumbnailEditorModal({
   onConfirm: () => void
   onClose: () => void
 }) {
-  const [crop, setCrop] = useState<CropType>({ unit: "%", x: 0, y: 0, width: 100, height: 100 })
-  const [activeAspect, setActiveAspect] = useState<number | undefined>(1)
-  const imgRef = useRef<HTMLImageElement>(null)
+  const VIEWPORT = 320
+  const [zoom, setZoom] = useState(1)
+  const [offsetX, setOffsetX] = useState(0)
+  const [offsetY, setOffsetY] = useState(0)
+  const isDragging = useRef(false)
+  const dragStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
 
-  const handleAspect = useCallback((asp: number | undefined) => {
-    setActiveAspect(asp)
-    // Reset crop to full image with chosen aspect ratio
-    setCrop({ unit: "%", x: 0, y: 0, width: 100, height: 100 })
-  }, [])
+  function clamp(val: number, min: number, max: number) {
+    return Math.min(Math.max(val, min), max)
+  }
 
-  // Compute object-position CSS from crop for previews
-  const objPos = `${50 + (crop.x ?? 0) / 100 * 0}% ${50 + (crop.y ?? 0) / 100 * 0}%`
+  function getMaxOffset(z: number) {
+    const maxX = ((z - 1) * VIEWPORT) / 2 / z
+    const maxY = ((z - 1) * VIEWPORT) / 2 / z
+    return { maxX, maxY }
+  }
+
+  function applyZoom(z: number) {
+    const clamped = clamp(z, 1, 3)
+    const { maxX, maxY } = getMaxOffset(clamped)
+    setZoom(clamped)
+    setOffsetX((prev) => clamp(prev, -maxX, maxX))
+    setOffsetY((prev) => clamp(prev, -maxY, maxY))
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    isDragging.current = true
+    dragStart.current = { x: e.clientX, y: e.clientY, ox: offsetX, oy: offsetY }
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!isDragging.current) return
+    const dx = (e.clientX - dragStart.current.x) / zoom
+    const dy = (e.clientY - dragStart.current.y) / zoom
+    const { maxX, maxY } = getMaxOffset(zoom)
+    setOffsetX(clamp(dragStart.current.ox + dx, -maxX, maxX))
+    setOffsetY(clamp(dragStart.current.oy + dy, -maxY, maxY))
+  }
+
+  function onPointerUp() {
+    isDragging.current = false
+  }
+
+  const imgStyle: React.CSSProperties = {
+    transform: `scale(${zoom}) translate(${offsetX}px, ${offsetY}px)`,
+    transformOrigin: "center",
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    userSelect: "none",
+    pointerEvents: "none",
+    display: "block",
+  }
+
+  // Preview cards
+  const PreviewCard = ({ label, aspectClass, landscape }: { label: string; aspectClass: string; landscape?: boolean }) => (
+    <div className={`flex flex-col gap-1 ${landscape ? "w-full" : "w-28"}`}>
+      <p className="text-[10px] text-dp-text-tertiary font-semibold">{label}</p>
+      {landscape ? (
+        <div className="flex gap-2 p-2 bg-[#f4f4f4] rounded-sm border border-dp-border">
+          <div className="w-24 aspect-[4/3] overflow-hidden rounded-sm shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image.src} alt="" style={imgStyle} />
+          </div>
+          <div className="flex flex-col gap-1.5 justify-center flex-1">
+            <div className="h-2 bg-dp-border rounded-sm w-3/4" />
+            <div className="h-2 bg-dp-border rounded-sm w-1/2" />
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5 p-2 bg-[#f4f4f4] rounded-sm border border-dp-border">
+          <div className={`${aspectClass} overflow-hidden rounded-sm`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image.src} alt="" style={imgStyle} />
+          </div>
+          <div className="h-2 bg-dp-border rounded-sm w-3/4" />
+          <div className="h-2 bg-dp-border rounded-sm w-1/2" />
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/80 overflow-y-auto py-6 px-4" role="dialog" aria-modal="true">
@@ -166,93 +229,73 @@ function ThumbnailEditorModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-dp-border sticky top-0 bg-dp-bg-surface z-10">
           <div className="flex items-center gap-2">
             <Crop size={16} className="text-dp-accent-cta" />
-            <h2 className="font-display text-xl text-dp-text-primary">Set Thumbnail</h2>
+            <h2 className="font-display text-xl text-dp-text-primary">Adjust Thumbnail</h2>
           </div>
           <button onClick={onClose} className="text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Close">
             <X size={18} />
           </button>
         </div>
 
-        <div className="p-6 flex flex-col gap-6">
-          {/* Aspect ratio buttons */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Crop Aspect Ratio</p>
-            <div className="flex gap-2 flex-wrap">
-              <button type="button"
-                onClick={() => handleAspect(undefined)}
-                className={`px-3 py-1.5 border rounded-sm text-[11px] font-bold uppercase tracking-wide transition-colors ${
-                  activeAspect === undefined ? "border-dp-accent-cta text-dp-accent-cta bg-dp-accent-cta/10" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
-                }`}>
-                Free
+        <div className="p-6 flex flex-col lg:flex-row gap-6">
+          {/* Left — editor viewport */}
+          <div className="shrink-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Drag to adjust</p>
+            {/* Viewport */}
+            <div
+              className="overflow-hidden rounded-sm border border-dp-border cursor-grab active:cursor-grabbing select-none"
+              style={{ width: VIEWPORT, height: VIEWPORT }}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={image.src} alt="Thumbnail editor" style={imgStyle} draggable={false} />
+            </div>
+
+            {/* Zoom slider */}
+            <div className="flex items-center gap-2 mt-3">
+              <button type="button" onClick={() => applyZoom(zoom - 0.1)}
+                className="w-6 h-6 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-secondary hover:border-dp-border-hover text-lg leading-none">
+                −
               </button>
-              {ASPECT_OPTIONS.map(({ label, aspect }) => (
-                <button key={label} type="button"
-                  onClick={() => handleAspect(aspect)}
-                  className={`px-3 py-1.5 border rounded-sm text-[11px] font-bold uppercase tracking-wide transition-colors ${
-                    activeAspect === aspect ? "border-dp-accent-cta text-dp-accent-cta bg-dp-accent-cta/10" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
-                  }`}>
-                  {label}
-                </button>
-              ))}
+              <input
+                type="range" min={1} max={3} step={0.01}
+                value={zoom}
+                onChange={(e) => applyZoom(parseFloat(e.target.value))}
+                className="flex-1"
+              />
+              <button type="button" onClick={() => applyZoom(zoom + 0.1)}
+                className="w-6 h-6 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-secondary hover:border-dp-border-hover text-lg leading-none">
+                +
+              </button>
             </div>
+            <p className="text-[10px] text-dp-text-tertiary text-center mt-1">{Math.round(zoom * 100)}%</p>
           </div>
 
-          {/* Crop area + previews */}
-          <div className="flex flex-col lg:flex-row gap-6">
-            {/* Cropper */}
-            <div className="flex-1 min-w-0 max-w-xs mx-auto lg:mx-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Drag to select crop area</p>
-              <ReactCrop
-                crop={crop}
-                onChange={(c) => setCrop(c)}
-                aspect={activeAspect}
-                className="rounded-sm overflow-hidden border border-dp-border"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  ref={imgRef}
-                  src={image.src}
-                  alt="Thumbnail editor"
-                  className="max-w-full max-h-72 object-contain"
-                />
-              </ReactCrop>
+          {/* Right — previews */}
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-3">What buyers will see</p>
+            <div className="flex flex-wrap gap-4">
+              <PreviewCard label="Square" aspectClass="aspect-square" />
+              <PreviewCard label="Portrait" aspectClass="aspect-[4/5]" />
             </div>
-
-            {/* Previews */}
-            <div className="flex flex-col gap-4 shrink-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Previews</p>
-              {ASPECT_OPTIONS.map(({ label, cls }) => (
-                <div key={label} className="flex flex-col gap-1">
-                  <p className="text-[10px] text-dp-text-tertiary">{label}</p>
-                  <div className={`relative ${cls} w-28 rounded-sm overflow-hidden border border-dp-border bg-dp-bg-elevated shrink-0`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={image.src}
-                      alt=""
-                      className="absolute inset-0 w-full h-full object-cover"
-                      style={{ objectPosition: objPos }}
-                    />
-                  </div>
-                </div>
-              ))}
+            <div className="mt-4">
+              <PreviewCard label="Landscape" aspectClass="aspect-[4/3]" landscape />
             </div>
           </div>
+        </div>
 
-          <p className="text-[11px] text-dp-text-tertiary">
-            Confirming will move this image to the first position (thumbnail). The crop is a visual hint — the full image is still stored.
-          </p>
-
-          {/* Footer */}
-          <div className="flex gap-3 justify-end border-t border-dp-border pt-4">
-            <button type="button" onClick={onClose}
-              className="px-5 py-2.5 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors">
-              Cancel
-            </button>
-            <button type="button" onClick={onConfirm}
-              className="px-6 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-              Set as Thumbnail
-            </button>
-          </div>
+        {/* Footer */}
+        <div className="flex gap-3 justify-end px-6 py-4 border-t border-dp-border">
+          <button type="button" onClick={onClose}
+            className="px-5 py-2.5 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm}
+            className="px-6 py-2.5 bg-dp-text-primary hover:opacity-80 text-dp-bg-surface text-[11px] font-bold uppercase tracking-widest rounded-sm transition-opacity">
+            Apply
+          </button>
         </div>
       </div>
     </div>
@@ -327,6 +370,169 @@ function SortableMediaItem({
   )
 }
 
+// ─── Processing Times CRUD Modal ─────────────────────────────────
+function ProcessingTimesModal({
+  vendorSlug,
+  onSelect,
+  onClose,
+}: {
+  vendorSlug: string
+  onSelect: (label: string) => void
+  onClose: () => void
+}) {
+  const [options, setOptions] = useState<ProcessingOptionItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newLabel, setNewLabel] = useState("")
+  const [newMin, setNewMin] = useState("")
+  const [newMax, setNewMax] = useState("")
+  const [adding, setAdding] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
+  const [editLabel, setEditLabel] = useState("")
+  const [editMin, setEditMin] = useState("")
+  const [editMax, setEditMax] = useState("")
+  const [error, setError] = useState("")
+
+  const INPUT_CLS = "px-3 py-1.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+
+  function load() {
+    const url = vendorSlug ? `/admin/processing-options/?vendor=${vendorSlug}` : "/admin/processing-options/"
+    adminFetch<ProcessingOptionItem[] | { results?: ProcessingOptionItem[] }>(url)
+      .then((r) => {
+        const list = Array.isArray(r) ? r : (r as { results?: ProcessingOptionItem[] }).results ?? []
+        setOptions(list)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleAdd() {
+    setError("")
+    const min = parseInt(newMin)
+    const max = parseInt(newMax)
+    if (!newLabel.trim()) { setError("Label is required."); return }
+    if (isNaN(min) || isNaN(max) || min < 1 || max < min) { setError("Enter valid day range."); return }
+    setAdding(true)
+    try {
+      await adminFetch("/admin/processing-options/", {
+        method: "POST",
+        body: JSON.stringify({ label: newLabel.trim(), est_days_min: min, est_days_max: max }),
+      })
+      setNewLabel(""); setNewMin(""); setNewMax("")
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add.")
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function handleSaveEdit(id: number) {
+    setError("")
+    const min = parseInt(editMin)
+    const max = parseInt(editMax)
+    if (!editLabel.trim()) { setError("Label is required."); return }
+    if (isNaN(min) || isNaN(max) || min < 1 || max < min) { setError("Enter valid day range."); return }
+    try {
+      await adminFetch(`/admin/processing-options/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ label: editLabel.trim(), est_days_min: min, est_days_max: max }),
+      })
+      setEditId(null)
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update.")
+    }
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this processing time option?")) return
+    try {
+      await adminFetch(`/admin/processing-options/${id}/`, { method: "DELETE" })
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete.")
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/70 overflow-y-auto py-8 px-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-lg mx-auto bg-dp-bg-surface border border-dp-border rounded-sm shadow-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dp-border">
+          <h2 className="font-display text-xl text-dp-text-primary">Processing Times</h2>
+          <button onClick={onClose} className="text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="p-6 flex flex-col gap-4">
+          {error && <p className="text-[12px] text-red-400">{error}</p>}
+
+          {/* Existing options list */}
+          {loading ? (
+            <p className="text-[13px] text-dp-text-tertiary">Loading…</p>
+          ) : options.length === 0 ? (
+            <p className="text-[13px] text-dp-text-tertiary">No processing time options yet.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {options.map((opt) => (
+                <div key={opt.id} className="flex items-center gap-2 p-3 border border-dp-border rounded-sm bg-dp-bg-elevated">
+                  {editId === opt.id ? (
+                    <>
+                      <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className={INPUT_CLS + " flex-1"} placeholder="Label" />
+                      <input value={editMin} onChange={(e) => setEditMin(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Min" />
+                      <span className="text-dp-text-tertiary text-[11px]">–</span>
+                      <input value={editMax} onChange={(e) => setEditMax(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Max" />
+                      <button onClick={() => void handleSaveEdit(opt.id)} className="px-2.5 py-1 bg-dp-accent-cta text-white text-[11px] rounded-sm hover:bg-dp-accent-cta-hover"><Check size={12} /></button>
+                      <button onClick={() => setEditId(null)} className="px-2.5 py-1 border border-dp-border text-dp-text-secondary text-[11px] rounded-sm hover:border-dp-border-hover"><X size={12} /></button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { onSelect(opt.label); onClose() }}
+                        className="flex-1 text-left text-[13px] text-dp-text-primary hover:text-dp-accent-cta transition-colors"
+                      >
+                        <span className="font-semibold">{opt.label}</span>
+                        <span className="ml-2 text-dp-text-tertiary text-[11px]">({opt.est_days_min}–{opt.est_days_max} days)</span>
+                      </button>
+                      <button onClick={() => { setEditId(opt.id); setEditLabel(opt.label); setEditMin(String(opt.est_days_min)); setEditMax(String(opt.est_days_max)) }}
+                        className="p-1.5 text-dp-text-tertiary hover:text-dp-text-primary transition-colors" aria-label="Edit">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => void handleDelete(opt.id)}
+                        className="p-1.5 text-red-400 hover:text-red-300 transition-colors" aria-label="Delete">
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add new option */}
+          <div className="border-t border-dp-border pt-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Add New Option</p>
+            <div className="flex gap-2 flex-wrap">
+              <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. 20–35 business days)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
+              <input value={newMin} onChange={(e) => setNewMin(e.target.value)} type="number" placeholder="Min days" className={INPUT_CLS + " w-24"} />
+              <input value={newMax} onChange={(e) => setNewMax(e.target.value)} type="number" placeholder="Max days" className={INPUT_CLS + " w-24"} />
+              <button onClick={() => void handleAdd()} disabled={adding}
+                className="px-4 py-1.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
+                {adding ? "Adding…" : "Add"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button onClick={onClose} className="px-5 py-2 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ProductModal({
   onClose,
   onSaved,
@@ -373,6 +579,7 @@ function ProductModal({
   const mediaInputRef = useRef<HTMLInputElement>(null)
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const [thumbnailEditorItem, setThumbnailEditorItem] = useState<{ id?: number; src: string } | null>(null)
+  const [showProcessingModal, setShowProcessingModal] = useState(false)
 
   // Size variants - existing (saved) and pending (to be created on save)
   const [sizeVariants, setSizeVariants] = useState<SizeVariantItem[]>(editProduct?.size_variants ?? [])
@@ -746,27 +953,41 @@ function ProductModal({
 
               {/* Processing time */}
               <div>
-                <label className={LABEL_CLS}>Processing Time</label>
-                {processingOptions.length > 0 ? (
-                  <select
-                    value={draft.processingTimeLabel}
-                    onChange={(e) => set("processingTimeLabel", e.target.value)}
-                    className={INPUT_CLS}
-                  >
-                    <option value="">— No processing time —</option>
-                    {processingOptions.map((opt) => (
-                      <option key={opt.id} value={opt.label}>
-                        {opt.label} ({opt.est_days_min}–{opt.est_days_max} days)
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+                <div className="flex items-center justify-between mb-1">
+                  <label className={LABEL_CLS + " mb-0"}>Processing Time</label>
+                  <button type="button" onClick={() => setShowProcessingModal(true)}
+                    className="text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta hover:underline">
+                    Manage
+                  </button>
+                </div>
+                <div className="flex gap-2">
                   <input
                     value={draft.processingTimeLabel}
                     onChange={(e) => set("processingTimeLabel", e.target.value)}
                     placeholder="e.g. 20–35 business days"
-                    className={INPUT_CLS}
+                    className={INPUT_CLS + " flex-1"}
                   />
+                  {draft.processingTimeLabel && (
+                    <button type="button" onClick={() => set("processingTimeLabel", "")}
+                      className="px-2 border border-dp-border text-dp-text-tertiary hover:text-dp-text-primary rounded-sm">
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                {processingOptions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {processingOptions.map((opt) => (
+                      <button key={opt.id} type="button"
+                        onClick={() => set("processingTimeLabel", opt.label)}
+                        className={`px-2 py-0.5 rounded-sm border text-[10px] font-semibold transition-colors ${
+                          draft.processingTimeLabel === opt.label
+                            ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta"
+                            : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
+                        }`}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -1208,7 +1429,110 @@ function ProductModal({
         }}
       />
     )}
+    {showProcessingModal && (
+      <ProcessingTimesModal
+        vendorSlug={draft.vendorSlug}
+        onSelect={(label) => set("processingTimeLabel", label)}
+        onClose={() => setShowProcessingModal(false)}
+      />
+    )}
     </>
+  )
+}
+
+// ─── Vendor Sale Modal ────────────────────────────────────────────
+function VendorSaleModal({ vendorSlug, vendorName, onClose }: { vendorSlug: string; vendorName: string; onClose: () => void }) {
+  const [discountPct, setDiscountPct] = useState("")
+  const [currency, setCurrency] = useState<"GEL" | "USD" | "both">("both")
+  const [saving, setSaving] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+  const [error, setError] = useState("")
+
+  const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+  const LABEL_CLS = "block text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1"
+
+  async function handleApply() {
+    setError("")
+    const pct = parseFloat(discountPct)
+    if (isNaN(pct) || pct <= 0 || pct >= 100) { setError("Enter a discount between 1 and 99."); return }
+    setSaving(true)
+    try {
+      const res = await adminFetch<{ detail?: string; variants_updated?: number }>(
+        `/admin/vendors/${vendorSlug}/sale/`,
+        { method: "POST", body: JSON.stringify({ discount_pct: pct, currency }) }
+      )
+      setResult(res.detail ?? `Sale applied to ${res.variants_updated} variants.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to apply sale.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRemove() {
+    setSaving(true); setError("")
+    try {
+      await adminFetch(`/admin/vendors/${vendorSlug}/sale/`, { method: "DELETE" })
+      setResult("Sale removed from all products.")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove sale.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 overflow-y-auto py-8 px-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md mx-auto bg-dp-bg-surface border border-dp-border rounded-sm shadow-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dp-border">
+          <h2 className="font-display text-xl text-dp-text-primary">Run Sale — {vendorName}</h2>
+          <button onClick={onClose} className="text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="p-6 flex flex-col gap-4">
+          {result ? (
+            <div className="text-center py-6">
+              <p className="text-dp-accent-cta font-semibold text-[14px]">{result}</p>
+              <button onClick={onClose} className="mt-4 px-6 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors">Done</button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className={LABEL_CLS}>Discount %</label>
+                <input type="number" min={1} max={99} step={1} value={discountPct}
+                  onChange={(e) => setDiscountPct(e.target.value)} placeholder="e.g. 20" className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Apply to currency</label>
+                <div className="flex gap-2">
+                  {(["both", "GEL", "USD"] as const).map((c) => (
+                    <button key={c} type="button" onClick={() => setCurrency(c)}
+                      className={`flex-1 px-3 py-2 border rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors ${
+                        currency === c ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
+                      }`}>
+                      {c === "both" ? "Both (GEL + USD)" : c === "GEL" ? "Georgian ₾" : "Other $"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[11px] text-dp-text-tertiary">
+                This will set sale prices on all active size variants for <strong className="text-dp-text-secondary">{vendorName}</strong> and mark all products as on sale.
+              </p>
+              {error && <p className="text-[12px] text-red-400">{error}</p>}
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => void handleApply()} disabled={saving}
+                  className="flex-1 px-5 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
+                  {saving ? "Applying…" : "Apply Sale"}
+                </button>
+                <button onClick={() => void handleRemove()} disabled={saving}
+                  className="px-5 py-2.5 border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-60 text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
+                  Remove Sale
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1221,6 +1545,7 @@ export default function AdminProductsPage(): React.ReactElement {
   const [vendors, setVendors] = useState<VendorOption[]>([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
+  const [showSaleModal, setShowSaleModal] = useState(false)
   const importInputRef = useRef<HTMLInputElement>(null)
 
   const adminUser = typeof window !== "undefined" ? getAdminUser() : null
@@ -1360,6 +1685,13 @@ export default function AdminProductsPage(): React.ReactElement {
           vendors={vendors}
         />
       )}
+      {showSaleModal && isVendor && adminUser?.vendor && (
+        <VendorSaleModal
+          vendorSlug={adminUser.vendor.slug}
+          vendorName={adminUser.vendor.name}
+          onClose={() => setShowSaleModal(false)}
+        />
+      )}
 
       <div className="p-4 sm:p-8 flex flex-col gap-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1388,6 +1720,12 @@ export default function AdminProductsPage(): React.ReactElement {
             >
               <Download size={13} /> Export
             </button>
+            {isVendor && (
+              <button onClick={() => setShowSaleModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2.5 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors">
+                <Tag size={13} /> Run Sale
+              </button>
+            )}
             <button onClick={() => { setEditTarget(null); setShowModal(true) }}
               className="flex items-center gap-2 px-4 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
               <Plus size={14} /> Add Product
