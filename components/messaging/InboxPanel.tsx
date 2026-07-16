@@ -5,7 +5,7 @@ import Link from "next/link"
 import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
-import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play } from "lucide-react"
+import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play, Check, CheckCheck } from "lucide-react"
 import { getAccessToken } from "@/lib/auth-storage"
 import { refreshAccessToken } from "@/lib/api"
 import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
@@ -86,6 +86,12 @@ function ChatWindow({
         return
       }
       onNewMessages([...conv.messages, newMsg], conv.id)
+    } else if (event.type === "read_update") {
+      // Mark all customer messages as read when admin reads them
+      onNewMessages(
+        conv.messages.map((m) => m.from_role === "customer" ? { ...m, read: true } : m),
+        conv.id
+      )
     }
   }, [conv.id, conv.messages, onNewMessages])
 
@@ -186,7 +192,14 @@ function ChatWindow({
                     ))}
                   </div>
                 )}
-                <p className={`text-[10px] mt-1 opacity-60 ${isOwn ? "text-right" : ""}`}>{relTime(m.sent_at)}</p>
+                <p className={`text-[10px] mt-1 opacity-60 flex items-center gap-1 ${isOwn ? "justify-end" : ""}`}>
+                  <span>{relTime(m.sent_at)}</span>
+                  {isOwn && (
+                    m.read
+                      ? <CheckCheck size={12} className="text-white/90" aria-label="Seen" />
+                      : <Check size={12} className="text-white/60" aria-label="Sent" />
+                  )}
+                </p>
               </div>
             </div>
           )

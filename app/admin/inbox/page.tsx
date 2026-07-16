@@ -7,7 +7,7 @@ import { adminFetch } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
-import { Send, MessageSquare, Loader2, Paperclip, X, Play } from "lucide-react"
+import { Send, MessageSquare, Loader2, Paperclip, X, Play, Check, CheckCheck } from "lucide-react"
 import { getAdminToken, getAdminUser, refreshAdminToken } from "@/lib/admin-auth"
 import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
 
@@ -141,6 +141,17 @@ export default function AdminInboxPage(): React.ReactElement {
         return { ...c, messages: [...(c.messages ?? []), newMsg] }
       }))
       lastMsgCount.current += 1
+    } else if (event.type === "read_update") {
+      // Mark all admin messages in this conversation as read
+      setConvs((prev) => prev.map((c) => {
+        if (String(c.id) !== String(activeIdRef.current)) return c
+        return {
+          ...c,
+          messages: (c.messages ?? []).map((m) =>
+            m.from_role === "admin" ? { ...m, read: true } : m
+          ),
+        }
+      }))
     }
   }, [])
 
@@ -362,8 +373,13 @@ export default function AdminInboxPage(): React.ReactElement {
                         {!hasText && attachments.length === 0 && (
                           <p className="opacity-40 italic text-[12px]">(empty message)</p>
                         )}
-                        <p className={`text-[10px] mt-1 opacity-60 ${isAdmin ? "text-right" : ""}`}>
-                          {relTime(m.sent_at)}
+                        <p className={`text-[10px] mt-1 opacity-60 flex items-center gap-1 ${isAdmin ? "justify-end" : ""}`}>
+                          <span>{relTime(m.sent_at)}</span>
+                          {isAdmin && (
+                            m.read
+                              ? <CheckCheck size={12} className="text-white/90" aria-label="Seen" />
+                              : <Check size={12} className="text-white/60" aria-label="Sent" />
+                          )}
                         </p>
                       </div>
                     </div>
