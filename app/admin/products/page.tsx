@@ -430,10 +430,14 @@ function SortableMediaItem({
 // ─── Processing Times CRUD Modal ─────────────────────────────────
 function ProcessingTimesModal({
   vendorSlug,
+  isStaff = false,
+  vendors = [],
   onSelect,
   onClose,
 }: {
   vendorSlug: string
+  isStaff?: boolean
+  vendors?: VendorOption[]
   onSelect: (label: string) => void
   onClose: () => void
 }) {
@@ -442,6 +446,7 @@ function ProcessingTimesModal({
   const [newLabel, setNewLabel] = useState("")
   const [newMin, setNewMin] = useState("")
   const [newMax, setNewMax] = useState("")
+  const [newVendorSlug, setNewVendorSlug] = useState(vendorSlug)
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [editLabel, setEditLabel] = useState("")
@@ -452,7 +457,8 @@ function ProcessingTimesModal({
   const INPUT_CLS = "px-3 py-1.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
 
   function load() {
-    const url = vendorSlug ? `/admin/processing-options/?vendor=${vendorSlug}` : "/admin/processing-options/"
+    // Superadmin with no specific vendor: load all; vendor admin: load their own
+    const url = (!isStaff && vendorSlug) ? `/admin/processing-options/?vendor=${vendorSlug}` : "/admin/processing-options/"
     adminFetch<ProcessingOptionItem[] | { results?: ProcessingOptionItem[] }>(url)
       .then((r) => {
         const list = Array.isArray(r) ? r : (r as { results?: ProcessingOptionItem[] }).results ?? []
@@ -474,7 +480,12 @@ function ProcessingTimesModal({
     try {
       await adminFetch("/admin/processing-options/", {
         method: "POST",
-        body: JSON.stringify({ label: newLabel.trim(), est_days_min: min, est_days_max: max }),
+        body: JSON.stringify({
+          label: newLabel.trim(),
+          est_days_min: min,
+          est_days_max: max,
+          vendor_slug: newVendorSlug || undefined,
+        }),
       })
       setNewLabel(""); setNewMin(""); setNewMax("")
       load()
@@ -549,6 +560,11 @@ function ProcessingTimesModal({
                       >
                         <span className="font-semibold">{opt.label}</span>
                         <span className="ml-2 text-dp-text-tertiary text-[11px]">({opt.est_days_min}–{opt.est_days_max} days)</span>
+                        {isStaff && (opt as ProcessingOptionItem & { vendor_slug?: string }).vendor_slug && (
+                          <span className="ml-2 px-1.5 py-0.5 bg-dp-bg-elevated border border-dp-border rounded text-[9px] text-dp-text-tertiary">
+                            {(opt as ProcessingOptionItem & { vendor_slug?: string }).vendor_slug}
+                          </span>
+                        )}
                       </button>
                       <button onClick={() => { setEditId(opt.id); setEditLabel(opt.label); setEditMin(String(opt.est_days_min)); setEditMax(String(opt.est_days_max)) }}
                         className="p-1.5 text-dp-text-tertiary hover:text-dp-text-primary transition-colors" aria-label="Edit">
@@ -569,6 +585,18 @@ function ProcessingTimesModal({
           <div className="border-t border-dp-border pt-4">
             <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Add New Option</p>
             <div className="flex gap-2 flex-wrap">
+              {isStaff && vendors.length > 0 && (
+                <select
+                  value={newVendorSlug}
+                  onChange={(e) => setNewVendorSlug(e.target.value)}
+                  className={INPUT_CLS + " w-full"}
+                >
+                  <option value="">— Global (no vendor) —</option>
+                  {vendors.map((v) => (
+                    <option key={v.slug} value={v.slug}>{v.name}</option>
+                  ))}
+                </select>
+              )}
               <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. 20–35 business days)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
               <input value={newMin} onChange={(e) => setNewMin(e.target.value)} type="number" placeholder="Min days" className={INPUT_CLS + " w-24"} />
               <input value={newMax} onChange={(e) => setNewMax(e.target.value)} type="number" placeholder="Max days" className={INPUT_CLS + " w-24"} />
@@ -1510,6 +1538,8 @@ function ProductModal({
     {showProcessingModal && (
       <ProcessingTimesModal
         vendorSlug={draft.vendorSlug}
+        isStaff={!isVendor}
+        vendors={vendors}
         onSelect={(label) => set("processingTimeLabel", label)}
         onClose={() => setShowProcessingModal(false)}
       />
