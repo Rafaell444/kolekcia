@@ -1243,13 +1243,16 @@ class AdminDeliveryOptionDetailView(APIView):
 # ── Processing options ─────────────────────────────────────────────────────────
 
 class AdminProcessingOptionListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def _vendor_from_request(self, request):
         from apps.vendors.models import Vendor
         slug = request.query_params.get("vendor") or request.data.get("vendor_slug")
         if slug:
             return Vendor.objects.filter(slug=slug).first()
+        # If the user is a vendor admin, auto-resolve their vendor
+        if hasattr(request.user, "vendor_profile"):
+            return request.user.vendor_profile
         return None
 
     def get(self, request):
@@ -1259,6 +1262,9 @@ class AdminProcessingOptionListView(APIView):
         opts = ProcessingOption.objects.select_related("vendor").all()
         if vendor:
             opts = opts.filter(vendor=vendor)
+        elif not request.user.is_staff:
+            # Non-staff without a vendor — return empty
+            opts = opts.none()
         return Response(ProcessingOptionSerializer(opts, many=True).data)
 
     def post(self, request):
@@ -1285,7 +1291,7 @@ class AdminProcessingOptionListView(APIView):
 
 
 class AdminProcessingOptionDetailView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminOrVendor]
 
     def patch(self, request, pk):
         from apps.orders.models import ProcessingOption
