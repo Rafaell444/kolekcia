@@ -85,6 +85,7 @@ export default function AdminInboxPage(): React.ReactElement {
   const activeIdRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const openedFromUrl = useRef(false)
+  const sentMsgIds = useRef<Set<string>>(new Set())
 
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
 
@@ -128,11 +129,17 @@ export default function AdminInboxPage(): React.ReactElement {
 
   const handleChatWs = useCallback((event: ChatWsEvent) => {
     if (event.type === "new_message" && event.message) {
-      setConvs((prev) => prev.map((c) =>
-        c.id === activeIdRef.current
-          ? { ...c, messages: [...(c.messages ?? []), event.message as unknown as Message] }
-          : c
-      ))
+      const newMsg = event.message as unknown as Message
+      const msgId = String(newMsg.id)
+      // Skip if we sent this message ourselves (already added optimistically)
+      if (sentMsgIds.current.has(msgId)) {
+        sentMsgIds.current.delete(msgId)
+        return
+      }
+      setConvs((prev) => prev.map((c) => {
+        if (String(c.id) !== String(activeIdRef.current)) return c
+        return { ...c, messages: [...(c.messages ?? []), newMsg] }
+      }))
       lastMsgCount.current += 1
     }
   }, [])
@@ -198,8 +205,9 @@ export default function AdminInboxPage(): React.ReactElement {
         })
       }
 
+      sentMsgIds.current.add(String(msg.id))
       setConvs((prev) => prev.map((c) =>
-        c.id === activeId ? { ...c, messages: [...(c.messages ?? []), msg] } : c
+        String(c.id) === String(activeId) ? { ...c, messages: [...(c.messages ?? []), msg] } : c
       ))
       lastMsgCount.current += 1
       setDraft("")

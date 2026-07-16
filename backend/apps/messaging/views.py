@@ -88,7 +88,7 @@ def _broadcast_read_update(conv, reader_user):
 
         send(f"chat_{conv.pk}", {
             "type": "chat_read_update",
-            "data": {"type": "read_update", "conversation_id": conv.pk, "reader_user_id": reader_user.pk},
+            "data": {"type": "read_update", "conversation_id": conv.pk, "reader_user_id": str(reader_user.pk)},
         })
 
         send(f"inbox_user_{conv.customer_id}", {

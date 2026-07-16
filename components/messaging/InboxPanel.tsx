@@ -74,10 +74,18 @@ function ChatWindow({
   const [sending, setSending] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const sentMsgIds = useRef<Set<string>>(new Set())
 
   const handleChatWs = useCallback((event: ChatWsEvent) => {
     if (event.type === "new_message" && event.message) {
-      onNewMessages([...conv.messages, event.message as unknown as InboxMessage], conv.id)
+      const newMsg = event.message as unknown as InboxMessage
+      const msgId = String(newMsg.id)
+      // Skip if we sent this message ourselves (already added optimistically)
+      if (sentMsgIds.current.has(msgId)) {
+        sentMsgIds.current.delete(msgId)
+        return
+      }
+      onNewMessages([...conv.messages, newMsg], conv.id)
     }
   }, [conv.id, conv.messages, onNewMessages])
 
@@ -107,8 +115,8 @@ function ChatWindow({
           body: JSON.stringify({ text }),
         })
       }
+      sentMsgIds.current.add(String(msg.id))
       onNewMessages([...conv.messages, msg], conv.id)
-      lastMsgCount.current = conv.messages.length + 1
       setDraft("")
       setPendingFiles([])
       requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: "smooth" }))
