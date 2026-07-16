@@ -745,8 +745,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               </button>
             )}
 
-            {/* Processing time selector — wallpanel products only */}
-            {isWallpanel && processingOptions.length > 0 && (
+            {/* Processing time selector — shown for any product with options configured */}
+            {processingOptions.length > 0 && (
               <div>
                 <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2">Processing Time</p>
                 <div className="flex flex-col gap-2">
@@ -785,8 +785,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               </div>
             )}
 
-            {/* Processing time — figure products only (fixed, no choice) */}
-            {(isFigure || product.processing_time_label) && (
+            {/* Processing time — fallback static display when no selectable options exist */}
+            {processingOptions.length === 0 && (isFigure || product.processing_time_label) && (
               <div className="flex items-center gap-3 px-4 py-3 border border-dp-border rounded-sm bg-dp-bg-elevated/40">
                 <Clock size={15} className="text-dp-accent-cta shrink-0" />
                 <div>
