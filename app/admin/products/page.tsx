@@ -730,9 +730,14 @@ function ProductModal({
       .then((r) => r.json())
       .then((d: { themes?: string[] }) => { if (Array.isArray(d.themes)) setAvailableTags(d.themes) })
       .catch(() => {})
-    // Fetch processing time options
-    const vendorSlug = editProduct?.vendor_slug ?? ""
-    const ptUrl = vendorSlug
+    // Fetch processing time options (also called after modal closes)
+    loadProcessingOptions()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function loadProcessingOptions() {
+    const vendorSlug = editProduct?.vendor_slug ?? draft.vendorSlug ?? ""
+    // Vendor admins filter by their vendor; superadmins load all
+    const ptUrl = (isVendor && vendorSlug)
       ? `/admin/processing-options/?vendor=${vendorSlug}`
       : "/admin/processing-options/"
     adminFetch<ProcessingOptionItem[] | { results?: ProcessingOptionItem[] }>(ptUrl)
@@ -741,7 +746,7 @@ function ProductModal({
         setProcessingOptions(list)
       })
       .catch(() => {})
-  }, [])
+  }
 
   function set<K extends keyof ProductDraft>(k: K, v: ProductDraft[K]) {
     setDraft((d) => ({ ...d, [k]: v }))
@@ -1541,7 +1546,7 @@ function ProductModal({
         isStaff={!isVendor}
         vendors={vendors}
         onSelect={(label) => set("processingTimeLabel", label)}
-        onClose={() => setShowProcessingModal(false)}
+        onClose={() => { setShowProcessingModal(false); loadProcessingOptions() }}
       />
     )}
     </>
