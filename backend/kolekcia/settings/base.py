@@ -24,6 +24,7 @@ FRONTEND_URL = env("FRONTEND_URL")
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")
 
 DJANGO_APPS = [
+    "daphne",  # Must be before staticfiles to patch runserver for ASGI/WebSocket support
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
