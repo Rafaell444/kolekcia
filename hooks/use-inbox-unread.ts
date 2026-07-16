@@ -1,15 +1,14 @@
 "use client"
 
 import { getAccessToken } from "@/lib/auth-storage"
-import { getAdminToken } from "@/lib/admin-auth"
+import { refreshAccessToken } from "@/lib/api"
+import { getAdminToken, refreshAdminToken } from "@/lib/admin-auth"
 import { useNotificationSocket } from "@/hooks/use-messaging-ws"
 
 export function useInboxUnreadCount() {
-  const token = typeof window !== "undefined" ? getAccessToken() : null
-  return useNotificationSocket(token)
+  return useNotificationSocket(getAccessToken, refreshAccessToken)
 }
 
 export function useAdminInboxUnreadCount() {
-  const token = typeof window !== "undefined" ? getAdminToken() : null
-  return useNotificationSocket(token)
+  return useNotificationSocket(getAdminToken, refreshAdminToken)
 }

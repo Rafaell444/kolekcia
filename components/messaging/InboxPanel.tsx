@@ -7,6 +7,7 @@ import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play } from "lucide-react"
 import { getAccessToken } from "@/lib/auth-storage"
+import { refreshAccessToken } from "@/lib/api"
 import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
 
 export type InboxAttachment = { id: string; url: string; media_type: string; original_name: string }
@@ -80,7 +81,7 @@ function ChatWindow({
     }
   }, [conv.id, conv.messages, onNewMessages])
 
-  useChatSocket(conv.id, getAccessToken(), handleChatWs)
+  useChatSocket(conv.id, getAccessToken, refreshAccessToken, handleChatWs)
 
   async function send() {
     const text = draft.trim()
@@ -299,7 +300,7 @@ export default function InboxPanel({
     void loadList()
   }, [loadList])
 
-  useNotificationSocket(getAccessToken(), handleNotif)
+  useNotificationSocket(getAccessToken, refreshAccessToken, handleNotif)
 
   async function openConv(id: string) {
     setActiveId(id)

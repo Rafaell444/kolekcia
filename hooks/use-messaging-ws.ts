@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from "react"
 
 type WsMessage = Record<string, unknown>
+type TokenRefresher = () => Promise<string | null>
 
 function wsBase(): string {
   const api = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
@@ -13,39 +14,63 @@ function wsBase(): string {
 
 function useStableWs(
   path: string | null,
-  token: string | null,
+  getToken: () => string | null,
+  refreshToken: TokenRefresher | null,
   onMessage: (data: WsMessage) => void,
 ) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onMessageRef = useRef(onMessage)
+  const hasTriedRefresh = useRef(false)
   onMessageRef.current = onMessage
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
+    let token = getToken()
     if (!path || !token) return
+
     const url = `${wsBase()}/${path}?token=${encodeURIComponent(token)}`
     const ws = new WebSocket(url)
     wsRef.current = ws
 
+    let wasAccepted = false
+
+    ws.onopen = () => {
+      hasTriedRefresh.current = false
+    }
+
     ws.onmessage = (e) => {
+      wasAccepted = true
       try {
         const data = JSON.parse(e.data) as WsMessage
         onMessageRef.current(data)
       } catch { /* ignore non-JSON */ }
     }
 
-    ws.onclose = () => {
+    ws.onclose = async (event) => {
       wsRef.current = null
-      reconnectTimer.current = setTimeout(connect, 3000)
+      
+      // If closed immediately without receiving any message (auth rejected), try refresh
+      if (!wasAccepted && !hasTriedRefresh.current && refreshToken) {
+        hasTriedRefresh.current = true
+        const newToken = await refreshToken()
+        if (newToken) {
+          // Retry immediately with refreshed token
+          reconnectTimer.current = setTimeout(() => void connect(), 100)
+          return
+        }
+      }
+      
+      // Normal reconnect with backoff
+      reconnectTimer.current = setTimeout(() => void connect(), 3000)
     }
 
     ws.onerror = () => {
       ws.close()
     }
-  }, [path, token])
+  }, [path, getToken, refreshToken])
 
   useEffect(() => {
-    connect()
+    void connect()
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
       wsRef.current?.close()
@@ -64,11 +89,12 @@ export type ChatWsEvent =
 
 export function useChatSocket(
   convId: string | number | null,
-  token: string | null,
+  getToken: () => string | null,
+  refreshToken: TokenRefresher | null,
   onEvent: (event: ChatWsEvent) => void,
 ) {
   const path = convId ? `ws/messaging/chat/${convId}/` : null
-  useStableWs(path, token, onEvent as (data: WsMessage) => void)
+  useStableWs(path, getToken, refreshToken, onEvent as (data: WsMessage) => void)
 }
 
 // ── Notification socket (per user, persistent) ──────────────────────────────
@@ -77,7 +103,8 @@ export type NotifWsEvent =
   | { type: "unread_count"; unread_count: number }
 
 export function useNotificationSocket(
-  token: string | null,
+  getToken: () => string | null,
+  refreshToken: TokenRefresher | null,
   onEvent?: (event: NotifWsEvent) => void,
 ) {
   const [unreadCount, setUnreadCount] = useState(0)
@@ -92,8 +119,9 @@ export function useNotificationSocket(
     [onEvent],
   )
 
-  const path = token ? "ws/messaging/notifications/" : null
-  useStableWs(path, token, handler)
+  const hasToken = getToken() !== null
+  const path = hasToken ? "ws/messaging/notifications/" : null
+  useStableWs(path, getToken, refreshToken, handler)
 
   return unreadCount
 }

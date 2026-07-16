@@ -8,7 +8,7 @@ import { parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, Loader2, Paperclip, X, Play } from "lucide-react"
-import { getAdminToken, getAdminUser } from "@/lib/admin-auth"
+import { getAdminToken, getAdminUser, refreshAdminToken } from "@/lib/admin-auth"
 import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
 
 type Attachment = { id: string; url: string; media_type: string; original_name: string }
@@ -124,7 +124,7 @@ export default function AdminInboxPage(): React.ReactElement {
     void loadList()
   }, [loadList])
 
-  useNotificationSocket(getAdminToken(), handleNotif)
+  useNotificationSocket(getAdminToken, refreshAdminToken, handleNotif)
 
   const handleChatWs = useCallback((event: ChatWsEvent) => {
     if (event.type === "new_message" && event.message) {
@@ -137,7 +137,7 @@ export default function AdminInboxPage(): React.ReactElement {
     }
   }, [])
 
-  useChatSocket(activeId, getAdminToken(), handleChatWs)
+  useChatSocket(activeId, getAdminToken, refreshAdminToken, handleChatWs)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }) }, [activeId, convs])
 

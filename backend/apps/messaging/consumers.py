@@ -10,12 +10,18 @@ User = get_user_model()
 
 
 async def _authenticate(token):
+    import logging
+    logger = logging.getLogger(__name__)
     if not token:
+        logger.warning("WS auth: no token provided")
         return None
     try:
         access = AccessToken(token)
-        return await database_sync_to_async(User.objects.get)(pk=access["user_id"])
-    except Exception:
+        user = await database_sync_to_async(User.objects.get)(pk=access["user_id"])
+        logger.info(f"WS auth success: user={user.email}")
+        return user
+    except Exception as e:
+        logger.warning(f"WS auth failed: {e}")
         return None
 
 
