@@ -73,7 +73,16 @@ type ProductDraft = {
   processingTimeLabel: string
 }
 
-type ProcessingOptionItem = { id: number; label: string; est_days_min: number; est_days_max: number }
+type ProcessingOptionItem = {
+  id: number
+  label: string
+  est_days_min: number
+  est_days_max: number
+  price_usd: string | number
+  price_gel: string | number
+  is_included: boolean
+  vendor_slug?: string
+}
 
 type CategoryOption = { id: number; name: string; slug: string }
 
@@ -446,12 +455,18 @@ function ProcessingTimesModal({
   const [newLabel, setNewLabel] = useState("")
   const [newMin, setNewMin] = useState("")
   const [newMax, setNewMax] = useState("")
+  const [newPriceGel, setNewPriceGel] = useState("")
+  const [newPriceUsd, setNewPriceUsd] = useState("")
+  const [newIncluded, setNewIncluded] = useState(false)
   const [newVendorSlug, setNewVendorSlug] = useState(vendorSlug)
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [editLabel, setEditLabel] = useState("")
   const [editMin, setEditMin] = useState("")
   const [editMax, setEditMax] = useState("")
+  const [editPriceGel, setEditPriceGel] = useState("")
+  const [editPriceUsd, setEditPriceUsd] = useState("")
+  const [editIncluded, setEditIncluded] = useState(false)
   const [error, setError] = useState("")
 
   const INPUT_CLS = "px-3 py-1.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
@@ -484,10 +499,13 @@ function ProcessingTimesModal({
           label: newLabel.trim(),
           est_days_min: min,
           est_days_max: max,
+          price_gel: newIncluded ? 0 : (parseFloat(newPriceGel) || 0),
+          price_usd: newIncluded ? 0 : (parseFloat(newPriceUsd) || 0),
+          is_included: newIncluded,
           vendor_slug: newVendorSlug || undefined,
         }),
       })
-      setNewLabel(""); setNewMin(""); setNewMax("")
+      setNewLabel(""); setNewMin(""); setNewMax(""); setNewPriceGel(""); setNewPriceUsd(""); setNewIncluded(false)
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add.")
@@ -505,7 +523,14 @@ function ProcessingTimesModal({
     try {
       await adminFetch(`/admin/processing-options/${id}/`, {
         method: "PATCH",
-        body: JSON.stringify({ label: editLabel.trim(), est_days_min: min, est_days_max: max }),
+        body: JSON.stringify({
+          label: editLabel.trim(),
+          est_days_min: min,
+          est_days_max: max,
+          price_gel: editIncluded ? 0 : (parseFloat(editPriceGel) || 0),
+          price_usd: editIncluded ? 0 : (parseFloat(editPriceUsd) || 0),
+          is_included: editIncluded,
+        }),
       })
       setEditId(null)
       load()
@@ -544,14 +569,28 @@ function ProcessingTimesModal({
               {options.map((opt) => (
                 <div key={opt.id} className="flex items-center gap-2 p-3 border border-dp-border rounded-sm bg-dp-bg-elevated">
                   {editId === opt.id ? (
-                    <>
-                      <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className={INPUT_CLS + " flex-1"} placeholder="Label" />
-                      <input value={editMin} onChange={(e) => setEditMin(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Min" />
-                      <span className="text-dp-text-tertiary text-[11px]">–</span>
-                      <input value={editMax} onChange={(e) => setEditMax(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Max" />
-                      <button onClick={() => void handleSaveEdit(opt.id)} className="px-2.5 py-1 bg-dp-accent-cta text-white text-[11px] rounded-sm hover:bg-dp-accent-cta-hover"><Check size={12} /></button>
-                      <button onClick={() => setEditId(null)} className="px-2.5 py-1 border border-dp-border text-dp-text-secondary text-[11px] rounded-sm hover:border-dp-border-hover"><X size={12} /></button>
-                    </>
+                    <div className="flex flex-col gap-2 w-full">
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className={INPUT_CLS + " flex-1 min-w-[140px]"} placeholder="Label" />
+                        <input value={editMin} onChange={(e) => setEditMin(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Min" />
+                        <span className="text-dp-text-tertiary text-[11px]">–</span>
+                        <input value={editMax} onChange={(e) => setEditMax(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Max" />
+                      </div>
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <label className="flex items-center gap-1.5 text-[11px] text-dp-text-secondary cursor-pointer select-none">
+                          <input type="checkbox" checked={editIncluded} onChange={(e) => setEditIncluded(e.target.checked)} className="accent-dp-accent-cta" />
+                          Included (free)
+                        </label>
+                        {!editIncluded && (
+                          <>
+                            <input value={editPriceGel} onChange={(e) => setEditPriceGel(e.target.value)} className={INPUT_CLS + " w-28"} type="number" step="0.01" placeholder="Price ₾ (GEL)" />
+                            <input value={editPriceUsd} onChange={(e) => setEditPriceUsd(e.target.value)} className={INPUT_CLS + " w-28"} type="number" step="0.01" placeholder="Price $ (USD)" />
+                          </>
+                        )}
+                        <button onClick={() => void handleSaveEdit(opt.id)} className="px-2.5 py-1 bg-dp-accent-cta text-white text-[11px] rounded-sm hover:bg-dp-accent-cta-hover"><Check size={12} /></button>
+                        <button onClick={() => setEditId(null)} className="px-2.5 py-1 border border-dp-border text-dp-text-secondary text-[11px] rounded-sm hover:border-dp-border-hover"><X size={12} /></button>
+                      </div>
+                    </div>
                   ) : (
                     <>
                       <button
@@ -560,13 +599,29 @@ function ProcessingTimesModal({
                       >
                         <span className="font-semibold">{opt.label}</span>
                         <span className="ml-2 text-dp-text-tertiary text-[11px]">({opt.est_days_min}–{opt.est_days_max} days)</span>
-                        {isStaff && (opt as ProcessingOptionItem & { vendor_slug?: string }).vendor_slug && (
+                        {opt.is_included ? (
+                          <span className="ml-2 px-1.5 py-0.5 bg-green-900/40 border border-green-700/50 rounded text-[9px] text-green-400">Included</span>
+                        ) : (
+                          <>
+                            {Number(opt.price_gel) > 0 && <span className="ml-2 text-[10px] text-dp-text-tertiary">₾{Number(opt.price_gel).toFixed(2)}</span>}
+                            {Number(opt.price_usd) > 0 && <span className="ml-1 text-[10px] text-dp-text-tertiary">${Number(opt.price_usd).toFixed(2)}</span>}
+                          </>
+                        )}
+                        {isStaff && opt.vendor_slug && (
                           <span className="ml-2 px-1.5 py-0.5 bg-dp-bg-elevated border border-dp-border rounded text-[9px] text-dp-text-tertiary">
-                            {(opt as ProcessingOptionItem & { vendor_slug?: string }).vendor_slug}
+                            {opt.vendor_slug}
                           </span>
                         )}
                       </button>
-                      <button onClick={() => { setEditId(opt.id); setEditLabel(opt.label); setEditMin(String(opt.est_days_min)); setEditMax(String(opt.est_days_max)) }}
+                      <button onClick={() => {
+                        setEditId(opt.id)
+                        setEditLabel(opt.label)
+                        setEditMin(String(opt.est_days_min))
+                        setEditMax(String(opt.est_days_max))
+                        setEditPriceGel(Number(opt.price_gel) > 0 ? String(opt.price_gel) : "")
+                        setEditPriceUsd(Number(opt.price_usd) > 0 ? String(opt.price_usd) : "")
+                        setEditIncluded(opt.is_included)
+                      }}
                         className="p-1.5 text-dp-text-tertiary hover:text-dp-text-primary transition-colors" aria-label="Edit">
                         <Pencil size={13} />
                       </button>
@@ -584,7 +639,7 @@ function ProcessingTimesModal({
           {/* Add new option */}
           <div className="border-t border-dp-border pt-4">
             <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Add New Option</p>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex flex-col gap-2">
               {isStaff && vendors.length > 0 && (
                 <select
                   value={newVendorSlug}
@@ -597,13 +652,27 @@ function ProcessingTimesModal({
                   ))}
                 </select>
               )}
-              <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. 20–35 business days)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
-              <input value={newMin} onChange={(e) => setNewMin(e.target.value)} type="number" placeholder="Min days" className={INPUT_CLS + " w-24"} />
-              <input value={newMax} onChange={(e) => setNewMax(e.target.value)} type="number" placeholder="Max days" className={INPUT_CLS + " w-24"} />
-              <button onClick={() => void handleAdd()} disabled={adding}
-                className="px-4 py-1.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-                {adding ? "Adding…" : "Add"}
-              </button>
+              <div className="flex gap-2 flex-wrap items-center">
+                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. 20–35 business days)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
+                <input value={newMin} onChange={(e) => setNewMin(e.target.value)} type="number" placeholder="Min days" className={INPUT_CLS + " w-24"} />
+                <input value={newMax} onChange={(e) => setNewMax(e.target.value)} type="number" placeholder="Max days" className={INPUT_CLS + " w-24"} />
+              </div>
+              <div className="flex gap-2 flex-wrap items-center">
+                <label className="flex items-center gap-1.5 text-[11px] text-dp-text-secondary cursor-pointer select-none">
+                  <input type="checkbox" checked={newIncluded} onChange={(e) => setNewIncluded(e.target.checked)} className="accent-dp-accent-cta" />
+                  Included (free)
+                </label>
+                {!newIncluded && (
+                  <>
+                    <input value={newPriceGel} onChange={(e) => setNewPriceGel(e.target.value)} type="number" step="0.01" placeholder="Price ₾ (GEL)" className={INPUT_CLS + " w-32"} />
+                    <input value={newPriceUsd} onChange={(e) => setNewPriceUsd(e.target.value)} type="number" step="0.01" placeholder="Price $ (USD)" className={INPUT_CLS + " w-32"} />
+                  </>
+                )}
+                <button onClick={() => void handleAdd()} disabled={adding}
+                  className="px-4 py-1.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
+                  {adding ? "Adding…" : "Add"}
+                </button>
+              </div>
             </div>
           </div>
 

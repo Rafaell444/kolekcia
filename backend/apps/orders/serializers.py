@@ -70,7 +70,7 @@ class ProcessingOptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProcessingOption
-        fields = ("id", "vendor", "vendor_slug", "slug", "label", "est_days_min", "est_days_max", "price_usd", "price_gel", "sort_order", "is_active")
+        fields = ("id", "vendor", "vendor_slug", "slug", "label", "est_days_min", "est_days_max", "price_usd", "price_gel", "is_included", "sort_order", "is_active")
 
 
 class VendorShippingOptionSerializer(serializers.ModelSerializer):

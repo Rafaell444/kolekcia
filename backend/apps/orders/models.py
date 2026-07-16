@@ -158,6 +158,7 @@ class ProcessingOption(models.Model):
     est_days_max = models.PositiveSmallIntegerField(default=5)
     price_usd = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     price_gel = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    is_included = models.BooleanField(default=False)
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
