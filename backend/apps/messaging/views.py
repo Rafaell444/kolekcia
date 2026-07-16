@@ -30,6 +30,84 @@ def _create_message(conversation, user, text=""):
     )
 
 
+def _broadcast_new_message(conv, msg, request=None):
+    """Push a new-message event to the chat group and unread notifications to participants."""
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+
+        send = async_to_sync(channel_layer.group_send)
+
+        msg_data = MessageSerializer(msg, context={"request": request}).data if request else {
+            "id": msg.pk,
+            "from_role": msg.from_role,
+            "sender_kind": msg.sender_kind,
+            "text": msg.text,
+            "sent_at": msg.sent_at.isoformat() if msg.sent_at else "",
+            "read": msg.read,
+            "attachments": [],
+        }
+
+        send(f"chat_{conv.pk}", {
+            "type": "chat_message",
+            "data": {"type": "new_message", "conversation_id": conv.pk, "message": msg_data},
+        })
+
+        send(f"inbox_user_{conv.customer_id}", {
+            "type": "inbox_unread_update",
+            "data": {"conversation_id": conv.pk},
+        })
+
+        if conv.vendor_id:
+            send(f"inbox_vendor_{conv.vendor_id}", {
+                "type": "inbox_unread_update",
+                "data": {"conversation_id": conv.pk},
+            })
+
+        send("inbox_staff", {
+            "type": "inbox_unread_update",
+            "data": {"conversation_id": conv.pk},
+        })
+    except Exception:
+        pass
+
+
+def _broadcast_read_update(conv, reader_user):
+    """Notify chat participants that messages were marked as read."""
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+
+        send = async_to_sync(channel_layer.group_send)
+
+        send(f"chat_{conv.pk}", {
+            "type": "chat_read_update",
+            "data": {"type": "read_update", "conversation_id": conv.pk, "reader_user_id": reader_user.pk},
+        })
+
+        send(f"inbox_user_{conv.customer_id}", {
+            "type": "inbox_unread_update",
+            "data": {"conversation_id": conv.pk},
+        })
+        if conv.vendor_id:
+            send(f"inbox_vendor_{conv.vendor_id}", {
+                "type": "inbox_unread_update",
+                "data": {"conversation_id": conv.pk},
+            })
+        send("inbox_staff", {
+            "type": "inbox_unread_update",
+            "data": {"conversation_id": conv.pk},
+        })
+    except Exception:
+        pass
+
+
 class ConversationListView(generics.ListCreateAPIView):
     serializer_class = ConversationSerializer
     permission_classes = [IsAuthenticated]
@@ -73,7 +151,8 @@ class ConversationListView(generics.ListCreateAPIView):
         conv = serializer.save(customer=self.request.user, vendor=vendor, product=product, subject=subject)
         text = self.request.data.get("initial_message", "")
         if text:
-            _create_message(conv, self.request.user, text)
+            msg = _create_message(conv, self.request.user, text)
+            _broadcast_new_message(conv, msg, self.request)
 
 
 class ConversationDetailView(generics.RetrieveAPIView):
@@ -93,13 +172,15 @@ class ConversationDetailView(generics.RetrieveAPIView):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         if request.user.is_staff or _is_vendor(request.user):
-            Message.objects.filter(
+            updated = Message.objects.filter(
                 conversation=instance, from_role="customer", read=False
             ).update(read=True)
         else:
-            Message.objects.filter(
+            updated = Message.objects.filter(
                 conversation=instance, from_role="admin", read=False
             ).update(read=True)
+        if updated:
+            _broadcast_read_update(instance, request.user)
         if getattr(instance, "_prefetched_objects_cache", None):
             instance._prefetched_objects_cache.pop("messages", None)
         serializer = self.get_serializer(instance)
@@ -153,6 +234,7 @@ class SendMessageView(APIView):
             )
 
         conv.save()
+        _broadcast_new_message(conv, msg, request)
         return Response(MessageSerializer(msg, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
@@ -195,7 +277,8 @@ class StartConversationWithCustomerView(APIView):
 
         initial = (request.data.get("initial_message") or "").strip()
         if initial:
-            _create_message(conv, request.user, initial)
+            msg = _create_message(conv, request.user, initial)
+            _broadcast_new_message(conv, msg, request)
 
         return Response(
             ConversationSerializer(conv, context={"request": request}).data,

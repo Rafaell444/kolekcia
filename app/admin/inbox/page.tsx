@@ -9,6 +9,7 @@ import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, Loader2, Paperclip, X, Play } from "lucide-react"
 import { getAdminToken, getAdminUser } from "@/lib/admin-auth"
+import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
 
 type Attachment = { id: string; url: string; media_type: string; original_name: string }
 type Message = {
@@ -36,9 +37,6 @@ type Conversation = {
   product_image_url: string | null
   messages: Message[]
 }
-
-const CHAT_POLL_MS = 8000
-const LIST_POLL_MS = 30000
 
 function relTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000
@@ -84,7 +82,6 @@ export default function AdminInboxPage(): React.ReactElement {
   const [loading, setLoading]   = useState(true)
   const endRef      = useRef<HTMLDivElement>(null)
   const lastMsgCount = useRef<number>(0)
-  const pollRef     = useRef<NodeJS.Timeout | null>(null)
   const activeIdRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const openedFromUrl = useRef(false)
@@ -97,7 +94,7 @@ export default function AdminInboxPage(): React.ReactElement {
     notifyInboxRead()
   }
 
-  const pollList = useCallback(async () => {
+  const loadList = useCallback(async () => {
     try {
       const raw = await adminFetch<Conversation[] | PaginatedResponse<Conversation>>("/messaging/conversations/")
       const data = parseList(raw)
@@ -114,7 +111,6 @@ export default function AdminInboxPage(): React.ReactElement {
     } catch { /* noop */ }
   }, [])
 
-  // Load conversation list
   useEffect(() => {
     let cancelled = false
     adminFetch<Conversation[] | PaginatedResponse<Conversation>>("/messaging/conversations/")
@@ -124,44 +120,26 @@ export default function AdminInboxPage(): React.ReactElement {
     return () => { cancelled = true }
   }, [])
 
-  // Refresh list unread counts — skip when tab hidden, fire immediately on return
-  useEffect(() => {
-    const tick = () => { if (!document.hidden) void pollList() }
-    const id = setInterval(tick, LIST_POLL_MS)
-    const onVisible = () => { if (!document.hidden) void pollList() }
-    document.addEventListener("visibilitychange", onVisible)
-    return () => {
-      clearInterval(id)
-      document.removeEventListener("visibilitychange", onVisible)
-    }
-  }, [pollList])
+  const handleNotif = useCallback(() => {
+    void loadList()
+  }, [loadList])
 
-  // Auto-scroll to bottom
+  useNotificationSocket(getAdminToken(), handleNotif)
+
+  const handleChatWs = useCallback((event: ChatWsEvent) => {
+    if (event.type === "new_message" && event.message) {
+      setConvs((prev) => prev.map((c) =>
+        c.id === activeIdRef.current
+          ? { ...c, messages: [...(c.messages ?? []), event.message as unknown as Message] }
+          : c
+      ))
+      lastMsgCount.current += 1
+    }
+  }, [])
+
+  useChatSocket(activeId, getAdminToken(), handleChatWs)
+
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }) }, [activeId, convs])
-
-  // Live poll active conversation — skip when tab hidden
-  const pollActive = useCallback(async () => {
-    if (!activeId || document.hidden) return
-    try {
-      const full = await adminFetch<Conversation>(`/messaging/conversations/${activeId}/`)
-      const newCount = full.messages?.length ?? 0
-      if (newCount > lastMsgCount.current) lastMsgCount.current = newCount
-      setConvs((prev) => prev.map((c) => (c.id === activeId ? { ...full, unread_count: 0 } : c)))
-    } catch { /* noop */ }
-  }, [activeId])
-
-  useEffect(() => {
-    if (pollRef.current) clearInterval(pollRef.current)
-    if (!activeId) return
-    pollRef.current = setInterval(() => { void pollActive() }, CHAT_POLL_MS)
-    // Fire immediately when user returns to tab
-    const onVisible = () => { if (!document.hidden) void pollActive() }
-    document.addEventListener("visibilitychange", onVisible)
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-      document.removeEventListener("visibilitychange", onVisible)
-    }
-  }, [activeId, pollActive])
 
   async function openConv(id: string | number) {
     const sid = String(id)

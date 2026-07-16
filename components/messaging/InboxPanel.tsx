@@ -7,6 +7,7 @@ import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play } from "lucide-react"
 import { getAccessToken } from "@/lib/auth-storage"
+import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
 
 export type InboxAttachment = { id: string; url: string; media_type: string; original_name: string }
 export type InboxMessage = { id: string; from_role: string; text: string; sent_at: string; read: boolean; attachments: InboxAttachment[] }
@@ -23,9 +24,6 @@ export type InboxConversation = {
   created_at: string
   messages: InboxMessage[]
 }
-
-const CHAT_POLL_MS = 8000   // active conversation — pause when tab hidden
-const LIST_POLL_MS = 30000  // sidebar unread counts
 
 function relTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000
@@ -74,40 +72,15 @@ function ChatWindow({
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
-  const lastMsgCount = useRef(conv.messages.length)
-  const pollRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    lastMsgCount.current = conv.messages.length
-  }, [conv.id])
-
-  const poll = useCallback(async () => {
-    if (document.hidden) return   // skip when tab not visible
-    try {
-      const full = await authFetch<InboxConversation>(`/messaging/conversations/${conv.id}/`)
-      if (full.messages.length > lastMsgCount.current) {
-        lastMsgCount.current = full.messages.length
-        onNewMessages(full.messages, conv.id)
-      }
-    } catch { /* noop */ }
-  }, [conv.id, onNewMessages])
-
-  useEffect(() => {
-    lastMsgCount.current = conv.messages.length
-    // Guard against React StrictMode double-mount creating two intervals
-    if (pollRef.current) clearInterval(pollRef.current)
-    pollRef.current = setInterval(() => { void poll() }, CHAT_POLL_MS)
-
-    // Immediately fire when tab becomes visible again so users don't wait 8s
-    const onVisible = () => { if (!document.hidden) void poll() }
-    document.addEventListener("visibilitychange", onVisible)
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-      document.removeEventListener("visibilitychange", onVisible)
+  const handleChatWs = useCallback((event: ChatWsEvent) => {
+    if (event.type === "new_message" && event.message) {
+      onNewMessages([...conv.messages, event.message as unknown as InboxMessage], conv.id)
     }
-  }, [conv.id, poll])
+  }, [conv.id, conv.messages, onNewMessages])
+
+  useChatSocket(conv.id, getAccessToken(), handleChatWs)
 
   async function send() {
     const text = draft.trim()
@@ -322,32 +295,11 @@ export default function InboxPanel({
     return () => { cancelled = true }
   }, [loadList, initialConvId, autoSelectFirst])
 
-  useEffect(() => {
-    const tick = () => {
-      if (document.hidden) return   // skip when tab not visible
-      void loadList().then((data) => {
-        const currentActiveId = activeIdRef.current
-        if (!currentActiveId) { setConvs(data); return }
-        setConvs((prev) => {
-          const prevActive = prev.find((c) => String(c.id) === String(currentActiveId))
-          return data.map((c) => {
-            if (String(c.id) === String(currentActiveId) && prevActive?.messages?.length) {
-              return { ...prevActive, unread_count: 0 }
-            }
-            return c
-          })
-        })
-      })
-    }
-    const id = setInterval(tick, LIST_POLL_MS)
-    // Fire immediately when the user returns to the tab
-    const onVisible = () => { if (!document.hidden) tick() }
-    document.addEventListener("visibilitychange", onVisible)
-    return () => {
-      clearInterval(id)
-      document.removeEventListener("visibilitychange", onVisible)
-    }
+  const handleNotif = useCallback(() => {
+    void loadList()
   }, [loadList])
+
+  useNotificationSocket(getAccessToken(), handleNotif)
 
   async function openConv(id: string) {
     setActiveId(id)
