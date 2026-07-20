@@ -29,11 +29,13 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState("")
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const prevMsgCount = useRef(0)
 
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    const el = chatContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
   }, [])
 
   useEffect(() => {
@@ -47,7 +49,11 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
   }, [auctionId, isLive])
 
   useEffect(() => {
-    scrollToBottom()
+    const count = messages.length
+    if (count > prevMsgCount.current) {
+      requestAnimationFrame(scrollToBottom)
+    }
+    prevMsgCount.current = count
   }, [messages, scrollToBottom])
 
   useEffect(() => {
@@ -126,7 +132,7 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {loading ? (
           <div className="flex justify-center py-8"><Loader2 size={18} className="animate-spin text-dp-text-tertiary" /></div>
         ) : messages.length === 0 ? (
@@ -140,7 +146,6 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
             </div>
           ))
         )}
-        <div ref={bottomRef} />
       </div>
 
       <form onSubmit={handleSend} className="p-3 border-t border-dp-border flex gap-2">

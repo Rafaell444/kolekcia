@@ -6,7 +6,7 @@ import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
 import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play, Check, CheckCheck } from "lucide-react"
-import { getAccessToken } from "@/lib/auth-storage"
+import { getAccessToken, getStoredUser } from "@/lib/auth-storage"
 import { refreshAccessToken } from "@/lib/api"
 import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
 
@@ -60,40 +60,57 @@ function AttachmentPreview({ att }: { att: InboxAttachment }) {
   )
 }
 
+function mergeMsg(msgs: InboxMessage[], newMsg: InboxMessage): InboxMessage[] {
+  const id = String(newMsg.id)
+  if (msgs.some((m) => String(m.id) === id)) return msgs
+  return [...msgs, newMsg]
+}
+
 function ChatWindow({
   conv,
   onBack,
-  onNewMessages,
+  onAddMessage,
+  onMarkRead,
 }: {
   conv: InboxConversation
   onBack: () => void
-  onNewMessages: (msgs: InboxMessage[], id: string) => void
+  onAddMessage: (convId: string, msg: InboxMessage) => void
+  onMarkRead: (convId: string) => void
 }) {
   const [draft, setDraft] = useState("")
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
-  const endRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const sentMsgIds = useRef<Set<string>>(new Set())
+  const prevMsgCount = useRef(conv.messages?.length ?? 0)
+
+  const scrollChatToBottom = useCallback(() => {
+    const el = chatContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [])
+
+  useEffect(() => {
+    const count = conv.messages?.length ?? 0
+    if (count > prevMsgCount.current) {
+      requestAnimationFrame(scrollChatToBottom)
+    }
+    prevMsgCount.current = count
+  }, [conv.messages, scrollChatToBottom])
+
+  useEffect(() => {
+    prevMsgCount.current = 0
+    requestAnimationFrame(scrollChatToBottom)
+  }, [conv.id, scrollChatToBottom])
 
   const handleChatWs = useCallback((event: ChatWsEvent) => {
     if (event.type === "new_message" && event.message) {
-      const newMsg = event.message as unknown as InboxMessage
-      const msgId = String(newMsg.id)
-      // Skip if we sent this message ourselves (already added optimistically)
-      if (sentMsgIds.current.has(msgId)) {
-        sentMsgIds.current.delete(msgId)
-        return
-      }
-      onNewMessages([...conv.messages, newMsg], conv.id)
+      onAddMessage(conv.id, event.message as unknown as InboxMessage)
     } else if (event.type === "read_update") {
-      // Mark all customer messages as read when admin reads them
-      onNewMessages(
-        conv.messages.map((m) => m.from_role === "customer" ? { ...m, read: true } : m),
-        conv.id
-      )
+      const myId = String(getStoredUser<{ id: string }>()?.id ?? "")
+      if (event.reader_user_id === myId) return
+      onMarkRead(conv.id)
     }
-  }, [conv.id, conv.messages, onNewMessages])
+  }, [conv.id, onAddMessage, onMarkRead])
 
   useChatSocket(conv.id, getAccessToken, refreshAccessToken, handleChatWs)
 
@@ -121,11 +138,10 @@ function ChatWindow({
           body: JSON.stringify({ text }),
         })
       }
-      sentMsgIds.current.add(String(msg.id))
-      onNewMessages([...conv.messages, msg], conv.id)
+      onAddMessage(conv.id, msg)
       setDraft("")
       setPendingFiles([])
-      requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: "smooth" }))
+      requestAnimationFrame(scrollChatToBottom)
     } catch { /* noop */ }
     finally { setSending(false) }
   }
@@ -171,7 +187,7 @@ function ChatWindow({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-4 sm:py-5 flex flex-col gap-3 bg-dp-bg-base">
+      <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-4 sm:py-5 flex flex-col gap-3 bg-dp-bg-base">
         {(conv.messages ?? []).map((m) => {
           const isOwn = m.from_role === "customer"
           return (
@@ -192,19 +208,18 @@ function ChatWindow({
                     ))}
                   </div>
                 )}
-                <p className={`text-[10px] mt-1 opacity-60 flex items-center gap-1 ${isOwn ? "justify-end" : ""}`}>
+                <p className={`text-[10px] mt-1 flex items-center gap-1 ${isOwn ? "justify-end text-white/60" : "text-dp-text-tertiary"}`}>
                   <span>{relTime(m.sent_at)}</span>
                   {isOwn && (
                     m.read
-                      ? <CheckCheck size={12} className="text-white/90" aria-label="Seen" />
-                      : <Check size={12} className="text-white/60" aria-label="Sent" />
+                      ? <CheckCheck size={13} className="text-white/90" aria-label="Seen" />
+                      : <Check size={13} className="text-white/60" aria-label="Sent" />
                   )}
                 </p>
               </div>
             </div>
           )
         })}
-        <div ref={endRef} />
       </div>
 
       <div className="px-3 sm:px-4 py-3 border-t border-dp-border bg-dp-bg-surface shrink-0">
@@ -280,7 +295,16 @@ export default function InboxPanel({
     try {
       const raw = await authFetch<InboxConversation[] | PaginatedResponse<InboxConversation>>("/messaging/conversations/")
       const data = parseList(raw)
-      setConvs(data)
+      const currentActiveId = activeIdRef.current
+      setConvs((prev) => {
+        const prevActive = currentActiveId ? prev.find((c) => String(c.id) === String(currentActiveId)) : null
+        if (prevActive?.messages?.length) {
+          return data.map((c) =>
+            String(c.id) === String(currentActiveId) ? { ...prevActive, unread_count: 0 } : c
+          )
+        }
+        return data
+      })
       return data
     } catch {
       return []
@@ -317,14 +341,18 @@ export default function InboxPanel({
     return () => { cancelled = true }
   }, [loadList, initialConvId, autoSelectFirst])
 
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleNotif = useCallback(() => {
-    void loadList()
+    if (reloadTimer.current) clearTimeout(reloadTimer.current)
+    reloadTimer.current = setTimeout(() => { void loadList() }, 300)
   }, [loadList])
 
   useNotificationSocket(getAccessToken, refreshAccessToken, handleNotif)
 
   async function openConv(id: string) {
     setActiveId(id)
+    activeIdRef.current = id
+    setConvs((prev) => prev.map((c) => String(c.id) === String(id) ? { ...c, unread_count: 0 } : c))
     try {
       const full = await authFetch<InboxConversation>(`/messaging/conversations/${id}/`)
       setConvs((prev) => prev.map((c) => String(c.id) === String(id) ? { ...full, unread_count: 0 } : c))
@@ -332,9 +360,19 @@ export default function InboxPanel({
     } catch { /* noop */ }
   }
 
-  function handleNewMessages(messages: InboxMessage[], convId: string) {
-    setConvs((prev) => prev.map((c) => String(c.id) === String(convId) ? { ...c, messages } : c))
-  }
+  const addMessage = useCallback((convId: string, msg: InboxMessage) => {
+    setConvs((prev) => prev.map((c) =>
+      String(c.id) === String(convId) ? { ...c, messages: mergeMsg(c.messages ?? [], msg) } : c
+    ))
+  }, [])
+
+  const markRead = useCallback((convId: string) => {
+    setConvs((prev) => prev.map((c) =>
+      String(c.id) === String(convId)
+        ? { ...c, messages: (c.messages ?? []).map((m) => m.from_role === "customer" ? { ...m, read: true } : m) }
+        : c
+    ))
+  }, [])
 
   const active = convs.find((c) => String(c.id) === String(activeId)) ?? null
   const panelStyle = embedded
@@ -399,7 +437,7 @@ export default function InboxPanel({
 
       <main className={`flex-1 min-w-0 min-h-0 ${active ? "flex" : "hidden md:flex"} flex-col bg-dp-bg-base`}>
         {active ? (
-          <ChatWindow conv={active} onBack={() => setActiveId(null)} onNewMessages={handleNewMessages} />
+          <ChatWindow conv={active} onBack={() => setActiveId(null)} onAddMessage={addMessage} onMarkRead={markRead} />
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-dp-text-tertiary">
             <MessageSquare size={40} className="opacity-30" />

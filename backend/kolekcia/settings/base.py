@@ -1,6 +1,11 @@
 from pathlib import Path
 from datetime import timedelta
 import environ
+import os
+import certifi
+
+os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -25,6 +30,7 @@ GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")
 
 DJANGO_APPS = [
     "daphne",  # Must be before staticfiles to patch runserver for ASGI/WebSocket support
+    "modeltranslation",  # Must precede django.contrib.admin per docs
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -43,6 +49,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "apps.core",
     "apps.users",
     "apps.vendors",
     "apps.products",
@@ -57,6 +64,7 @@ LOCAL_APPS = [
     "apps.newsletter",
     "apps.contact",
     "apps.tenants",
+    "apps.emails",
     "apps.admin_api",
 ]
 
@@ -71,6 +79,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.core.middleware.APILocaleMiddleware",
 ]
 
 ROOT_URLCONF = "kolekcia.urls"
@@ -120,10 +129,19 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-LANGUAGE_CODE = "en-us"
+LANGUAGE_CODE = "en"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
+
+LANGUAGES = [
+    ("en", "English"),
+    ("ka", "Georgian"),
+    ("ru", "Russian"),
+]
+
+MODELTRANSLATION_DEFAULT_LANGUAGE = "en"
+MODELTRANSLATION_LANGUAGES = ("en", "ka", "ru")
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

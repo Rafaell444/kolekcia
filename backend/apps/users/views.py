@@ -87,10 +87,10 @@ class GoogleAuthView(APIView):
 
         try:
             id_info = verify_google_id_token(serializer.validated_data["id_token"])
-        except ValueError as exc:
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Google token verification failed: %s", exc)
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception:
-            return Response({"detail": "Invalid Google token."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user, created = authenticate_google_user(id_info)

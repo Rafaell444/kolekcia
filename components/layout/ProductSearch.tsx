@@ -6,6 +6,7 @@ import { Search, X, Loader2 } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { useLocale } from "@/contexts/locale-context"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 export type SearchProduct = {
   id: number
@@ -135,6 +136,7 @@ function SearchResults({
 /** Inline search for the burger menu sidebar. */
 export function MenuSearch({ onClose }: { onClose?: () => void }) {
   const router = useRouter()
+  const lp = useLocalePrefix()
   const { query, setQuery, results, busy, reset } = useProductSearch()
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -146,7 +148,7 @@ export function MenuSearch({ onClose }: { onClose?: () => void }) {
   function go(product: SearchProduct) {
     reset()
     onClose?.()
-    router.push(productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug }))
+    router.push(`${lp}${productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug })}`)
   }
 
   function seeAll() {
@@ -154,7 +156,7 @@ export function MenuSearch({ onClose }: { onClose?: () => void }) {
     if (!q) return
     reset()
     onClose?.()
-    router.push(`/catalog?search=${encodeURIComponent(q)}`)
+    router.push(`${lp}/catalog?search=${encodeURIComponent(q)}`)
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -205,6 +207,7 @@ export function MenuSearch({ onClose }: { onClose?: () => void }) {
 /** Desktop header search — expands inline in the nav bar. */
 export function DesktopSearch() {
   const router = useRouter()
+  const lp = useLocalePrefix()
   const [open, setOpen] = useState(false)
   const { query, setQuery, results, busy, reset } = useProductSearch()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -232,14 +235,14 @@ export function DesktopSearch() {
 
   function go(product: SearchProduct) {
     close()
-    router.push(productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug }))
+    router.push(`${lp}${productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug })}`)
   }
 
   function seeAll() {
     const q = query.trim()
     if (!q) return
     close()
-    router.push(`/catalog?search=${encodeURIComponent(q)}`)
+    router.push(`${lp}/catalog?search=${encodeURIComponent(q)}`)
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -291,6 +294,7 @@ export function DesktopSearch() {
 /** Mobile header search — opens a top sheet overlay (only when burger menu is closed). */
 export function MobileHeaderSearch({ hidden }: { hidden?: boolean }) {
   const router = useRouter()
+  const lp = useLocalePrefix()
   const [open, setOpen] = useState(false)
   const { query, setQuery, results, busy, reset } = useProductSearch()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -317,14 +321,14 @@ export function MobileHeaderSearch({ hidden }: { hidden?: boolean }) {
 
   function go(product: SearchProduct) {
     close()
-    router.push(productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug }))
+    router.push(`${lp}${productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug })}`)
   }
 
   function seeAll() {
     const q = query.trim()
     if (!q) return
     close()
-    router.push(`/catalog?search=${encodeURIComponent(q)}`)
+    router.push(`${lp}/catalog?search=${encodeURIComponent(q)}`)
   }
 
   function handleKey(e: React.KeyboardEvent) {

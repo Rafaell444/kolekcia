@@ -13,6 +13,7 @@ import { getAccessToken } from "@/lib/auth-storage"
 import { savePendingCartIntent } from "@/lib/pending-cart"
 import { getApiErrorMessage } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 export type ProductCardProps = {
   product: {
@@ -40,7 +41,8 @@ export type ProductCardProps = {
 }
 
 export default function ProductCard({ product: p }: ProductCardProps) {
-  const href = productHref({ id: p.id, slug: p.slug, categorySlug: p.category })
+  const lp = useLocalePrefix()
+  const href = `${lp}${productHref({ id: p.id, slug: p.slug, categorySlug: p.category })}`
   const router = useRouter()
   const { addItem } = useCart()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()

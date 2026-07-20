@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Vendor
+from apps.core.serializers import build_seo_dict
 
 
 class VendorSerializer(serializers.ModelSerializer):
@@ -31,9 +32,15 @@ class VendorPublicSerializer(serializers.ModelSerializer):
 
 
 class VendorStorefrontSerializer(serializers.ModelSerializer):
+    seo = serializers.SerializerMethodField()
+
     class Meta:
         model = Vendor
         fields = (
             "name", "slug", "logo_url", "banner_url", "description",
             "social_website", "social_instagram", "social_facebook", "social_twitter", "social_tiktok", "social_youtube",
+            "seo",
         )
+
+    def get_seo(self, obj):
+        return build_seo_dict(obj, og_image=obj.logo_url or "")

@@ -9,10 +9,12 @@ from .views import (
     VendorAuctionListView,
     VendorAuctionDetailView,
     VendorAuctionMarkPaidView,
+    AuctionSubscribeView,
 )
 
 urlpatterns = [
     path("", AuctionListView.as_view(), name="auction-list"),
+    path("subscribe/", AuctionSubscribeView.as_view(), name="auction-subscribe"),
     path("leaderboard/", GlobalLeaderboardView.as_view(), name="auction-global-leaderboard"),
     path("vendor/", VendorAuctionListView.as_view(), name="vendor-auction-list"),
     path("vendor/<int:pk>/", VendorAuctionDetailView.as_view(), name="vendor-auction-detail"),

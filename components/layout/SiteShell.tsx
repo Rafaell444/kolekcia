@@ -23,6 +23,7 @@ import TrustBar from "@/components/home/TrustBar"
 import LocaleSwitcher, { LocaleSwitcherInline } from "@/components/layout/LocaleSwitcher"
 import { DesktopSearch, MobileHeaderSearch, MenuSearch } from "@/components/layout/ProductSearch"
 import { useLocale } from "@/contexts/locale-context"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 type NavCategory = { id: string; name: string; slug: string }
 type NavVendor = { id: number; name: string; slug: string; logo_url: string; catalog_category_slug: string }
@@ -98,6 +99,7 @@ function ShopMegaMenu({
   featured: NavProduct[]
 }) {
   const { formatPrice } = useLocale()
+  const lp = useLocalePrefix()
 
   return (
     <div className="absolute top-full left-0 w-full bg-dp-bg-surface border-b border-dp-border shadow-xl z-40 -mt-px pt-px">
@@ -108,12 +110,12 @@ function ShopMegaMenu({
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Collections</p>
           <ul className="flex flex-col gap-1">
             {[
-              { label: "New Arrivals",     href: "/catalog?filter=new",     icon: <Sparkles size={13} /> },
-              { label: "Trending Now",     href: "/catalog?sort=popular",   icon: <Flame    size={13} /> },
-              { label: "Limited Editions", href: "/catalog?filter=limited", icon: <Star     size={13} /> },
-              { label: "On Sale",          href: "/catalog?filter=sale",    icon: <Zap      size={13} /> },
-              { label: "Exclusive Drops",  href: "/catalog?filter=exclusive",icon:<Award    size={13} /> },
-              { label: "All Designs",      href: "/catalog",                icon: <Brush    size={13} /> },
+              { label: "New Arrivals",     href: `${lp}/catalog?filter=new`,     icon: <Sparkles size={13} /> },
+              { label: "Trending Now",     href: `${lp}/catalog?sort=popular`,   icon: <Flame    size={13} /> },
+              { label: "Limited Editions", href: `${lp}/catalog?filter=limited`, icon: <Star     size={13} /> },
+              { label: "On Sale",          href: `${lp}/catalog?filter=sale`,    icon: <Zap      size={13} /> },
+              { label: "Exclusive Drops",  href: `${lp}/catalog?filter=exclusive`,icon:<Award    size={13} /> },
+              { label: "All Designs",      href: `${lp}/catalog`,                icon: <Brush    size={13} /> },
             ].map(({ label, href, icon }) => (
               <li key={label}>
                 <Link
@@ -136,7 +138,7 @@ function ShopMegaMenu({
             {categories.map((cat) => (
               <li key={cat.id}>
                 <Link
-                  href={`/catalog?category=${cat.slug}`}
+                  href={`${lp}/catalog?category=${cat.slug}`}
                   onClick={onClose}
                   className="flex items-center gap-2 px-2 py-2 rounded-sm text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors group"
                 >
@@ -159,7 +161,7 @@ function ShopMegaMenu({
               return (
               <li key={vendor.id}>
                 <Link
-                  href={`/catalog?category=${vendor.catalog_category_slug}`}
+                  href={`${lp}/catalog?category=${vendor.catalog_category_slug}`}
                   onClick={onClose}
                   className="flex items-center gap-3 group"
                 >
@@ -175,7 +177,7 @@ function ShopMegaMenu({
               )
             })}
             <li>
-              <Link href="/artists" onClick={onClose} className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors mt-1">
+              <Link href={`${lp}/artists`} onClick={onClose} className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors mt-1">
                 All Vendors <ArrowRight size={11} />
               </Link>
             </li>
@@ -204,7 +206,7 @@ function ShopMegaMenu({
               </Link>
             ))}
             <Link
-              href="/catalog?filter=exclusive"
+              href={`${lp}/catalog?filter=exclusive`}
               onClick={onClose}
               className="mt-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-black uppercase tracking-widest rounded-sm transition-colors"
             >
@@ -337,6 +339,7 @@ function MegaNavItem({
 function AccountMenu() {
   const { user, logout } = useAuth()
   const router = useRouter()
+  const lp = useLocalePrefix()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const inboxUnread = useInboxUnreadCount()
@@ -352,7 +355,7 @@ function AccountMenu() {
   async function handleLogout() {
     setOpen(false)
     await logout()
-    router.push("/login")
+    router.push(`${lp}/login`)
   }
 
   return (
@@ -386,7 +389,7 @@ function AccountMenu() {
             <>
               {[
                 { href: "/account",          icon: <User    size={13} />, label: "Profile & Orders" },
-                { href: "/inbox",            icon: <MessageSquare size={13} />, label: "Inbox" },
+                { href: `${lp}/inbox`,       icon: <MessageSquare size={13} />, label: "Inbox" },
                 { href: "/account/wishlist", icon: <Heart   size={13} />, label: "Wishlist" },
                 { href: "/account/awards",   icon: <Award   size={13} />, label: "Awards & XP" },
                 { href: "/account/orders",   icon: <Package size={13} />, label: "Order History" },
@@ -420,7 +423,7 @@ function AccountMenu() {
           ) : (
             <div className="border-t border-dp-border">
               <Link
-                href="/login"
+                href={`${lp}/login`}
                 role="menuitem"
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors"
@@ -513,6 +516,7 @@ function SiteHeader({
   useEffect(() => { setMounted(true) }, [])
 
   const closeMobileMenu = useCallback(() => onMobileOpenChange(false), [onMobileOpenChange])
+  const lp = useLocalePrefix()
 
   return (
     <header
@@ -523,7 +527,7 @@ function SiteHeader({
       <div className="dp-container flex items-center justify-between gap-4 py-3">
 
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 shrink-0" aria-label="Kolekcia home">
+        <Link href={lp} className="flex items-center gap-2 shrink-0" aria-label="Kolekcia home">
           <span className="flex items-center justify-center w-7 h-7 rounded-sm border border-dp-border-hover bg-dp-bg-elevated" aria-hidden>
             <span className="block w-3.5 h-3.5 rounded-sm border-2" style={{ borderColor: "var(--dp-accent-cta)" }} />
           </span>
@@ -532,13 +536,13 @@ function SiteHeader({
 
         {/* Desktop Nav */}
         <nav className="hidden lg:flex items-center gap-6" aria-label="Main navigation">
-          <MegaNavItem label="Shop" menuKey="shop" href="/catalog" activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} isActive={pathname.startsWith("/catalog")} />
-          <MegaNavItem label="Artists"  menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/artists"  isActive={pathname.startsWith("/artists")} />
-          <MegaNavItem label="Auctions" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/auctions" isActive={pathname.startsWith("/auctions")} />
-          <MegaNavItem label="Blog" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/blog" isActive={pathname.startsWith("/blog")} />
-          <MegaNavItem label="Custom"   menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/custom"   isActive={pathname.startsWith("/custom")} />
-          <MegaNavItem label="About"      menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/about"    isActive={pathname.startsWith("/about")} />
-          <MegaNavItem label="Contact Us" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href="/contact"  isActive={pathname.startsWith("/contact")} />
+          <MegaNavItem label="Shop" menuKey="shop" href={`${lp}/catalog`} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} isActive={pathname.includes("/catalog")} />
+          <MegaNavItem label="Artists"  menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/artists`}  isActive={pathname.includes("/artists")} />
+          <MegaNavItem label="Auctions" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/auctions`} isActive={pathname.includes("/auctions")} />
+          <MegaNavItem label="Blog" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/blog`} isActive={pathname.includes("/blog")} />
+          <MegaNavItem label="Custom"   menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/custom`}   isActive={pathname.includes("/custom")} />
+          <MegaNavItem label="About"      menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/about`}    isActive={pathname.includes("/about")} />
+          <MegaNavItem label="Contact Us" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/contact`}  isActive={pathname.includes("/contact")} />
         </nav>
 
         {/* Actions */}
@@ -550,7 +554,7 @@ function SiteHeader({
           <MobileHeaderSearch hidden={mobileOpen} />
           <DesktopSearch />
           <Link
-            href="/cart"
+            href={`${lp}/cart`}
             className="relative flex items-center justify-center w-8 h-8 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
             aria-label={`Shopping cart, ${itemCount} items`}
           >
@@ -594,7 +598,7 @@ function SiteHeader({
           aria-label="Mobile navigation"
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-dp-border shrink-0">
-            <Link href="/" onClick={closeMobileMenu} className="font-display text-lg text-dp-text-primary tracking-wider">
+            <Link href={lp} onClick={closeMobileMenu} className="font-display text-lg text-dp-text-primary tracking-wider">
               KOLEKCIA
             </Link>
             <button
@@ -618,25 +622,25 @@ function SiteHeader({
               {mobileShop && (
                 <div className="pl-3 pb-2 flex flex-col gap-1 border-l-2 border-dp-accent-cta/30 ml-2">
                   {[
-                    { label: "All Designs",      href: "/catalog" },
-                    { label: "Wallpanels",       href: "/catalog?category=wallpanels" },
-                    { label: "Figures",          href: "/catalog?category=figures" },
-                    { label: "New Arrivals",      href: "/catalog?filter=new" },
-                    { label: "Trending",          href: "/catalog?sort=popular" },
-                    { label: "Limited Editions",  href: "/catalog?filter=limited" },
-                    { label: "On Sale",           href: "/catalog?filter=sale" },
+                    { label: "All Designs",      href: `${lp}/catalog` },
+                    { label: "Wallpanels",       href: `${lp}/catalog?category=wallpanels` },
+                    { label: "Figures",          href: `${lp}/catalog?category=figures` },
+                    { label: "New Arrivals",      href: `${lp}/catalog?filter=new` },
+                    { label: "Trending",          href: `${lp}/catalog?sort=popular` },
+                    { label: "Limited Editions",  href: `${lp}/catalog?filter=limited` },
+                    { label: "On Sale",           href: `${lp}/catalog?filter=sale` },
                   ].map(({ label, href }) => (
                     <Link key={label} href={href} onClick={closeMobileMenu} className="py-1.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
                   ))}
                 </div>
               )}
 
-              <Link href="/artists"  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Artists</Link>
-              <Link href="/auctions" onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Auctions</Link>
-              <Link href="/blog" onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Blog</Link>
-              <Link href="/custom"   onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Custom</Link>
-              <Link href="/about"    onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">About Us</Link>
-              <Link href="/contact"  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Contact Us</Link>
+              <Link href={`${lp}/artists`}  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Artists</Link>
+              <Link href={`${lp}/auctions`} onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Auctions</Link>
+              <Link href={`${lp}/blog`} onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Blog</Link>
+              <Link href={`${lp}/custom`}   onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Custom</Link>
+              <Link href={`${lp}/about`}    onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">About Us</Link>
+              <Link href={`${lp}/contact`}  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Contact Us</Link>
 
               <div className="pt-3 border-t border-dp-border mt-2">
                 <LocaleSwitcherInline />
@@ -654,6 +658,7 @@ function SiteHeader({
 
 // ── Footer ────────────────────────────────────────────────
 function SiteFooter() {
+  const lp = useLocalePrefix()
   const [siteName, setSiteName] = useState("Kolekcia")
   const [supportEmail, setSupportEmail] = useState("")
   const [supportPhone, setSupportPhone] = useState("")
@@ -700,11 +705,11 @@ function SiteFooter() {
             <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Shop</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "All Products", href: "/catalog" },
-                { label: "Wallpanels",   href: "/catalog?category=wallpanels" },
-                { label: "Figures",      href: "/catalog?category=figures" },
-                { label: "Custom",       href: "/custom" },
-                { label: "Auction",      href: "/auctions" },
+                { label: "All Products", href: `${lp}/catalog` },
+                { label: "Wallpanels",   href: `${lp}/catalog?category=wallpanels` },
+                { label: "Figures",      href: `${lp}/catalog?category=figures` },
+                { label: "Custom",       href: `${lp}/custom` },
+                { label: "Auction",      href: `${lp}/auctions` },
               ].map(({ label, href }) => (
                 <li key={label}>
                   <Link href={href} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
@@ -718,12 +723,12 @@ function SiteFooter() {
             <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Company</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "About Us",    href: "/about" },
-                { label: "Contact Us",  href: "/contact" },
-                { label: "Artists",     href: "/artists" },
-                { label: "Blog",        href: "/blog" },
+                { label: "About Us",    href: `${lp}/about` },
+                { label: "Contact Us",  href: `${lp}/contact` },
+                { label: "Artists",     href: `${lp}/artists` },
+                { label: "Blog",        href: `${lp}/blog` },
                 { label: "My Orders",   href: "/account/orders" },
-                { label: "Sign In",     href: "/login" },
+                { label: "Sign In",     href: `${lp}/login` },
               ].map(({ label, href }) => (
                 <li key={label}>
                   <Link href={href} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
@@ -737,11 +742,11 @@ function SiteFooter() {
             <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Support</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "Help Center",   href: "/faq" },
-                { label: "FAQ",           href: "/faq" },
-                { label: "Shipping",      href: "/shipping" },
-                { label: "Returns",       href: "/returns" },
-                { label: "Contact Us",    href: "/contact" },
+                { label: "Help Center",   href: `${lp}/faq` },
+                { label: "FAQ",           href: `${lp}/faq` },
+                { label: "Shipping",      href: `${lp}/shipping` },
+                { label: "Returns",       href: `${lp}/returns` },
+                { label: "Contact Us",    href: `${lp}/contact` },
               ].map(({ label, href }) => (
                 <li key={label}>
                   <Link href={href} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
@@ -766,9 +771,9 @@ function SiteFooter() {
           </div>
           <div className="flex items-center gap-4 flex-wrap justify-center">
             {[
-              { label: "Privacy", href: "/privacy" },
-              { label: "Terms", href: "/terms" },
-              { label: "Cookies", href: "/cookies" },
+              { label: "Privacy", href: `${lp}/privacy` },
+              { label: "Terms", href: `${lp}/terms` },
+              { label: "Cookies", href: `${lp}/cookies` },
             ].map(({ label, href }) => (
               <Link key={label} href={href} className="text-[11px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">{label}</Link>
             ))}

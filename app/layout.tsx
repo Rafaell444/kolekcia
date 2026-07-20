@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Suspense } from 'react'
+import { headers } from 'next/headers'
 import { Barlow, Barlow_Condensed, Bebas_Neue, Geist_Mono } from 'next/font/google'
 import { AuthProvider } from '@/contexts/auth-context'
 import GoogleAuthProvider from '@/components/auth/GoogleAuthProvider'
@@ -85,12 +86,15 @@ export const viewport: Viewport = {
   userScalable: false,
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const headersList = await headers()
+  const locale = headersList.get("x-locale") || "en"
+
   return (
     <html
-      lang="en"
+      lang={locale}
       suppressHydrationWarning
       data-scroll-behavior="smooth"
       className={`

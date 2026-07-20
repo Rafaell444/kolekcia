@@ -4,6 +4,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useLocale } from "@/contexts/locale-context"
 import { productHref } from "@/lib/product-url"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 import { resolveListProductPrice, formatAmount } from "@/lib/product-pricing"
 import type { SizeVariantPrice } from "@/lib/product-pricing"
 
@@ -28,6 +29,7 @@ type ApiProduct = {
 }
 
 export default function HomeProductCard({ product }: { product: ApiProduct }) {
+  const lp = useLocalePrefix()
   const { currency, rates } = useLocale()
   const { price, original } = resolveListProductPrice(product, currency, rates)
   const discount = original && original > price ? Math.round(((original - price) / original) * 100) : null
@@ -36,7 +38,7 @@ export default function HomeProductCard({ product }: { product: ApiProduct }) {
   const showFrom = activeVariants.length > 1
 
   return (
-    <Link href={productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug })}>
+    <Link href={`${lp}${productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug })}`}>
       <article className="group relative bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover cursor-pointer">
         <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
           {product.is_limited && <span className="badge-limited">Limited</span>}

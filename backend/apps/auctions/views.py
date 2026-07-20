@@ -283,3 +283,24 @@ class VendorAuctionMarkPaidView(VendorAuctionMixin, APIView):
             auction.winning_amount = auction.current_bid
         auction.save()
         return Response(AuctionSerializer(auction, context={"include_all_bids": True}).data)
+
+
+class AuctionSubscribeView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from .models import AuctionSubscriber
+
+        email = (request.data.get("email") or "").strip().lower()
+        if not email:
+            return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user if request.user.is_authenticated else None
+        _, created = AuctionSubscriber.objects.get_or_create(
+            email=email,
+            defaults={"user": user, "is_active": True},
+        )
+        return Response(
+            {"detail": "Subscribed successfully." if created else "Already subscribed.", "is_new": created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )

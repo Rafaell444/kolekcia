@@ -1,14 +1,19 @@
 from rest_framework import serializers
 from .models import Category, Artist, Product, ProductImage, ProductVariant, SizeVariant, PosterSize, PosterFinish, PosterFrame, Review, WishlistItem
 from apps.vendors.models import Vendor
+from apps.core.serializers import build_seo_dict
 
 
 class CategorySerializer(serializers.ModelSerializer):
     count = serializers.SerializerMethodField()
+    seo = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
-        fields = ("id", "name", "slug", "image_url", "count")
+        fields = ("id", "name", "slug", "image_url", "count", "seo")
+
+    def get_seo(self, obj):
+        return build_seo_dict(obj, og_image=obj.image_url or "")
 
     def get_count(self, obj):
         from django.db.models import Q
@@ -170,6 +175,8 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
     size_variants = SizeVariantSerializer(many=True, read_only=True)
+    seo = serializers.SerializerMethodField()
+    breadcrumbs = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -181,7 +188,31 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags",
             "description", "material", "processing_time_label", "created_at",
             "category_slug_input", "categories_input", "artist_handle", "image_url", "vendor_slug_input",
+            "seo", "breadcrumbs",
         )
+
+    def get_seo(self, obj):
+        og_image = ""
+        first_img = obj.images.first()
+        if first_img:
+            og_image = first_img.url or ""
+        return build_seo_dict(obj, og_image=og_image)
+
+    def get_breadcrumbs(self, obj):
+        crumbs = [
+            {"name": "Home", "url": "/"},
+            {"name": "Shop", "url": "/catalog"},
+        ]
+        if obj.category:
+            crumbs.append({
+                "name": obj.category.name or "",
+                "url": f"/catalog?category={obj.category.slug}",
+            })
+        crumbs.append({
+            "name": obj.title or "",
+            "url": f"/catalog/{obj.slug}",
+        })
+        return crumbs
 
     def get_vendor_id(self, obj):
         if obj.vendor_id:

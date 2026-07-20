@@ -1,11 +1,12 @@
 from django.db import models
 from django.utils import timezone
-from django.utils.text import slugify
 from apps.users.models import User
 from apps.products.models import Product
+from apps.core.seo import SEOModelMixin
+from apps.core.transliterate import smart_slugify
 
 
-class Auction(models.Model):
+class Auction(SEOModelMixin):
     STATUS_INACTIVE = "inactive"
     STATUS_ACTIVE = "active"
     STATUS_BOUGHT = "bought"
@@ -90,9 +91,24 @@ class Auction(models.Model):
         self.save(update_fields=["winner", "winning_amount", "winner_payment_status", "is_live"])
         return True
 
+    SEO_TEMPLATES = {
+        "en": {
+            "title": "{name} | Auction | Koleqcia",
+            "description": "Bid on {name} at Koleqcia auctions. Win exclusive handmade decor.",
+        },
+        "ka": {
+            "title": "{name} | აუქციონი | Koleqcia",
+            "description": "მიიღე მონაწილეობა {name} აუქციონში Koleqcia-ზე.",
+        },
+        "ru": {
+            "title": "{name} | Аукцион | Koleqcia",
+            "description": "Участвуйте в аукционе {name} на Koleqcia.",
+        },
+    }
+
     def save(self, *args, **kwargs):
         if not self.slug:
-            base = slugify(self.title) or "auction"
+            base = smart_slugify(self.title) or "auction"
             candidate = base
             n = 1
             while Auction.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
@@ -132,3 +148,22 @@ class AuctionChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.user.email} @ {self.auction.title}"
+
+
+class AuctionSubscriber(models.Model):
+    email = models.EmailField(unique=True)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="auction_subscriptions",
+    )
+    subscribed_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "auction_subscribers"
+
+    def __str__(self):
+        return self.email

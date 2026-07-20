@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 from .models import Auction, AuctionBid, AuctionChatMessage
+from apps.core.serializers import build_seo_dict
 
 
 class AuctionBidSerializer(serializers.ModelSerializer):
@@ -46,6 +47,9 @@ class AuctionSerializer(serializers.ModelSerializer):
     is_biddable = serializers.SerializerMethodField()
     winner_name = serializers.SerializerMethodField()
 
+    seo = serializers.SerializerMethodField()
+    breadcrumbs = serializers.SerializerMethodField()
+
     class Meta:
         model = Auction
         fields = (
@@ -79,7 +83,19 @@ class AuctionSerializer(serializers.ModelSerializer):
             "recent_bids",
             "all_bids",
             "created_at",
+            "seo",
+            "breadcrumbs",
         )
+
+    def get_seo(self, obj):
+        return build_seo_dict(obj, og_image=obj.image_url or "")
+
+    def get_breadcrumbs(self, obj):
+        return [
+            {"name": "Home", "url": "/"},
+            {"name": "Auctions", "url": "/auctions"},
+            {"name": obj.title or "", "url": f"/auctions/{obj.id}"},
+        ]
 
     def get_effective_image(self, obj):
         if obj.image_url:

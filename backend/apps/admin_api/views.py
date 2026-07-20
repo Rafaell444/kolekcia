@@ -1807,3 +1807,120 @@ class AdminPageSectionDetailView(APIView):
         })
         section.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Email Templates ─────────────────────────────────────────────────────────────
+
+class AdminEmailTemplateListView(APIView):
+    permission_classes = [IsAdminOrVendor]
+
+    def get(self, request):
+        from apps.emails.models import EmailTemplate
+        from apps.emails.serializers import EmailTemplateListSerializer
+
+        qs = EmailTemplate.objects.select_related("vendor").all()
+
+        if not request.user.is_staff:
+            vendor = getattr(request.user, "vendor_profile", None)
+            if vendor:
+                qs = qs.filter(Q(vendor=vendor) | Q(vendor__isnull=True))
+            else:
+                qs = qs.filter(vendor__isnull=True)
+
+        return Response(EmailTemplateListSerializer(qs, many=True).data)
+
+    def post(self, request):
+        from apps.emails.models import EmailTemplate
+        from apps.emails.serializers import EmailTemplateSerializer
+
+        data = request.data.copy()
+
+        if not request.user.is_staff:
+            vendor = getattr(request.user, "vendor_profile", None)
+            if vendor:
+                data["vendor"] = vendor.id
+            else:
+                return Response({"detail": "No vendor profile."}, status=status.HTTP_403_FORBIDDEN)
+
+        ser = EmailTemplateSerializer(data=data)
+        ser.is_valid(raise_exception=True)
+        tpl = ser.save()
+        log_action(request.user, "create", "email_template", tpl.pk, {
+            "name": tpl.name, "event_key": tpl.event_key,
+        })
+        return Response(EmailTemplateSerializer(tpl).data, status=status.HTTP_201_CREATED)
+
+
+class AdminEmailTemplateDetailView(APIView):
+    permission_classes = [IsAdminOrVendor]
+
+    def _get_template(self, pk, user):
+        from apps.emails.models import EmailTemplate
+        try:
+            tpl = EmailTemplate.objects.select_related("vendor").get(pk=pk)
+        except EmailTemplate.DoesNotExist:
+            return None
+        if not user.is_staff:
+            vendor = getattr(user, "vendor_profile", None)
+            if tpl.vendor_id and (not vendor or tpl.vendor_id != vendor.id):
+                return None
+        return tpl
+
+    def get(self, request, pk):
+        from apps.emails.serializers import EmailTemplateSerializer
+        tpl = self._get_template(pk, request.user)
+        if not tpl:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(EmailTemplateSerializer(tpl).data)
+
+    def patch(self, request, pk):
+        from apps.emails.serializers import EmailTemplateSerializer
+        tpl = self._get_template(pk, request.user)
+        if not tpl:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        ser = EmailTemplateSerializer(tpl, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        tpl = ser.save()
+        log_action(request.user, "update", "email_template", tpl.pk, {
+            "name": tpl.name, "event_key": tpl.event_key,
+        })
+        return Response(EmailTemplateSerializer(tpl).data)
+
+    def delete(self, request, pk):
+        tpl = self._get_template(pk, request.user)
+        if not tpl:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        log_action(request.user, "delete", "email_template", tpl.pk, {
+            "name": tpl.name, "event_key": tpl.event_key,
+        })
+        tpl.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminEmailLogListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.emails.models import EmailLog
+        from apps.emails.serializers import EmailLogSerializer
+
+        qs = EmailLog.objects.select_related("template").all()[:100]
+        return Response(EmailLogSerializer(qs, many=True).data)
+
+
+class AdminAuctionSubscriberListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.auctions.models import AuctionSubscriber
+        qs = AuctionSubscriber.objects.all().order_by("-subscribed_at")
+        data = [
+            {
+                "id": s.id,
+                "email": s.email,
+                "is_active": s.is_active,
+                "subscribed_at": s.subscribed_at,
+            }
+            for s in qs
+        ]
+        return Response(data)

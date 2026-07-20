@@ -5,7 +5,20 @@ const BASE = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `http
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
-      { userAgent: "*", allow: "/", disallow: ["/admin/", "/account/", "/checkout/", "/cart/"] },
+      {
+        userAgent: "*",
+        allow: "/",
+        disallow: [
+          "/admin/",
+          "/account/",
+          "/*/cart/",
+          "/*/checkout/",
+          "/*/login/",
+          "/*/register/",
+          "/*/forgot-password/",
+          "/*/inbox/",
+        ],
+      },
     ],
     sitemap: `${BASE}/sitemap.xml`,
   }

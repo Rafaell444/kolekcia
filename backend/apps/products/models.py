@@ -1,12 +1,28 @@
 from django.db import models
-from django.utils.text import slugify
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 from apps.users.models import User
+from apps.core.seo import SEOModelMixin
+from apps.core.transliterate import smart_slugify
 
 
-class Category(models.Model):
+class Category(SEOModelMixin):
+    SEO_TEMPLATES = {
+        "en": {
+            "title": "{name} | Koleqcia",
+            "description": "Browse {name} collection on Koleqcia.",
+        },
+        "ka": {
+            "title": "{name} | Koleqcia",
+            "description": "აღმოაჩინე {name} კოლექცია Koleqcia-ზე.",
+        },
+        "ru": {
+            "title": "{name} | Koleqcia",
+            "description": "Коллекция {name} на Koleqcia. Выбирайте лучшее.",
+        },
+    }
+
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True)
     image_url = models.URLField(blank=True)
@@ -79,7 +95,22 @@ class PosterFrame(models.Model):
         return self.label
 
 
-class Product(models.Model):
+class Product(SEOModelMixin):
+    SEO_TEMPLATES = {
+        "en": {
+            "title": "{name} - {category_name} | {vendor_name} by Koleqcia",
+            "description": "Buy the {name} online. Perfect {category_name} for your gaming setup or as a unique gift. Handmade in Georgia by {vendor_name}.",
+        },
+        "ka": {
+            "title": "{name} - {category_name} | {vendor_name}",
+            "description": "შეიძინე {name} ონლაინ. საუკეთესო {category_name} შენი ოთახისთვის. უნიკალური საჩუქარი, დამზადებულია საქართველოში {vendor_name}-ის მიერ.",
+        },
+        "ru": {
+            "title": "{name} - {category_name} | {vendor_name}",
+            "description": "Закажите {name} онлайн. Идеальный {category_name} и необычный подарок ручной работы. Сделано в Грузии брендом {vendor_name}.",
+        },
+    }
+
     STATUS_CHOICES = [
         ("active", "Active"),
         ("paused", "Paused"),
@@ -94,7 +125,6 @@ class Product(models.Model):
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    # Per-currency overrides, e.g. {"USD": {"price": "29.99", "original": "39.99"}, "GEL": {...}}
     regional_prices = models.JSONField(default=dict, blank=True)
     rating = models.DecimalField(max_digits=3, decimal_places=1, default=0)
     review_count = models.PositiveIntegerField(default=0)
@@ -121,7 +151,7 @@ class Product(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            base = slugify(self.title) or "product"
+            base = smart_slugify(self.title) or "product"
             candidate = base
             n = 1
             while Product.objects.filter(slug=candidate).exclude(pk=self.pk).exists():

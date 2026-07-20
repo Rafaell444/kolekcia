@@ -85,7 +85,7 @@ function useStableWs(
 
 export type ChatWsEvent =
   | { type: "new_message"; conversation_id: number; message: Record<string, unknown> }
-  | { type: "read_update"; conversation_id: number; reader_user_id: number }
+  | { type: "read_update"; conversation_id: number; reader_user_id: string }
 
 export function useChatSocket(
   convId: string | number | null,

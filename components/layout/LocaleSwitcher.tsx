@@ -1,9 +1,11 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from "react"
+import { usePathname, useRouter } from "next/navigation"
 import { ChevronDown, Check } from "lucide-react"
 import { useLocale, LANGUAGES, type Language } from "@/contexts/locale-context"
 import FlagIcon from "@/components/ui/FlagIcon"
+import { stripLocalePrefix } from "@/lib/i18n"
 
 // ─── Compact header button ────────────────────────────────────────────────────
 
@@ -11,6 +13,15 @@ export default function LocaleSwitcher({ placement = "bottom" }: { placement?: "
   const { currentLang, currentCur, setLanguage } = useLocale()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const pathname = usePathname()
+  const router = useRouter()
+
+  function switchLang(code: Language) {
+    setLanguage(code)
+    setOpen(false)
+    const stripped = stripLocalePrefix(pathname)
+    router.push(`/${code}${stripped}`)
+  }
 
   // Close on outside click
   useEffect(() => {
@@ -73,7 +84,7 @@ export default function LocaleSwitcher({ placement = "bottom" }: { placement?: "
               return (
                 <li key={lang.code}>
                   <button
-                    onClick={() => { setLanguage(lang.code as Language); setOpen(false) }}
+                    onClick={() => switchLang(lang.code as Language)}
                     className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
                       active
                         ? "bg-dp-accent-cta/8 text-dp-text-primary"
@@ -110,6 +121,14 @@ export default function LocaleSwitcher({ placement = "bottom" }: { placement?: "
 
 export function LocaleSwitcherInline() {
   const { currentLang, currentCur, setLanguage } = useLocale()
+  const pathname = usePathname()
+  const router = useRouter()
+
+  function switchLang(code: Language) {
+    setLanguage(code)
+    const stripped = stripLocalePrefix(pathname)
+    router.push(`/${code}${stripped}`)
+  }
 
   return (
     <div className="flex flex-col gap-4 py-3">
@@ -122,7 +141,7 @@ export function LocaleSwitcherInline() {
             return (
               <button
                 key={lang.code}
-                onClick={() => setLanguage(lang.code as Language)}
+                onClick={() => switchLang(lang.code as Language)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm border text-[12px] font-semibold transition-colors ${
                   active
                     ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta"

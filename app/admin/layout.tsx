@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Users, Paintbrush,
   Gavel, MessageSquare, Tag, Settings, ChevronRight, BarChart2,
   Image as ImageIcon, Bell, LogOut, Trophy, Shield, Store, Menu, X, Truck,
-  FileText, ScrollText,
+  FileText, ScrollText, Mail,
 } from "lucide-react"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { ThemeProvider } from "@/components/ThemeProvider"
@@ -45,9 +45,10 @@ const SUPERADMIN_NAV = [
   {
     section: "Platform",
     links: [
-      { href: "/admin/auctions",     label: "Auctions",      Icon: Gavel },
-      { href: "/admin/gamification", label: "Gamification",  Icon: Trophy },
-      { href: "/admin/inbox",        label: "Inbox",         Icon: MessageSquare },
+      { href: "/admin/auctions",         label: "Auctions",        Icon: Gavel },
+      { href: "/admin/gamification",     label: "Gamification",    Icon: Trophy },
+      { href: "/admin/inbox",            label: "Inbox",           Icon: MessageSquare },
+      { href: "/admin/email-templates",  label: "Email Templates", Icon: Mail },
     ],
   },
   {
@@ -85,6 +86,7 @@ const VENDOR_NAV = [
       { href: "/admin/users",            label: "Customers",      Icon: Users },
       { href: "/admin/analytics",        label: "Analytics",      Icon: BarChart2 },
       { href: "/admin/inbox",            label: "Inbox",          Icon: MessageSquare },
+      { href: "/admin/email-templates",  label: "Email Templates", Icon: Mail },
     ],
   },
   {

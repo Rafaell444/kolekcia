@@ -1,8 +1,9 @@
 from django.db import models
 from apps.users.models import User
+from apps.core.seo import SEOModelMixin
 
 
-class Vendor(models.Model):
+class Vendor(SEOModelMixin):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="vendor_profile")
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
@@ -36,6 +37,21 @@ class Vendor(models.Model):
         help_text="Short blurb shown on the custom order page")
     custom_cover_url = models.URLField(blank=True,
         help_text="Preview / hero image shown on the custom order selection card")
+    SEO_TEMPLATES = {
+        "en": {
+            "title": "{name} | Koleqcia",
+            "description": "Explore {name}'s collection on Koleqcia. Handmade decor from Georgia.",
+        },
+        "ka": {
+            "title": "{name} | Koleqcia",
+            "description": "აღმოაჩინე {name}-ის კოლექცია Koleqcia-ზე. ხელნაკეთი დეკორაცია საქართველოდან.",
+        },
+        "ru": {
+            "title": "{name} | Koleqcia",
+            "description": "Коллекция {name} на Koleqcia. Декор ручной работы из Грузии.",
+        },
+    }
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

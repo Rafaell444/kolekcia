@@ -284,3 +284,23 @@ class StartConversationWithCustomerView(APIView):
             ConversationSerializer(conv, context={"request": request}).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+class UnreadCountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Count, Q
+        user = request.user
+        is_admin_side = user.is_staff or _is_vendor(user)
+        if user.is_staff:
+            qs = Conversation.objects.all()
+        elif _is_vendor(user):
+            qs = Conversation.objects.filter(vendor=user.vendor_profile)
+        else:
+            qs = Conversation.objects.filter(customer=user)
+        unread_role = "customer" if is_admin_side else "admin"
+        result = qs.aggregate(
+            total=Count("messages", filter=Q(messages__read=False, messages__from_role=unread_role))
+        )
+        return Response({"unread_count": result["total"] or 0})

@@ -5,11 +5,13 @@ import Link from "next/link"
 import { X, ShoppingCart, Minus, Plus, Trash2, ArrowRight, Package } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
 import { useLocale } from "@/contexts/locale-context"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 import { CartItemExtras } from "@/components/cart/CartItemExtras"
 
 export default function FastCart() {
   const { cart, isOpen, closeCart, removeItem, updateQuantity, loading } = useCart()
   const { formatPrice } = useLocale()
+  const lp = useLocalePrefix()
   const overlayRef = useRef<HTMLDivElement>(null)
 
   // Close on Escape key
@@ -98,7 +100,7 @@ export default function FastCart() {
                 Discover our collection of artist-made metal posters.
               </p>
               <Link
-                href="/catalog"
+                href={`${lp}/catalog`}
                 onClick={closeCart}
                 className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-wider rounded-sm transition-colors"
               >
@@ -230,14 +232,14 @@ export default function FastCart() {
 
             {/* CTAs */}
             <Link
-              href="/checkout"
+              href={`${lp}/checkout`}
               onClick={closeCart}
               className="flex items-center justify-center gap-2 w-full py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors"
             >
               Checkout — {formatPrice(subtotal)} <ArrowRight size={15} />
             </Link>
             <Link
-              href="/cart"
+              href={`${lp}/cart`}
               onClick={closeCart}
               className="flex items-center justify-center gap-2 w-full py-2.5 bg-transparent border border-dp-border hover:border-dp-border-hover text-dp-text-secondary hover:text-dp-text-primary text-[12px] font-semibold uppercase tracking-wider rounded-sm transition-colors"
             >

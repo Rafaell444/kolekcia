@@ -57,6 +57,10 @@ from .views import (
     AdminPageSectionListView,
     AdminPageSectionDetailView,
     AdminCatalogFilterConfigView,
+    AdminEmailTemplateListView,
+    AdminEmailTemplateDetailView,
+    AdminEmailLogListView,
+    AdminAuctionSubscriberListView,
 )
 
 urlpatterns = [
@@ -119,4 +123,8 @@ urlpatterns = [
     path("size-variants/<int:sv_id>/", AdminSizeVariantView.as_view(), name="admin-size-variant-detail"),
     path("products/export/", AdminProductExportView.as_view(), name="admin-product-export"),
     path("products/import/", AdminProductImportView.as_view(), name="admin-product-import"),
+    path("email-templates/", AdminEmailTemplateListView.as_view(), name="admin-email-templates"),
+    path("email-templates/<int:pk>/", AdminEmailTemplateDetailView.as_view(), name="admin-email-template-detail"),
+    path("email-logs/", AdminEmailLogListView.as_view(), name="admin-email-logs"),
+    path("auction-subscribers/", AdminAuctionSubscriberListView.as_view(), name="admin-auction-subscribers"),
 ]

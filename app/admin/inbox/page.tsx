@@ -72,6 +72,12 @@ function AttachmentPreview({ att }: { att: Attachment }) {
   )
 }
 
+function mergeMsg(msgs: Message[], newMsg: Message): Message[] {
+  const id = String(newMsg.id)
+  if (msgs.some((m) => String(m.id) === id)) return msgs
+  return [...msgs, newMsg]
+}
+
 export default function AdminInboxPage(): React.ReactElement {
   const searchParams = useSearchParams()
   const [convs, setConvs]       = useState<Conversation[]>([])
@@ -80,20 +86,12 @@ export default function AdminInboxPage(): React.ReactElement {
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [sending, setSending]   = useState(false)
   const [loading, setLoading]   = useState(true)
-  const endRef      = useRef<HTMLDivElement>(null)
-  const lastMsgCount = useRef<number>(0)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   const activeIdRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const openedFromUrl = useRef(false)
-  const sentMsgIds = useRef<Set<string>>(new Set())
 
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
-
-  function applyOpenedConv(full: Conversation, id: string) {
-    lastMsgCount.current = full.messages?.length ?? 0
-    setConvs((prev) => prev.map((c) => (c.id === id ? { ...full, unread_count: 0 } : c)))
-    notifyInboxRead()
-  }
 
   const loadList = useCallback(async () => {
     try {
@@ -101,9 +99,9 @@ export default function AdminInboxPage(): React.ReactElement {
       const data = parseList(raw)
       const currentActiveId = activeIdRef.current
       setConvs((prev) => {
-        const prevActive = currentActiveId ? prev.find((c) => c.id === currentActiveId) : null
+        const prevActive = currentActiveId ? prev.find((c) => String(c.id) === String(currentActiveId)) : null
         return data.map((c) => {
-          if (c.id === currentActiveId && prevActive?.messages?.length) {
+          if (String(c.id) === String(currentActiveId) && prevActive?.messages?.length) {
             return { ...prevActive, unread_count: 0 }
           }
           return c
@@ -121,8 +119,10 @@ export default function AdminInboxPage(): React.ReactElement {
     return () => { cancelled = true }
   }, [])
 
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleNotif = useCallback(() => {
-    void loadList()
+    if (reloadTimer.current) clearTimeout(reloadTimer.current)
+    reloadTimer.current = setTimeout(() => { void loadList() }, 300)
   }, [loadList])
 
   useNotificationSocket(getAdminToken, refreshAdminToken, handleNotif)
@@ -130,23 +130,18 @@ export default function AdminInboxPage(): React.ReactElement {
   const handleChatWs = useCallback((event: ChatWsEvent) => {
     if (event.type === "new_message" && event.message) {
       const newMsg = event.message as unknown as Message
-      const msgId = String(newMsg.id)
-      // Skip if we sent this message ourselves (already added optimistically)
-      if (sentMsgIds.current.has(msgId)) {
-        sentMsgIds.current.delete(msgId)
-        return
-      }
       setConvs((prev) => prev.map((c) => {
         if (String(c.id) !== String(activeIdRef.current)) return c
-        return { ...c, messages: [...(c.messages ?? []), newMsg] }
+        return { ...c, messages: mergeMsg(c.messages ?? [], newMsg) }
       }))
-      lastMsgCount.current += 1
     } else if (event.type === "read_update") {
-      // Mark all admin messages in this conversation as read
+      const myId = String(getAdminUser()?.id ?? "")
+      if (event.reader_user_id === myId) return
       setConvs((prev) => prev.map((c) => {
         if (String(c.id) !== String(activeIdRef.current)) return c
         return {
           ...c,
+          unread_count: 0,
           messages: (c.messages ?? []).map((m) =>
             m.from_role === "admin" ? { ...m, read: true } : m
           ),
@@ -157,22 +152,42 @@ export default function AdminInboxPage(): React.ReactElement {
 
   useChatSocket(activeId, getAdminToken, refreshAdminToken, handleChatWs)
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }) }, [activeId, convs])
+  const scrollChatToBottom = useCallback(() => {
+    const el = chatContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [])
+
+  const prevMsgCount = useRef(0)
+  useEffect(() => {
+    const msgs = convs.find((c) => String(c.id) === String(activeId))?.messages
+    const count = msgs?.length ?? 0
+    if (count > prevMsgCount.current) {
+      requestAnimationFrame(scrollChatToBottom)
+    }
+    prevMsgCount.current = count
+  }, [activeId, convs, scrollChatToBottom])
+
+  useEffect(() => {
+    prevMsgCount.current = 0
+    requestAnimationFrame(scrollChatToBottom)
+  }, [activeId, scrollChatToBottom])
 
   async function openConv(id: string | number) {
     const sid = String(id)
     setActiveId(sid)
+    activeIdRef.current = sid
     setDraft("")
     setPendingFiles([])
+    setConvs((prev) => prev.map((c) => String(c.id) === sid ? { ...c, unread_count: 0 } : c))
     try {
       const full = await adminFetch<Conversation>(`/messaging/conversations/${sid}/`)
-      applyOpenedConv(full, sid)
       setConvs((prev) => {
         if (prev.some((c) => String(c.id) === sid)) {
           return prev.map((c) => (String(c.id) === sid ? { ...full, unread_count: 0 } : c))
         }
         return [{ ...full, id: sid, unread_count: 0 }, ...prev]
       })
+      notifyInboxRead()
     } catch { /* noop */ }
   }
 
@@ -216,14 +231,13 @@ export default function AdminInboxPage(): React.ReactElement {
         })
       }
 
-      sentMsgIds.current.add(String(msg.id))
+      const capturedActiveId = activeId
       setConvs((prev) => prev.map((c) =>
-        String(c.id) === String(activeId) ? { ...c, messages: [...(c.messages ?? []), msg] } : c
+        String(c.id) === String(capturedActiveId) ? { ...c, messages: mergeMsg(c.messages ?? [], msg) } : c
       ))
-      lastMsgCount.current += 1
       setDraft("")
       setPendingFiles([])
-      requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: "smooth" }))
+      requestAnimationFrame(scrollChatToBottom)
     } catch { /* noop */ }
     finally { setSending(false) }
   }
@@ -266,7 +280,7 @@ export default function AdminInboxPage(): React.ReactElement {
               <button
                 key={c.id}
                 onClick={() => openConv(c.id)}
-                className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors border-b border-dp-border hover:bg-dp-bg-base ${activeId === c.id ? "bg-dp-bg-base" : ""}`}
+                className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors border-b border-dp-border hover:bg-dp-bg-base ${String(activeId) === String(c.id) ? "bg-dp-bg-base" : ""}`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
@@ -340,7 +354,7 @@ export default function AdminInboxPage(): React.ReactElement {
               )}
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-3 bg-dp-bg-base">
+              <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-3 bg-dp-bg-base">
                 {(active.messages ?? []).map((m) => {
                   const isAdmin = m.from_role === "admin"
                   const hasText = Boolean(m.text?.trim())
@@ -373,19 +387,18 @@ export default function AdminInboxPage(): React.ReactElement {
                         {!hasText && attachments.length === 0 && (
                           <p className="opacity-40 italic text-[12px]">(empty message)</p>
                         )}
-                        <p className={`text-[10px] mt-1 opacity-60 flex items-center gap-1 ${isAdmin ? "justify-end" : ""}`}>
+                        <p className={`text-[10px] mt-1 flex items-center gap-1 ${isAdmin ? "justify-end text-white/60" : "text-dp-text-tertiary"}`}>
                           <span>{relTime(m.sent_at)}</span>
                           {isAdmin && (
                             m.read
-                              ? <CheckCheck size={12} className="text-white/90" aria-label="Seen" />
-                              : <Check size={12} className="text-white/60" aria-label="Sent" />
+                              ? <CheckCheck size={13} className="text-white/90" aria-label="Seen" />
+                              : <Check size={13} className="text-white/60" aria-label="Sent" />
                           )}
                         </p>
                       </div>
                     </div>
                   )
                 })}
-                <div ref={endRef} />
               </div>
 
               {/* Compose area */}
