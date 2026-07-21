@@ -267,7 +267,7 @@ function FilterSidebar({
   }
 
   const absMin = Math.floor((filterOptions?.price_range.min ?? 0))
-  const absMax = Math.ceil((filterOptions?.price_range.max ?? 250) / 10) * 10
+  const absMax = Math.ceil((filterOptions?.price_range.max ?? 250))
 
   const activeCount =
     (hideCategoryFilter ? 0 : filters.categories.length) +
@@ -569,16 +569,18 @@ function CatalogPageInner(): React.ReactElement {
   }, [])
 
   // Fetch filter options (materials, artists, price range) for current context
+  // Use lockedCategory first, then urlCategory for general catalog filtering
+  const effectiveCategoryForFilters = lockedCategory || urlCategory || ""
   useEffect(() => {
     let cancelled = false
-    const qs = lockedCategory ? `?category=${lockedCategory}` : ""
+    const qs = effectiveCategoryForFilters ? `?category=${effectiveCategoryForFilters}` : ""
     apiFetch<FilterOptions>(`/products/filter-options/${qs}`)
       .then((d) => {
         if (!cancelled) {
           setFilterOptions(d)
           // Initialise price bounds to the real data range on first load
           const realMin = Math.floor(d.price_range.min)
-          const realMax = Math.ceil(d.price_range.max / 10) * 10
+          const realMax = Math.ceil(d.price_range.max)
           setFilters((prev) => ({
             ...prev,
             priceMin: prev.priceMin === 0 ? realMin : prev.priceMin,
@@ -588,16 +590,16 @@ function CatalogPageInner(): React.ReactElement {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [lockedCategory])
+  }, [effectiveCategoryForFilters])
 
   useEffect(() => {
     let cancelled = false
-    const qs = lockedCategory ? `?category=${lockedCategory}` : ""
+    const qs = effectiveCategoryForFilters ? `?category=${effectiveCategoryForFilters}` : ""
     apiFetch<FilterVisibility>(`/products/catalog-filter-config${qs}`)
       .then((d) => { if (!cancelled && d) setFilterVisibility({ ...DEFAULT_FILTER_VISIBILITY, ...d }) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [lockedCategory])
+  }, [effectiveCategoryForFilters])
 
   useEffect(() => {
     setFilters((prev) => {
@@ -615,7 +617,7 @@ function CatalogPageInner(): React.ReactElement {
     setFilters((prev) => ({
       ...filtersForPage(lockedCategory),
       priceMin: filterOptions ? Math.floor(filterOptions.price_range.min) : 0,
-      priceMax: filterOptions ? Math.ceil(filterOptions.price_range.max / 10) * 10 : prev.priceMax,
+      priceMax: filterOptions ? Math.ceil(filterOptions.price_range.max) : prev.priceMax,
     }))
   }, [lockedCategory, filterOptions])
 
@@ -625,7 +627,7 @@ function CatalogPageInner(): React.ReactElement {
     const effectiveCategory = lockedCategory || (filters.categories.length === 1 ? filters.categories[0] : "")
     if (effectiveCategory) params.set("category", effectiveCategory)
     const absMin = filterOptions ? Math.floor(filterOptions.price_range.min) : 0
-    const absMax = filterOptions ? Math.ceil(filterOptions.price_range.max / 10) * 10 : 999
+    const absMax = filterOptions ? Math.ceil(filterOptions.price_range.max) : 999
     if (filters.priceMin > absMin) params.set("min_price", String(filters.priceMin))
     if (filters.priceMax < absMax) params.set("max_price", String(filters.priceMax))
     if (filters.isLimited) params.set("limited", "true")
