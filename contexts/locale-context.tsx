@@ -139,7 +139,14 @@ export function useLocale(): LocaleContextValue {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 const LS_LANG_KEY = "kolekcia_lang"
-const LS_CUR_KEY  = "kolekcia_currency"
+
+/** Extract locale from URL pathname (e.g. /ka/catalog → "ka") */
+function getLocaleFromUrl(): Language | null {
+  if (typeof window === "undefined") return null
+  const segment = window.location.pathname.split("/").filter(Boolean)[0]
+  if (segment === "ka" || segment === "ru" || segment === "en") return segment
+  return null
+}
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
   const [language, setLangState] = useState<Language>("en")
@@ -148,26 +155,31 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
   const [detectedCountry, setDetectedCountry] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
 
-  // On mount: restore saved language pref, always geo-detect currency from IP
+  // On mount: sync language with URL, geo-detect currency from IP
   useEffect(() => {
-    const savedLang = localStorage.getItem(LS_LANG_KEY) as Language | null
-
-    if (savedLang && LANGUAGES.some((l) => l.code === savedLang)) {
-      setLangState(savedLang)
+    // 1. URL locale takes priority (already set by server proxy)
+    const urlLocale = getLocaleFromUrl()
+    if (urlLocale) {
+      setLangState(urlLocale)
+    } else {
+      // Fallback to saved preference
+      const savedLang = localStorage.getItem(LS_LANG_KEY) as Language | null
+      if (savedLang && LANGUAGES.some((l) => l.code === savedLang)) {
+        setLangState(savedLang)
+      }
     }
 
-    // Fetch live rates (uses cache if fresh, falls back to static if no URL set)
+    // 2. Fetch live exchange rates
     fetchLiveRates().then(setRates)
 
-    // Always geo-detect currency — users cannot override it manually
-    const browserLang = navigator.language ?? "en"
-    detectFromIp(browserLang, savedLang !== null)
+    // 3. Geo-detect currency from IP (language already determined by URL)
+    detectCurrencyFromIp()
 
     setHydrated(true)
   }, [])
 
-  // skipLang = true when user has already saved a language preference
-  async function detectFromIp(browserLang: string, skipLang = false) {
+  // Geo-detect currency only (language is set from URL)
+  async function detectCurrencyFromIp() {
     try {
       const res = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(4000) })
       if (!res.ok) throw new Error("geo failed")
@@ -175,17 +187,15 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
       const cc: string = (data.country_code ?? "").toUpperCase()
       const apiCur: string = (data.currency ?? "").toUpperCase()
       setDetectedCountry(cc)
-      if (!skipLang) {
-        const lang = detectLanguage(cc, browserLang)
-        setLangState(lang)
-      }
       const cur = detectCurrency(cc, apiCur)
       setCurState(cur)
     } catch {
-      if (!skipLang) {
-        const bl = navigator.language ?? "en"
-        if (bl.startsWith("ka")) setLangState("ka")
-        else if (bl.startsWith("ru")) setLangState("ru")
+      // Geo detection failed — keep USD default
+      // Could fallback based on URL locale: /ka → GEL, /ru → keep USD
+      const urlLocale = getLocaleFromUrl()
+      if (urlLocale === "ka") {
+        setCurState("GEL")
+        setDetectedCountry("GE")
       }
     }
   }

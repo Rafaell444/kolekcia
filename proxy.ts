@@ -9,25 +9,13 @@ function shouldSkip(pathname: string): boolean {
   return SKIP_PREFIXES.some((p) => pathname.startsWith(p))
 }
 
-/** Map country codes to locales for geo-based routing. */
-function localeFromCountry(countryCode: string): string | null {
-  const cc = (countryCode ?? "").toUpperCase()
-  if (cc === "GE") return "ka"
-  if (["RU", "BY", "KZ", "KG", "TJ", "UZ", "AZ", "AM", "MD", "UA"].includes(cc)) return "ru"
-  return null
-}
-
 function detectLocale(request: NextRequest): string {
-  // 1. Saved preference cookie
+  // 1. Saved preference cookie (user explicitly chose a language)
   const cookie = request.cookies.get("NEXT_LOCALE")?.value
   if (cookie && isValidLocale(cookie)) return cookie
 
-  // 2. Vercel geo header (IP-based country detection on Vercel Edge)
-  const geoCountry = request.headers.get("x-vercel-ip-country") ?? ""
-  const geoLocale = localeFromCountry(geoCountry)
-  if (geoLocale && isValidLocale(geoLocale)) return geoLocale
-
-  // 3. Accept-Language header (browser preference)
+  // 2. Accept-Language header (browser preference)
+  // Geo-based locale/currency is handled client-side via IP API for platform independence
   const accept = request.headers.get("accept-language") ?? ""
   for (const part of accept.split(",")) {
     const lang = part.split(";")[0].trim().substring(0, 2).toLowerCase()
