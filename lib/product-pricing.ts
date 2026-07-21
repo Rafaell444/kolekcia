@@ -32,48 +32,46 @@ function resolveVariantExplicitSale(
   currency: Currency,
   rates: Record<Currency, number>,
 ): number | null {
-  if (currency === "GEL") {
-    const gelSale = toNum(sv.sale_price_gel)
-    if (gelSale != null) return gelSale
-  }
+  const saleGel = toNum(sv.sale_price_gel)
   const saleUsd = toNum(sv.sale_price_usd)
-  if (saleUsd == null) return null
-  return currency === "USD" ? saleUsd : saleUsd * (rates[currency] ?? 1)
-}
+  const gelRate = rates.GEL || 1
 
-function variantHasExplicitSale(sv: SizeVariantPrice): boolean {
-  return toNum(sv.sale_price_usd) != null || toNum(sv.sale_price_gel) != null
+  // GEL market: use the GEL sale as entered — never convert USD→GEL
+  if (currency === "GEL") {
+    return saleGel
+  }
+
+  // USD (and other): prefer USD sale; only convert GEL→USD when USD sale is missing
+  if (saleUsd != null) {
+    return currency === "USD" ? saleUsd : saleUsd * (rates[currency] ?? 1)
+  }
+  if (saleGel != null && gelRate > 0) {
+    const asUsd = saleGel / gelRate
+    return currency === "USD" ? asUsd : asUsd * (rates[currency] ?? 1)
+  }
+  return null
 }
 
 export function resolveSizeVariantPrice(
   sv: SizeVariantPrice,
   currency: Currency,
   rates: Record<Currency, number>,
-  isSale = false,
-  productSale?: { base_price?: string | number; original_price?: string | number | null } | null,
 ): { price: number; original: number | null } {
-  const regular = regionalPriceForCurrency(sv, currency)
-  const regularFallback = regular ?? (toNum(sv.price_usd) ?? 0) * (rates[currency] ?? 1)
+  // Get the direct regional price (GEL, EUR, GBP) if set
+  const regional = regionalPriceForCurrency(sv, currency)
+  // Only fall back to USD conversion if no regional price exists
+  const regularPrice = regional ?? (toNum(sv.price_usd) ?? 0) * (rates[currency] ?? 1)
 
-  const onSale = isSale || variantHasExplicitSale(sv)
-  if (!onSale) {
-    return { price: regularFallback, original: null }
+  // Check for explicit sale price on this variant
+  const salePrice = resolveVariantExplicitSale(sv, currency, rates)
+  
+  // Only show sale if variant has explicit sale price AND it's lower than regular
+  if (salePrice != null && salePrice < regularPrice) {
+    return { price: salePrice, original: regularPrice }
   }
 
-  let sale = resolveVariantExplicitSale(sv, currency, rates)
-  if (sale == null && isSale && productSale) {
-    const base = toNum(productSale.base_price)
-    const orig = toNum(productSale.original_price)
-    if (base != null && orig != null && orig > base && orig > 0) {
-      sale = regularFallback * (base / orig)
-    }
-  }
-
-  if (sale != null && sale < regularFallback) {
-    return { price: sale, original: regularFallback }
-  }
-
-  return { price: regularFallback, original: null }
+  // No sale - just return regular price
+  return { price: regularPrice, original: null }
 }
 
 export function resolveProductPrices(
@@ -114,12 +112,13 @@ export function resolveListProductPrice(
 ): { price: number; original: number | null } {
   const activeVariants = (product.size_variants ?? []).filter((sv) => sv.is_active !== false)
   if (activeVariants.length > 0) {
-    const resolved = activeVariants.map((sv) =>
-      resolveSizeVariantPrice(sv, currency, rates, Boolean(product.is_sale), product),
-    )
+    // Resolve each variant's price using its own regional/sale prices
+    const resolved = activeVariants.map((sv) => resolveSizeVariantPrice(sv, currency, rates))
+    // Return the cheapest variant (for "from X" display)
     const cheapest = resolved.reduce((best, current) => (current.price < best.price ? current : best))
     return cheapest
   }
+  // No size variants - use product-level pricing
   return resolveProductPrices(
     product.base_price,
     product.original_price ?? null,

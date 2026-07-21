@@ -398,7 +398,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   )
   // If new size variant selected, use explicit regional prices (no conversion drift)
   const selectedVariantPricing = selectedSizeVariant
-    ? resolveSizeVariantPrice(selectedSizeVariant, currency, rates, product.is_sale, product)
+    ? resolveSizeVariantPrice(selectedSizeVariant, currency, rates)
     : null
   const basePrice = selectedVariantPricing
     ? selectedVariantPricing.price
@@ -676,7 +676,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2.5">Select Size</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {activeSizeVariants.map((sv) => {
-                    const svResolved = resolveSizeVariantPrice(sv, currency, rates, product.is_sale, product)
+                    const svResolved = resolveSizeVariantPrice(sv, currency, rates)
                     const isSelected = selectedSizeVariantId === sv.id
                     const onVariantSale = svResolved.original != null && svResolved.original > svResolved.price
                     return (
