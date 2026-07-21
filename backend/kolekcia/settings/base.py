@@ -150,6 +150,14 @@ LANGUAGES = [
 
 MODELTRANSLATION_DEFAULT_LANGUAGE = "en"
 MODELTRANSLATION_LANGUAGES = ("en", "ka", "ru")
+# When ka/ru fields are empty, fall back to English so labels aren't blank in the UI.
+MODELTRANSLATION_ENABLE_FALLBACKS = True
+MODELTRANSLATION_FALLBACK_LANGUAGES = {
+    "default": ("en",),
+    "en": ("en",),
+    "ka": ("en",),
+    "ru": ("en",),
+}
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
