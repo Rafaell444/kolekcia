@@ -172,14 +172,31 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
     // 2. Fetch live exchange rates
     fetchLiveRates().then(setRates)
 
-    // 3. Geo-detect currency from IP (language already determined by URL)
-    detectCurrencyFromIp()
+    // 3. Geo-detect currency (server cookie or client IP fallback)
+    detectCurrencyFromGeo()
 
     setHydrated(true)
   }, [])
 
-  // Geo-detect currency only (language is set from URL)
-  async function detectCurrencyFromIp() {
+  /** Read cookie value by name */
+  function getCookie(name: string): string | null {
+    if (typeof document === "undefined") return null
+    const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`))
+    return match ? match[2] : null
+  }
+
+  // Detect currency from geo (server cookie first, then ipapi.co fallback)
+  async function detectCurrencyFromGeo() {
+    // 1. Check if server already detected country via Nginx/CloudFront headers
+    const serverCountry = getCookie("GEO_COUNTRY")
+    if (serverCountry) {
+      setDetectedCountry(serverCountry)
+      const cur = detectCurrency(serverCountry, undefined)
+      setCurState(cur)
+      return
+    }
+
+    // 2. Fallback to client-side IP detection (for local dev or missing headers)
     try {
       const res = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(4000) })
       if (!res.ok) throw new Error("geo failed")
@@ -190,8 +207,7 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
       const cur = detectCurrency(cc, apiCur)
       setCurState(cur)
     } catch {
-      // Geo detection failed — keep USD default
-      // Could fallback based on URL locale: /ka → GEL, /ru → keep USD
+      // Geo detection failed — fallback based on URL locale
       const urlLocale = getLocaleFromUrl()
       if (urlLocale === "ka") {
         setCurState("GEL")

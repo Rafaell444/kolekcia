@@ -9,13 +9,47 @@ function shouldSkip(pathname: string): boolean {
   return SKIP_PREFIXES.some((p) => pathname.startsWith(p))
 }
 
+/** Map country codes to locales */
+function localeFromCountry(countryCode: string | null): string | null {
+  if (!countryCode) return null
+  const cc = countryCode.toUpperCase()
+  if (cc === "GE") return "ka"
+  if (["RU", "BY", "KZ", "KG", "TJ", "UZ", "AZ", "AM", "MD", "UA"].includes(cc)) return "ru"
+  return null
+}
+
+/** Get country code from various geo headers (Nginx, CloudFront, Cloudflare, Vercel) */
+function getGeoCountry(request: NextRequest): string | null {
+  // Nginx GeoIP module
+  const nginxCountry = request.headers.get("x-country-code")
+  if (nginxCountry) return nginxCountry
+
+  // AWS CloudFront
+  const cfCountry = request.headers.get("cloudfront-viewer-country")
+  if (cfCountry) return cfCountry
+
+  // Cloudflare
+  const cloudflareCountry = request.headers.get("cf-ipcountry")
+  if (cloudflareCountry) return cloudflareCountry
+
+  // Vercel (for local dev/preview)
+  const vercelCountry = request.headers.get("x-vercel-ip-country")
+  if (vercelCountry) return vercelCountry
+
+  return null
+}
+
 function detectLocale(request: NextRequest): string {
   // 1. Saved preference cookie (user explicitly chose a language)
   const cookie = request.cookies.get("NEXT_LOCALE")?.value
   if (cookie && isValidLocale(cookie)) return cookie
 
-  // 2. Accept-Language header (browser preference)
-  // Geo-based locale/currency is handled client-side via IP API for platform independence
+  // 2. Geo-based locale from reverse proxy headers (Nginx, CloudFront, Cloudflare, Vercel)
+  const geoCountry = getGeoCountry(request)
+  const geoLocale = localeFromCountry(geoCountry)
+  if (geoLocale && isValidLocale(geoLocale)) return geoLocale
+
+  // 3. Accept-Language header (browser preference) - fallback if no geo headers
   const accept = request.headers.get("accept-language") ?? ""
   for (const part of accept.split(",")) {
     const lang = part.split(";")[0].trim().substring(0, 2).toLowerCase()
@@ -61,6 +95,13 @@ export function proxy(request: NextRequest): NextResponse {
   url.pathname = `/${locale}${pathname}`
   const response = NextResponse.redirect(url)
   response.cookies.set("NEXT_LOCALE", locale, { path: "/", maxAge: 365 * 24 * 60 * 60 })
+  
+  // Pass detected country to client for currency detection
+  const geoCountry = getGeoCountry(request)
+  if (geoCountry) {
+    response.cookies.set("GEO_COUNTRY", geoCountry.toUpperCase(), { path: "/", maxAge: 24 * 60 * 60 })
+  }
+  
   return response
 }
 
