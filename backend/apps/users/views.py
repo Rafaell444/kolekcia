@@ -200,13 +200,22 @@ class ForgotPasswordView(APIView):
             user = User.objects.get(email=email)
             token_obj = PasswordResetToken.objects.create(user=user)
             reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token_obj.token}"
-            send_mail(
-                subject="Reset your Koleqcia password",
-                message=f"Click the link to reset your password: {reset_url}",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=True,
-            )
+            from apps.emails.service import send_template_email, get_template
+
+            context = {
+                "reset_url": reset_url,
+                "user_name": user.first_name or user.email.split("@")[0],
+            }
+            if get_template("password_reset"):
+                send_template_email("password_reset", email, context)
+            else:
+                send_mail(
+                    subject="Reset your Koleqcia password",
+                    message=f"Click the link to reset your password: {reset_url}",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[email],
+                    fail_silently=True,
+                )
 
         return Response({"detail": "If that email exists, a reset link has been sent."})
 

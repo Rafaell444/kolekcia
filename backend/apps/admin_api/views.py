@@ -378,10 +378,11 @@ class AdminOrderUpdateView(APIView):
 
 
 def _send_shipping_email(order):
-    """Send a shipping confirmation email to the customer using vendor template when available."""
+    """Send shipping confirmation — prefers HTML EmailTemplate, then vendor plain text."""
     try:
         from django.core.mail import send_mail
         from django.conf import settings as django_settings
+        from apps.emails.service import send_template_email, get_template
 
         first_item = order.items.select_related("vendor").first()
         vendor = first_item.vendor if first_item else None
@@ -392,6 +393,22 @@ def _send_shipping_email(order):
         )
         customer_name = order.shipping_name or "there"
         order_number = order.order_number
+        context = {
+            "customer_name": customer_name,
+            "order_number": order_number,
+            "tracking_code": order.tracking_code or "—",
+            "tracking_info": tracking_info.strip() or "We'll share tracking as soon as it's available.",
+        }
+
+        # Prefer branded HTML template (vendor-specific → platform)
+        if get_template("order_shipped", vendor=vendor):
+            send_template_email(
+                "order_shipped",
+                order.shipping_email,
+                context,
+                vendor=vendor,
+            )
+            return
 
         if vendor and vendor.shipping_email_body:
             body = vendor.shipping_email_body
@@ -401,7 +418,7 @@ def _send_shipping_email(order):
             body = body.replace("{{tracking_info}}", tracking_info)
             subject = (vendor.shipping_email_subject or f"Your order {order_number} has shipped!")
             subject = subject.replace("{{order_number}}", order_number)
-            from_email = vendor.payment_email or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@Koleqcia.com")
+            from_email = vendor.payment_email or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@koleqcia.com")
         else:
             items_list = "\n".join(
                 f"  • {item.product_title} × {item.quantity}"
@@ -420,7 +437,7 @@ def _send_shipping_email(order):
                 f"— The Koleqcia Team"
             )
             subject = f"Your order {order_number} has shipped!"
-            from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@Koleqcia.com")
+            from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@koleqcia.com")
 
         send_mail(
             subject=subject,
@@ -1914,6 +1931,19 @@ class AdminEmailLogListView(APIView):
 
         qs = EmailLog.objects.select_related("template").all()[:100]
         return Response(EmailLogSerializer(qs, many=True).data)
+
+
+class AdminEmailTemplateSeedView(APIView):
+    """Install branded default platform email templates."""
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        from apps.emails.default_templates import install_default_templates
+
+        overwrite = bool(request.data.get("overwrite", False))
+        result = install_default_templates(overwrite=overwrite)
+        log_action(request.user, "seed", "email_template", "platform", result)
+        return Response(result)
 
 
 class AdminAuctionSubscriberListView(APIView):

@@ -5,7 +5,7 @@ import dynamic from "next/dynamic"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import {
   Plus, Save, Trash2, ArrowLeft, Mail, Eye, EyeOff, Clock,
-  Copy, ChevronDown,
+  Copy, ChevronDown, Sparkles,
 } from "lucide-react"
 
 const EmailEditor = dynamic(() => import("@/components/admin/EmailEditor"), {
@@ -86,6 +86,8 @@ export default function EmailTemplatesPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [showVars, setShowVars] = useState(false)
+  const [seeding, setSeeding] = useState(false)
+  const [seedMsg, setSeedMsg] = useState("")
 
   const adminUser = getAdminUser()
   const isSuperadmin = adminUser?.is_staff ?? false
@@ -174,6 +176,29 @@ export default function EmailTemplatesPage() {
         setEditing(null)
       }
     } catch { /* noop */ }
+  }
+
+  async function handleInstallDefaults(overwrite = false) {
+    if (!isSuperadmin) return
+    const msg = overwrite
+      ? "Replace all platform email templates with the branded Koleqcia designs?"
+      : "Install branded Koleqcia email templates for any missing event types?"
+    if (!confirm(msg)) return
+    setSeeding(true)
+    setSeedMsg("")
+    try {
+      const result = await adminFetch<{ created: number; updated: number; skipped: number }>(
+        "/admin/email-templates/seed/",
+        { method: "POST", body: JSON.stringify({ overwrite }) },
+      )
+      await loadTemplates()
+      setSeedMsg(
+        `Installed — created ${result.created}, updated ${result.updated}, skipped ${result.skipped}`,
+      )
+    } catch {
+      setSeedMsg("Could not install templates. Check you are logged in as superadmin.")
+    }
+    setSeeding(false)
   }
 
   function copyVariable(v: string) {
@@ -314,18 +339,43 @@ export default function EmailTemplatesPage() {
   return (
     <div className="p-6 md:p-10 max-w-[1400px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-8 gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-display text-dp-text-primary mb-1">Email Templates</h1>
           <p className="text-sm text-dp-text-tertiary">Design and manage transactional email templates</p>
+          {seedMsg && <p className="text-xs text-dp-success mt-2">{seedMsg}</p>}
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 bg-dp-accent-cta text-white text-sm font-semibold rounded-md hover:opacity-90 transition-opacity"
-        >
-          <Plus size={14} />
-          New Template
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {isSuperadmin && (
+            <>
+              <button
+                onClick={() => handleInstallDefaults(false)}
+                disabled={seeding}
+                className="flex items-center gap-2 px-4 py-2.5 border border-dp-border text-dp-text-primary text-sm font-semibold rounded-md hover:border-dp-accent-cta hover:text-dp-accent-cta disabled:opacity-40 transition-colors"
+              >
+                <Sparkles size={14} />
+                {seeding ? "Installing..." : "Install brand templates"}
+              </button>
+              {templates.length > 0 && (
+                <button
+                  onClick={() => handleInstallDefaults(true)}
+                  disabled={seeding}
+                  className="flex items-center gap-2 px-3 py-2.5 text-xs text-dp-text-tertiary hover:text-dp-accent-cta disabled:opacity-40 transition-colors"
+                  title="Overwrite existing platform templates"
+                >
+                  Reset to brand defaults
+                </button>
+              )}
+            </>
+          )}
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2.5 bg-dp-accent-cta text-white text-sm font-semibold rounded-md hover:opacity-90 transition-opacity"
+          >
+            <Plus size={14} />
+            New Template
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -358,9 +408,19 @@ export default function EmailTemplatesPage() {
       {tab === "templates" && (
         <div className="space-y-2">
           {templates.length === 0 && (
-            <div className="text-center py-16 text-dp-text-tertiary">
+            <div className="text-center py-16 text-dp-text-tertiary border border-dashed border-dp-border rounded-lg">
               <Mail size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No email templates yet. Create your first one.</p>
+              <p className="text-sm mb-4">No email templates yet.</p>
+              {isSuperadmin && (
+                <button
+                  onClick={() => handleInstallDefaults(false)}
+                  disabled={seeding}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-dp-accent-cta text-white text-sm font-semibold rounded-md hover:opacity-90 disabled:opacity-40"
+                >
+                  <Sparkles size={14} />
+                  {seeding ? "Installing..." : "Install 8 branded templates"}
+                </button>
+              )}
             </div>
           )}
           {templates.map((tpl) => {

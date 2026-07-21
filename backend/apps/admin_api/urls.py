@@ -59,6 +59,7 @@ from .views import (
     AdminCatalogFilterConfigView,
     AdminEmailTemplateListView,
     AdminEmailTemplateDetailView,
+    AdminEmailTemplateSeedView,
     AdminEmailLogListView,
     AdminAuctionSubscriberListView,
 )
@@ -124,6 +125,7 @@ urlpatterns = [
     path("products/export/", AdminProductExportView.as_view(), name="admin-product-export"),
     path("products/import/", AdminProductImportView.as_view(), name="admin-product-import"),
     path("email-templates/", AdminEmailTemplateListView.as_view(), name="admin-email-templates"),
+    path("email-templates/seed/", AdminEmailTemplateSeedView.as_view(), name="admin-email-templates-seed"),
     path("email-templates/<int:pk>/", AdminEmailTemplateDetailView.as_view(), name="admin-email-template-detail"),
     path("email-logs/", AdminEmailLogListView.as_view(), name="admin-email-logs"),
     path("auction-subscribers/", AdminAuctionSubscriberListView.as_view(), name="admin-auction-subscribers"),
