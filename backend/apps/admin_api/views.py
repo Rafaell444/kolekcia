@@ -383,22 +383,11 @@ def _send_shipping_email(order):
         from django.core.mail import send_mail
         from django.conf import settings as django_settings
         from apps.emails.service import send_template_email, get_template
+        from apps.emails.order_context import build_order_email_context
 
         first_item = order.items.select_related("vendor").first()
         vendor = first_item.vendor if first_item else None
-
-        tracking_info = (
-            f"\n\nTracking number: {order.tracking_code}"
-            if order.tracking_code else ""
-        )
-        customer_name = order.shipping_name or "there"
-        order_number = order.order_number
-        context = {
-            "customer_name": customer_name,
-            "order_number": order_number,
-            "tracking_code": order.tracking_code or "—",
-            "tracking_info": tracking_info.strip() or "We'll share tracking as soon as it's available.",
-        }
+        context = build_order_email_context(order)
 
         # Prefer branded HTML template (vendor-specific → platform)
         if get_template("order_shipped", vendor=vendor):
@@ -410,6 +399,13 @@ def _send_shipping_email(order):
             )
             return
 
+        customer_name = context["customer_name"]
+        order_number = context["order_number"]
+        tracking_info = (
+            f"\n\n{context['tracking_info']}"
+            if order.tracking_code else ""
+        )
+
         if vendor and vendor.shipping_email_body:
             body = vendor.shipping_email_body
             body = body.replace("{{customer_name}}", customer_name)
@@ -420,19 +416,11 @@ def _send_shipping_email(order):
             subject = subject.replace("{{order_number}}", order_number)
             from_email = vendor.payment_email or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@koleqcia.com")
         else:
-            items_list = "\n".join(
-                f"  • {item.product_title} × {item.quantity}"
-                for item in order.items.all()
-            )
             body = (
                 f"Hi {customer_name},\n\n"
                 f"Great news — your Koleqcia order {order_number} has been shipped!{tracking_info}\n\n"
-                f"Items in your order:\n{items_list}\n\n"
-                f"Shipping to:\n"
-                f"  {order.shipping_line1}"
-                + (f", {order.shipping_line2}" if order.shipping_line2 else "")
-                + f"\n  {order.shipping_city}, {order.shipping_state} {order.shipping_zip}\n"
-                f"  {order.shipping_country}\n\n"
+                f"Items in your order:\n{context['items']}\n\n"
+                f"Total: {context['total']}\n\n"
                 f"Thank you for shopping with Koleqcia!\n"
                 f"— The Koleqcia Team"
             )

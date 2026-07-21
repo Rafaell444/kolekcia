@@ -22,6 +22,23 @@ from .serializers import (
 from apps.products.models import ProductVariant, SizeVariant
 
 
+def _absolute_product_image(url: str, request=None) -> str:
+    if not url:
+        return ""
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if request is not None:
+        try:
+            return request.build_absolute_uri(url)
+        except Exception:
+            pass
+    from django.conf import settings as s
+    base = getattr(s, "BACKEND_PUBLIC_URL", "") or ""
+    if base and url.startswith("/"):
+        return base.rstrip("/") + url
+    return url
+
+
 def _resolve_gift_wrap_price(variant, size_variant, currency="USD"):
     """Resolve per-vendor gift wrap price in the requested currency."""
     vendor = None
@@ -226,7 +243,21 @@ class CheckoutView(APIView):
             return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Atomically lock and deduct stock
-        items_to_process = list(cart.items.select_related("variant", "size_variant__product"))
+        items_to_process = list(
+            cart.items.select_related(
+                "variant__product__artist",
+                "variant__product__vendor",
+                "variant__size",
+                "variant__finish",
+                "variant__frame",
+                "size_variant__product__artist",
+                "size_variant__product__vendor",
+            ).prefetch_related(
+                "variant__product__images",
+                "size_variant__product__images",
+                "size_variant__images",
+            )
+        )
         variant_ids = [item.variant_id for item in items_to_process if item.variant_id]
         size_variant_ids = [item.size_variant_id for item in items_to_process if item.size_variant_id]
         locked_variants = {
@@ -309,23 +340,63 @@ class CheckoutView(APIView):
         )
 
         for item in items_to_process:
-            img = item.variant.product.images.first()
-            OrderItem.objects.create(
-                order=order,
-                vendor=item.variant.product.vendor,
-                product_title=item.variant.product.title,
-                product_image=img.url if img else "",
-                artist_name=item.variant.product.artist.name if item.variant.product.artist else "",
-                size_label=item.variant.size.label,
-                finish_label=item.variant.finish.label,
-                frame_label=item.variant.frame.label,
-                price=item.variant.price,
-                quantity=item.quantity,
-                gift_wrap=item.gift_wrap,
-                gift_wrap_note=item.gift_wrap_note,
-                gift_wrap_image_url=item.gift_wrap_image_url,
-                processing_option=item.processing_option,
-            )
+            if item.size_variant_id:
+                sv = item.size_variant
+                product = sv.product
+                img = product.images.first()
+                # Prefer size-variant image when assigned
+                sv_img = sv.images.first() if hasattr(sv, "images") else None
+                image_url = ""
+                if sv_img:
+                    image_url = sv_img.url or (sv_img.video_file.url if sv_img.video_file else "")
+                elif img:
+                    image_url = img.url or (img.video_file.url if getattr(img, "video_file", None) else "")
+                if currency == "GEL" and sv.price_gel is not None:
+                    unit_price = Decimal(sv.price_gel)
+                elif currency == "EUR" and sv.price_eur is not None:
+                    unit_price = Decimal(sv.price_eur)
+                elif currency == "GBP" and sv.price_gbp is not None:
+                    unit_price = Decimal(sv.price_gbp)
+                else:
+                    unit_price = Decimal(sv.price_usd)
+                OrderItem.objects.create(
+                    order=order,
+                    vendor=product.vendor,
+                    product_title=product.title,
+                    product_image=_absolute_product_image(image_url, request),
+                    artist_name=product.artist.name if product.artist else "",
+                    size_label=sv.label,
+                    finish_label="",
+                    frame_label="",
+                    price=unit_price,
+                    quantity=item.quantity,
+                    gift_wrap=item.gift_wrap,
+                    gift_wrap_note=item.gift_wrap_note,
+                    gift_wrap_image_url=_absolute_product_image(item.gift_wrap_image_url, request),
+                    processing_option=item.processing_option,
+                )
+            elif item.variant_id:
+                variant = item.variant
+                img = variant.product.images.first()
+                image_url = ""
+                if img:
+                    image_url = img.url or (img.video_file.url if getattr(img, "video_file", None) else "")
+                OrderItem.objects.create(
+                    order=order,
+                    vendor=variant.product.vendor,
+                    product_title=variant.product.title,
+                    product_image=_absolute_product_image(image_url, request),
+                    artist_name=variant.product.artist.name if variant.product.artist else "",
+                    size_label=variant.size.label,
+                    finish_label=variant.finish.label,
+                    frame_label=variant.frame.label,
+                    price=variant.price,
+                    quantity=item.quantity,
+                    gift_wrap=item.gift_wrap,
+                    gift_wrap_note=item.gift_wrap_note,
+                    gift_wrap_image_url=_absolute_product_image(item.gift_wrap_image_url, request),
+                    processing_option=item.processing_option,
+                )
 
         OrderStatusHistory.objects.create(order=order, status="pending", changed_by=request.user)
 
@@ -358,6 +429,22 @@ class CheckoutView(APIView):
         try:
             from apps.referrals.services import process_referral_conversion
             process_referral_conversion(request.user)
+        except Exception:
+            pass
+
+        # Branded order confirmation email
+        try:
+            from apps.emails.service import send_template_email, get_template
+            from apps.emails.order_context import build_order_email_context
+            vendor = order.items.select_related("vendor").first()
+            vendor_obj = vendor.vendor if vendor else None
+            if get_template("order_confirmed", vendor=vendor_obj):
+                send_template_email(
+                    "order_confirmed",
+                    order.shipping_email,
+                    build_order_email_context(order),
+                    vendor=vendor_obj,
+                )
         except Exception:
             pass
 

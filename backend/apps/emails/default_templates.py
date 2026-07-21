@@ -104,12 +104,15 @@ def order_confirmed_html() -> str:
         "<p style=\"margin:0;\">We're preparing your metal art with care. You'll get another email the moment it ships.</p>"
         + _info_card([
             ("Order", "#{{order_number}}"),
-            ("Total", "{{total}} {{currency}}"),
+            ("Total", "{{total}}"),
         ])
-        + '<p style="margin:0 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;'
+        + '<p style="margin:20px 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;'
         'color:#aeaeb2;font-weight:700;">Items</p>'
-        '<div style="padding:16px 18px;background:' + BG + ";border:1px solid " + BORDER + ";"
-        "color:" + INK + ';font-size:14px;line-height:1.7;white-space:pre-wrap;">{{items}}</div>'
+        + "{{items_html}}"
+        + "{{totals_html}}"
+        + '<p style="margin:24px 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;'
+        'color:#aeaeb2;font-weight:700;">Ship to</p>'
+        + "{{shipping_address_html}}"
     )
     return _shell(
         preheader="Order {{order_number}} is confirmed — thank you for shopping Koleqcia.",
@@ -124,13 +127,21 @@ def order_confirmed_html() -> str:
 def order_shipped_html() -> str:
     body = (
         '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Hi {{customer_name}},</p>'
-        '<p style="margin:0;">Great news — order <strong style="color:' + INK + ';">#{{order_number}}</strong> '
+        + '<p style="margin:0;">Great news — order <strong style="color:' + INK + ';">#{{order_number}}</strong> '
         "left the studio and is heading your way.</p>"
         + _info_card([
             ("Order", "#{{order_number}}"),
             ("Tracking", "{{tracking_code}}"),
+            ("Total paid", "{{total}}"),
         ])
-        + '<p style="margin:0;white-space:pre-wrap;">{{tracking_info}}</p>'
+        + '<p style="margin:0 0 8px;white-space:pre-wrap;">{{tracking_info}}</p>'
+        + '<p style="margin:20px 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;'
+        'color:#aeaeb2;font-weight:700;">Items in this shipment</p>'
+        + "{{items_html}}"
+        + "{{totals_html}}"
+        + '<p style="margin:24px 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;'
+        'color:#aeaeb2;font-weight:700;">Ship to</p>'
+        + "{{shipping_address_html}}"
     )
     return _shell(
         preheader="Order {{order_number}} is on the way.",
@@ -147,7 +158,15 @@ def custom_order_shipped_html() -> str:
         '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Hi {{customer_name}},</p>'
         "<p style=\"margin:0;\">Your one-of-a-kind order is packed and in transit. Use the details below to track it — "
         "and complete payment if a balance remains.</p>"
-        + _info_card([("Tracking", "{{tracking_code}}")])
+        + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;">'
+        '<tr><td align="center">'
+        '<img src="{{product_image}}" alt="Custom order" width="280" '
+        'style="display:block;width:100%;max-width:280px;height:auto;border:0;border-radius:2px;">'
+        "</td></tr></table>"
+        + _info_card([
+            ("Tracking", "{{tracking_code}}"),
+            ("Amount", "{{total}}"),
+        ])
     )
     return _shell(
         preheader="Your custom piece is on the way — complete payment if needed.",
@@ -221,47 +240,6 @@ def password_reset_html() -> str:
     )
 
 
-def welcome_html() -> str:
-    body = (
-        '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Glad you\'re here.</p>'
-        "<p style=\"margin:0 0 16px;\">Koleqcia is home to artist-made metal posters, premium figures, and custom prints — "
-        "built to last, made in Georgia.</p>"
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 12px;">'
-        '<tr><td style="padding:14px 16px;border:1px solid ' + BORDER + ";background:" + BG + ';">'
-        '<p style="margin:0 0 4px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:' + GOLD + ';font-weight:700;">Explore</p>'
-        '<p style="margin:0;color:' + INK + ';font-size:14px;font-weight:600;">Wallpanels · Figures · Auctions · Custom</p>'
-        "</td></tr></table>"
-        '<p style="margin:0;">Start with what speaks to you — your walls (and shelves) will thank you.</p>'
-    )
-    return _shell(
-        preheader="Welcome to Koleqcia — metal art made in Georgia.",
-        eyebrow="Welcome",
-        title="You're in, {{user_name}}.",
-        body_html=body,
-        cta_label="Shop the catalog",
-        cta_url="https://koleqcia.com/catalog",
-    )
-
-
-def custom_html() -> str:
-    body = (
-        '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Hello,</p>'
-        "<p style=\"margin:0;\">Edit this template in the admin Email Templates editor to craft one-off announcements, "
-        "promos, or studio updates.</p>"
-        '<p style="margin:20px 0 0;padding:14px 16px;border-left:3px solid ' + CTA + ";background:" + BG + ";"
-        "color:" + INK + ';font-size:14px;">'
-        "Tip: use the visual editor to swap headlines, add images, and drop in your CTA.</p>"
-    )
-    return _shell(
-        preheader="A message from Koleqcia.",
-        eyebrow="Koleqcia",
-        title="A note for you",
-        body_html=body,
-        cta_label="Visit Koleqcia",
-        cta_url="https://koleqcia.com",
-    )
-
-
 _HTML_BUILDERS = {
     "order_confirmed": order_confirmed_html,
     "order_shipped": order_shipped_html,
@@ -269,26 +247,21 @@ _HTML_BUILDERS = {
     "auction_new": auction_new_html,
     "auction_won": auction_won_html,
     "password_reset": password_reset_html,
-    "welcome": welcome_html,
-    "custom": custom_html,
 }
 
 _META = [
     ("order_confirmed", "Order Confirmed", "Order #{{order_number}} confirmed — thank you!",
-     ["customer_name", "order_number", "total", "currency", "items"]),
+     ["customer_name", "order_number", "total", "currency", "items", "items_html", "totals_html", "shipping_address_html"]),
     ("order_shipped", "Order Shipped", "Your order #{{order_number}} has shipped!",
-     ["customer_name", "order_number", "tracking_code", "tracking_info"]),
+     ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "items_html", "totals_html", "shipping_address_html"]),
     ("custom_order_shipped", "Custom Order Shipped", "Your custom order is on the way",
-     ["customer_name", "tracking_code", "payment_link"]),
+     ["customer_name", "tracking_code", "payment_link", "product_image", "total"]),
     ("auction_new", "New Auction Notification", "New auction: {{auction_title}}",
      ["auction_title", "starting_bid", "starts_at", "image_url", "auction_url"]),
     ("auction_won", "Auction Won", "You won {{auction_title}}!",
      ["winner_name", "auction_title", "winning_amount", "payment_link"]),
     ("password_reset", "Password Reset", "Reset your Koleqcia password",
      ["reset_url", "user_name"]),
-    ("welcome", "Welcome / Registration", "Welcome to Koleqcia, {{user_name}}!",
-     ["user_name"]),
-    ("custom", "Custom / One-off", "A message from Koleqcia", []),
 ]
 
 

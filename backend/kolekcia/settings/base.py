@@ -18,6 +18,7 @@ env = environ.Env(
     CSRF_TRUSTED_ORIGINS=(list, []),
     SECRET_KEY=(str, "django-insecure-change-me"),
     FRONTEND_URL=(str, "http://localhost:3000"),
+    BACKEND_PUBLIC_URL=(str, "http://127.0.0.1:8000"),
     GOOGLE_CLIENT_ID=(str, ""),
 )
 
@@ -27,6 +28,7 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 FRONTEND_URL = env("FRONTEND_URL")
+BACKEND_PUBLIC_URL = env("BACKEND_PUBLIC_URL")
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")
 
 # Reject insecure default keys when running with DEBUG=False (production).

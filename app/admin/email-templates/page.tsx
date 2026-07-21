@@ -3,9 +3,10 @@
 import React, { useEffect, useState, useCallback } from "react"
 import dynamic from "next/dynamic"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
+import { renderEmailPreviewHtml } from "@/lib/email-preview"
 import {
   Plus, Save, Trash2, ArrowLeft, Mail, Eye, EyeOff, Clock,
-  Copy, ChevronDown, Sparkles,
+  Copy, ChevronDown, Sparkles, Code2, LayoutTemplate,
 } from "lucide-react"
 
 const EmailEditor = dynamic(() => import("@/components/admin/EmailEditor"), {
@@ -50,24 +51,20 @@ const EVENT_OPTIONS = [
   { value: "auction_new", label: "New Auction Notification" },
   { value: "auction_won", label: "Auction Won" },
   { value: "password_reset", label: "Password Reset" },
-  { value: "welcome", label: "Welcome / Registration" },
-  { value: "custom", label: "Custom / One-off" },
 ]
 
 const EVENT_VARIABLES: Record<string, string[]> = {
-  order_confirmed: ["customer_name", "order_number", "total", "currency", "items"],
-  order_shipped: ["customer_name", "order_number", "tracking_code", "tracking_info"],
-  custom_order_shipped: ["customer_name", "tracking_code", "payment_link"],
+  order_confirmed: ["customer_name", "order_number", "total", "currency", "items", "items_html", "totals_html", "shipping_address_html"],
+  order_shipped: ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "items_html", "totals_html", "shipping_address_html"],
+  custom_order_shipped: ["customer_name", "tracking_code", "payment_link", "product_image", "total"],
   auction_new: ["auction_title", "starting_bid", "starts_at", "image_url", "auction_url"],
   auction_won: ["winner_name", "auction_title", "winning_amount", "payment_link"],
   password_reset: ["reset_url", "user_name"],
-  welcome: ["user_name"],
-  custom: [],
 }
 
 const EMPTY_FORM = {
   name: "",
-  event_key: "custom",
+  event_key: "order_confirmed",
   subject: "",
   html_body: "",
   design_json: {} as Record<string, unknown>,
@@ -88,6 +85,7 @@ export default function EmailTemplatesPage() {
   const [showVars, setShowVars] = useState(false)
   const [seeding, setSeeding] = useState(false)
   const [seedMsg, setSeedMsg] = useState("")
+  const [editorTab, setEditorTab] = useState<"preview" | "html" | "blocks">("preview")
 
   const adminUser = getAdminUser()
   const isSuperadmin = adminUser?.is_staff ?? false
@@ -115,6 +113,7 @@ export default function EmailTemplatesPage() {
   function openCreate() {
     setEditing(null)
     setForm(EMPTY_FORM)
+    setEditorTab("blocks")
     setCreating(true)
   }
 
@@ -131,6 +130,9 @@ export default function EmailTemplatesPage() {
         is_active: full.is_active,
         vendor: full.vendor,
       })
+      // Brand HTML templates show in Preview; GrapesJS can't reliably import full email HTML
+      const hasDesign = full.design_json && Object.keys(full.design_json).length > 2
+      setEditorTab(full.html_body && !hasDesign ? "preview" : hasDesign ? "blocks" : "preview")
       setEditing(full)
       setCreating(true)
     } catch { /* noop */ }
@@ -308,12 +310,115 @@ export default function EmailTemplatesPage() {
           </label>
         </div>
 
-        {/* GrapesJS Editor */}
-        <EmailEditor
-          key={editing?.id ?? "new"}
-          designJson={form.design_json}
-          onChange={handleEditorChange}
-        />
+        {/* Editor tabs */}
+        <div className="flex gap-1 mb-3 border-b border-dp-border">
+          {([
+            { id: "preview" as const, label: "Preview", icon: Eye },
+            { id: "html" as const, label: "HTML", icon: Code2 },
+            { id: "blocks" as const, label: "Block editor", icon: LayoutTemplate },
+          ]).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setEditorTab(tab.id)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                editorTab === tab.id
+                  ? "border-dp-accent-cta text-dp-text-primary"
+                  : "border-transparent text-dp-text-tertiary hover:text-dp-text-secondary"
+              }`}
+            >
+              <tab.icon size={14} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {editorTab === "preview" && (
+          <div className="border border-dp-border rounded-md overflow-hidden bg-[#f4f4f5]">
+            <div className="px-4 py-2 border-b border-dp-border bg-dp-bg-surface flex items-center justify-between">
+              <p className="text-xs text-dp-text-tertiary">
+                Preview with sample product images &amp; prices · Subject:{" "}
+                <span className="text-dp-text-secondary">
+                  {renderEmailPreviewHtml(form.subject || "—", form.event_key)}
+                </span>
+              </p>
+            </div>
+            {form.html_body ? (
+              <iframe
+                title="Email preview"
+                srcDoc={renderEmailPreviewHtml(form.html_body, form.event_key)}
+                className="w-full bg-white"
+                style={{ height: "calc(100vh - 360px)", minHeight: 520 }}
+                sandbox=""
+              />
+            ) : (
+              <div className="flex items-center justify-center text-sm text-dp-text-tertiary" style={{ height: 320 }}>
+                No HTML yet — switch to Block editor or HTML to create content.
+              </div>
+            )}
+          </div>
+        )}
+
+        {editorTab === "html" && (
+          <div className="border border-dp-border rounded-md overflow-hidden">
+            <div className="px-4 py-2 border-b border-dp-border bg-dp-bg-surface">
+              <p className="text-xs text-dp-text-tertiary">
+                Edit raw HTML. Keep {"{{placeholders}}"} intact. Switch to Preview to check the result.
+              </p>
+            </div>
+            <textarea
+              value={form.html_body}
+              onChange={(e) => setForm((p) => ({ ...p, html_body: e.target.value, design_json: {} }))}
+              spellCheck={false}
+              className="w-full p-4 font-mono text-[12px] leading-relaxed bg-dp-bg-elevated text-dp-text-primary focus:outline-none resize-y"
+              style={{ height: "calc(100vh - 360px)", minHeight: 520 }}
+            />
+          </div>
+        )}
+
+        {editorTab === "blocks" && (
+          <div>
+            {form.html_body.trim() && !(form.design_json && Object.keys(form.design_json).length > 2) ? (
+              <div className="border border-dp-border rounded-md overflow-hidden">
+                <div className="px-4 py-3 border-b border-dp-border bg-dp-bg-surface flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-dp-text-tertiary max-w-xl">
+                    Branded HTML template — shown live below. Edit in{" "}
+                    <button type="button" onClick={() => setEditorTab("html")} className="text-dp-accent-cta underline">HTML</button>
+                    {" "}or start a new drag-and-drop layout.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!confirm("Clear this email and open the block builder with a Koleqcia starter layout?")) return
+                      setForm((p) => ({ ...p, html_body: "", design_json: {} }))
+                    }}
+                    className="shrink-0 px-3 py-1.5 text-xs font-semibold border border-dp-border rounded-md text-dp-text-secondary hover:border-dp-accent-cta hover:text-dp-accent-cta transition-colors"
+                  >
+                    Open block builder
+                  </button>
+                </div>
+                <iframe
+                  title="Email in block editor"
+                  srcDoc={renderEmailPreviewHtml(form.html_body, form.event_key)}
+                  className="w-full bg-white"
+                  style={{ height: "calc(100vh - 400px)", minHeight: 480 }}
+                  sandbox=""
+                />
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-dp-text-tertiary mb-2">
+                  Starter layout is loaded on the canvas. Use the <strong className="text-dp-text-secondary">Blocks</strong> panel on the right (or the + icon) to add sections, text, and buttons.
+                </p>
+                <EmailEditor
+                  key={`blocks-blank-${editing?.id ?? "new"}`}
+                  designJson={{}}
+                  onChange={handleEditorChange}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Save bar */}
         <div className="flex items-center gap-3 mt-5">
@@ -418,7 +523,7 @@ export default function EmailTemplatesPage() {
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-dp-accent-cta text-white text-sm font-semibold rounded-md hover:opacity-90 disabled:opacity-40"
                 >
                   <Sparkles size={14} />
-                  {seeding ? "Installing..." : "Install 8 branded templates"}
+                  {seeding ? "Installing..." : "Install 6 branded templates"}
                 </button>
               )}
             </div>
