@@ -45,12 +45,12 @@ function GeneralSettingsCard({
   saving: boolean
   saved: boolean
 }) {
-  const fields = [
+  const fields: Array<{ key: string; label: string; fallback: string; type?: string }> = [
     { key: "site_name", label: "Site Name", fallback: "Koleqcia" },
     { key: "site_url", label: "Site URL", fallback: "https://Koleqcia.com" },
     { key: "support_email", label: "Support Email", fallback: "support@Koleqcia.com", type: "email" },
     { key: "support_phone", label: "Support Phone", fallback: "+995 000 000 000" },
-  ] as const
+  ]
 
   return (
     <>

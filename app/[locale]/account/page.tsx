@@ -27,6 +27,7 @@ type CustomOrder = {
   id: string; vendor_name: string | null; product_type: string; status: string
   payment_ref: string; price: string | null; currency: string; payment_url: string
   tracking_code: string; cancel_reason: string; paid_at: string | null; created_at: string
+  image_url?: string; notes?: string
 }
 
 const CUSTOM_STATUS_LABELS: Record<string, string> = {
@@ -34,7 +35,16 @@ const CUSTOM_STATUS_LABELS: Record<string, string> = {
   paid: "Paid", printing: "Printing", shipped: "Shipped", cancelled: "Cancelled",
 }
 type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count: number; tracking_code: string; currency?: string }
-type Badge = { id: string; name: string; icon: string; rarity: string; description: string; prize_promo_code?: string | null; prize_description?: string }
+type Badge = {
+  id: string
+  name: string
+  icon: string
+  rarity: string
+  description: string
+  trigger_action?: string
+  prize_promo_code?: string | null
+  prize_description?: string
+}
 type EarnedBadge = {
   badge: Badge
   earned_at: string

@@ -83,7 +83,8 @@ export default async function ProductDetailPage({
         sku={product.id}
         brand={product.vendor_name}
       />
-      <ProductDetail product={product} />
+      {/* API returns the full product payload; ProductDetail owns the rich client type. */}
+      <ProductDetail product={product as never} />
     </>
   )
 }

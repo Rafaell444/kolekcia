@@ -75,5 +75,10 @@ const en = {
   },
 } as const
 
+/** Same shape as English, but values are any string (locale translations). */
+type DeepStringify<T> = {
+  [K in keyof T]: T[K] extends string ? string : DeepStringify<T[K]>
+}
+
 export default en
-export type MessageTree = typeof en
+export type MessageTree = DeepStringify<typeof en>

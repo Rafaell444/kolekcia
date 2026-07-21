@@ -1,16 +1,24 @@
 "use client"
 
 import React, { useEffect, useRef, useCallback } from "react"
-import type grapesjs from "grapesjs"
 
 type Props = {
   designJson: Record<string, unknown>
   onChange: (data: { html: string; design: Record<string, unknown> }) => void
 }
 
+type GrapesEditor = {
+  on: (event: string, cb: () => void) => void
+  getHtml: () => string
+  getCss: () => string
+  getProjectData: () => Record<string, unknown>
+  loadProjectData: (data: Record<string, unknown>) => void
+  destroy: () => void
+}
+
 export default function EmailEditor({ designJson, onChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const editorRef = useRef<grapesjs.Editor | null>(null)
+  const editorRef = useRef<GrapesEditor | null>(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
 
@@ -28,8 +36,7 @@ export default function EmailEditor({ designJson, onChange }: Props) {
       /* plugin optional */
     }
 
-    const plugins: unknown[] = []
-    if (newsletterPlugin) plugins.push(newsletterPlugin)
+    const plugins = newsletterPlugin ? [newsletterPlugin as never] : []
 
     const editor = grapesjs.init({
       container: containerRef.current,
@@ -38,7 +45,7 @@ export default function EmailEditor({ designJson, onChange }: Props) {
       storageManager: false,
       plugins,
       pluginsOpts: newsletterPlugin
-        ? { [newsletterPlugin as string]: {} }
+        ? { [String(newsletterPlugin)]: {} }
         : {},
       canvas: {
         styles: [
@@ -52,15 +59,15 @@ export default function EmailEditor({ designJson, onChange }: Props) {
           { name: "Mobile", width: "360px" },
         ],
       },
-    })
+    }) as GrapesEditor
 
     if (designJson && Object.keys(designJson).length > 0) {
-      editor.loadProjectData(designJson as ReturnType<typeof editor.getProjectData>)
+      editor.loadProjectData(designJson)
     }
 
     editor.on("update", () => {
       const html = editor.getHtml() + `<style>${editor.getCss()}</style>`
-      const design = editor.getProjectData() as Record<string, unknown>
+      const design = editor.getProjectData()
       onChangeRef.current({ html, design })
     })
 

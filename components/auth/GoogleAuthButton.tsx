@@ -51,7 +51,6 @@ export default function GoogleAuthButton({
         size="large"
         shape="rectangular"
         width={width}
-        locale="en"
       />
     </div>
   )
