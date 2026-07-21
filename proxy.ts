@@ -20,6 +20,12 @@ function localeFromCountry(countryCode: string | null): string | null {
 
 /** Get country code from various geo headers (Nginx, CloudFront, Cloudflare, Vercel) */
 function getGeoCountry(request: NextRequest): string | null {
+  // DEBUG: Allow ?geo=XX query param for testing (e.g., ?geo=GE, ?geo=US)
+  const geoOverride = request.nextUrl.searchParams.get("geo")
+  if (geoOverride && /^[A-Z]{2}$/i.test(geoOverride)) {
+    return geoOverride.toUpperCase()
+  }
+
   // Nginx GeoIP module
   const nginxCountry = request.headers.get("x-country-code")
   if (nginxCountry) return nginxCountry
@@ -32,7 +38,7 @@ function getGeoCountry(request: NextRequest): string | null {
   const cloudflareCountry = request.headers.get("cf-ipcountry")
   if (cloudflareCountry) return cloudflareCountry
 
-  // Vercel (for local dev/preview)
+  // Vercel
   const vercelCountry = request.headers.get("x-vercel-ip-country")
   if (vercelCountry) return vercelCountry
 
