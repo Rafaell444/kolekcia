@@ -186,16 +186,16 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "500/day",
-        "user": "2000/day",
-        "auth": "20/min",
+        "anon": "1000/minute",      # Public browsing (was 500/day - way too low)
+        "user": "2000/minute",      # Authenticated users
+        "auth": "20/min",           # Login/register attempts
         "admin_auth": "10/min",
         "contact": "10/hour",
         "newsletter": "20/hour",
-        "checkout": "20/hour",
-        "promo_apply": "20/hour",
-        "xp_award": "10/hour",
-        "bid": "20/hour",
+        "checkout": "60/hour",
+        "promo_apply": "30/hour",
+        "xp_award": "30/hour",
+        "bid": "60/hour",
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",

@@ -5,6 +5,12 @@ import { useEffect, useRef, useCallback, useState } from "react"
 type WsMessage = Record<string, unknown>
 type TokenRefresher = () => Promise<string | null>
 
+// Disable WebSocket entirely if env var is set (for hosts like PythonAnywhere that don't support WS)
+const WS_DISABLED = process.env.NEXT_PUBLIC_DISABLE_WEBSOCKET === "true"
+
+// Max reconnection attempts before giving up (avoids spamming logs on unsupported hosts)
+const MAX_RECONNECT_ATTEMPTS = 3
+
 function wsBase(): string {
   const api = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
   const url = new URL(api)
@@ -33,10 +39,15 @@ function useStableWs(
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onMessageRef = useRef(onMessage)
   const hasTriedRefresh = useRef(false)
+  const failureCount = useRef(0)
+  const gaveUp = useRef(false)
   onMessageRef.current = onMessage
 
   const connect = useCallback(async () => {
-    let token = getToken()
+    // Skip if WebSocket is disabled or we've given up
+    if (WS_DISABLED || gaveUp.current) return
+    
+    const token = getToken()
     if (!path || !token) return
 
     const ws = openAuthedWebSocket(path, token)
@@ -46,17 +57,19 @@ function useStableWs(
 
     ws.onopen = () => {
       hasTriedRefresh.current = false
+      failureCount.current = 0 // Reset on successful connection
     }
 
     ws.onmessage = (e) => {
       wasAccepted = true
+      failureCount.current = 0 // Reset on successful message
       try {
         const data = JSON.parse(e.data) as WsMessage
         onMessageRef.current(data)
       } catch { /* ignore non-JSON */ }
     }
 
-    ws.onclose = async (event) => {
+    ws.onclose = async () => {
       wsRef.current = null
       
       // If closed immediately without receiving any message (auth rejected), try refresh
@@ -70,8 +83,17 @@ function useStableWs(
         }
       }
       
-      // Normal reconnect with backoff
-      reconnectTimer.current = setTimeout(() => void connect(), 3000)
+      // Track failures and give up after max attempts
+      failureCount.current++
+      if (failureCount.current >= MAX_RECONNECT_ATTEMPTS) {
+        gaveUp.current = true
+        console.info("[WS] WebSocket unavailable, falling back to HTTP polling")
+        return
+      }
+      
+      // Exponential backoff: 1s, 2s, 4s...
+      const delay = Math.min(1000 * Math.pow(2, failureCount.current - 1), 10000)
+      reconnectTimer.current = setTimeout(() => void connect(), delay)
     }
 
     ws.onerror = () => {
@@ -80,6 +102,7 @@ function useStableWs(
   }, [path, getToken, refreshToken])
 
   useEffect(() => {
+    if (WS_DISABLED) return
     void connect()
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
