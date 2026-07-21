@@ -1,4 +1,4 @@
-// Image showcase on black background — "Why you need metal art?"
+﻿// Image showcase on black background — "Why you need metal art?"
 import Image from "next/image"
 
 const VIDEO_CARDS = [
@@ -21,7 +21,7 @@ const VIDEO_CARDS = [
 
 export default function VideoSection({ content }: { content?: { heading?: string; cards?: typeof VIDEO_CARDS } }) {
   const cards = content?.cards ?? VIDEO_CARDS
-  const heading = content?.heading ?? "Why You Need Metal Art From Kolekcia?"
+  const heading = content?.heading ?? "Why You Need Metal Art From Koleqcia?"
   return (
     <section
       className="relative py-16 overflow-hidden"

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import { ChevronRight, CreditCard, CheckCircle, Lock, Truck, ArrowLeft, MapPin } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
 import { authFetch, apiFetch } from "@/lib/api"
@@ -559,12 +559,12 @@ function Confirmed({ orderNumber }: { orderNumber: string }) {
         </p>
       </div>
       <div className="flex flex-col sm:flex-row gap-3 mt-2">
-        <Link href="/account/orders" className="px-6 py-3 border border-dp-border rounded-sm text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
+        <LocalizedLink href="/account/orders" className="px-6 py-3 border border-dp-border rounded-sm text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
           View Orders
-        </Link>
-        <Link href="/catalog" className="flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
+        </LocalizedLink>
+        <LocalizedLink href="/catalog" className="flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
           Keep Shopping <ChevronRight size={13} aria-hidden />
-        </Link>
+        </LocalizedLink>
       </div>
       <div className="flex items-center gap-3 border border-dp-accent-gold/30 bg-dp-accent-gold/5 rounded-sm px-6 py-4 mt-2">
         <Truck size={20} className="text-dp-accent-gold shrink-0" />

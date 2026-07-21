@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import { apiFetch } from "@/lib/api"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import {
   Mail, Phone, MapPin, Package,
   RotateCcw, Truck, Brush, ArrowRight, ChevronDown,
@@ -409,7 +409,7 @@ export default function ContactPage() {
                 { label: "Shipping Guide",    href: "#shipping",        icon: <Truck     size={13} /> },
                 { label: "Artist Resources",  href: "/about",           icon: <Brush     size={13} /> },
               ].map(({ label, href, icon }) => (
-                <Link
+                <LocalizedLink
                   key={label}
                   href={href}
                   className="flex items-center gap-2.5 px-5 py-3 border-b border-dp-border last:border-b-0 text-[13px] text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors group"
@@ -417,7 +417,7 @@ export default function ContactPage() {
                   <span className="text-dp-text-tertiary group-hover:text-dp-accent-cta transition-colors">{icon}</span>
                   {label}
                   <ArrowRight size={11} className="ml-auto text-dp-text-tertiary group-hover:text-dp-accent-cta transition-colors" />
-                </Link>
+                </LocalizedLink>
               ))}
             </div>
           </div>
@@ -502,12 +502,12 @@ export default function ContactPage() {
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">Still Browsing?</p>
           <h2 className="font-display text-5xl md:text-6xl text-white mb-4">Discover 2.5M+ Designs</h2>
           <p className="text-white/60 text-[13px] mb-8 max-w-sm mx-auto">The perfect piece for your wall is waiting. Free shipping over $49.</p>
-          <Link
+          <LocalizedLink
             href="/catalog"
             className="inline-flex items-center gap-2 px-10 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
           >
             Shop Now <ArrowRight size={14} />
-          </Link>
+          </LocalizedLink>
         </div>
       </section>
 

@@ -1,3 +1,7 @@
+import os
+import ssl
+
+import requests as requests_lib
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from google.auth.transport import requests as google_requests
@@ -5,13 +9,38 @@ from google.oauth2 import id_token as google_id_token
 
 from .models import User
 
+# Prefer the OS trust store (fixes Windows / MITM / OpenSSL 3 strict CA issues
+# that break Google token verification with CERTIFICATE_VERIFY_FAILED).
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:
+    # Fallback: relax OpenSSL 3 VERIFY_X509_STRICT when truststore is absent.
+    try:
+        import certifi
+
+        os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+    except ImportError:
+        pass
+
+    if hasattr(ssl, "VERIFY_X509_STRICT"):
+        _ctx = ssl.create_default_context()
+        _ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        ssl._create_default_https_context = lambda: _ctx  # noqa: SLF001
+
+
+def _google_request() -> google_requests.Request:
+    return google_requests.Request(session=requests_lib.Session())
+
 
 def verify_google_id_token(token: str) -> dict:
     if not settings.GOOGLE_CLIENT_ID:
         raise ValueError("Google sign-in is not configured.")
     return google_id_token.verify_oauth2_token(
         token,
-        google_requests.Request(),
+        _google_request(),
         settings.GOOGLE_CLIENT_ID,
     )
 

@@ -1,4 +1,4 @@
-"""Seed default PageSection content from hardcoded storefront data."""
+﻿"""Seed default PageSection content from hardcoded storefront data."""
 from django.core.management.base import BaseCommand
 from apps.cms.models import PageSection
 
@@ -7,14 +7,14 @@ SECTIONS = [
     {
         "page": "home",
         "section_key": "more_ways",
-        "title": "More Ways to Kolekcia",
+        "title": "More Ways to Koleqcia",
         "sort_order": 0,
         "content": {
-            "heading": "More Ways to Kolekcia",
+            "heading": "More Ways to Koleqcia",
             "cards": [
                 {"id": "limited", "label": "Limited Editions", "desc": "Exclusive designs. Unique finishes. Limited runs.", "href": "/catalog?filter=limited", "imageUrl": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&h=600&fit=crop"},
                 {"id": "custom", "label": "Custom Displates", "desc": "Turn anything you love into premium metal posters.", "href": "/custom", "imageUrl": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&h=600&fit=crop"},
-                {"id": "club", "label": "KolekciaClub", "desc": "Join and unlock free shipping, early access to limited drops.", "href": "/catalog", "imageUrl": "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=800&h=600&fit=crop", "accent": "#2563eb"},
+                {"id": "club", "label": "KoleqciaClub", "desc": "Join and unlock free shipping, early access to limited drops.", "href": "/catalog", "imageUrl": "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=800&h=600&fit=crop", "accent": "#2563eb"},
             ],
         },
     },
@@ -24,7 +24,7 @@ SECTIONS = [
         "title": "Why You Need Metal Art",
         "sort_order": 1,
         "content": {
-            "heading": "Why You Need Metal Art From Kolekcia?",
+            "heading": "Why You Need Metal Art From Koleqcia?",
             "cards": [
                 {"id": "v1", "label": "Damage-resistant metal print", "thumb": "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&h=500&fit=crop"},
                 {"id": "v2", "label": "Tool-free, magnet mounting included", "thumb": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&h=500&fit=crop"},
@@ -39,7 +39,7 @@ SECTIONS = [
         "sort_order": 2,
         "content": {
             "heading": "Sign up and never miss a deal",
-            "subheading": "Join our newsletter for the latest discounts and Kolekcia goodies",
+            "subheading": "Join our newsletter for the latest discounts and Koleqcia goodies",
             "promoText": "Sign Up & Save 25%!",
             "imageUrl": "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=800&h=600&fit=crop",
         },
@@ -78,7 +78,7 @@ SECTIONS = [
                 {"year": "2019", "title": "First 1,000 Artists", "body": "Word spread through online communities. Our first big artist cohort joined within 6 months."},
                 {"year": "2021", "title": "Magnetic Mounting", "body": "We invented our tool-free magnetic pin system — now shipped with every single order."},
                 {"year": "2023", "title": "2 Million Designs", "body": "Crossed 2 million active designs from artists in 80+ countries."},
-                {"year": "2025", "title": "Kolekcia Platform", "body": "Launched the full collector platform with auctions, XP rewards, and limited-edition drops."},
+                {"year": "2025", "title": "Koleqcia Platform", "body": "Launched the full collector platform with auctions, XP rewards, and limited-edition drops."},
             ],
         },
     },
@@ -179,7 +179,7 @@ SECTIONS = [
                     "type": "feature_grid",
                     "eyebrow": "How It Works",
                     "heading": "From Design to Wall\nin 3 Steps",
-                    "body": "Every Kolekcia metal print ships ready to hang with our patented magnetic mounting system.",
+                    "body": "Every Koleqcia metal print ships ready to hang with our patented magnetic mounting system.",
                     "items": [
                         {"title": "1. Choose Your Design", "desc": "Browse thousands of designs or upload your own custom artwork."},
                         {"title": "2. We Print on Metal", "desc": "Your design is UV-printed onto premium aluminium with a protective coating."},

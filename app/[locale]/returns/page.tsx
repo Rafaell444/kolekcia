@@ -1,9 +1,8 @@
-import type { Metadata } from "next"
-import { LOCALES, type Locale } from "@/lib/i18n"
+﻿import type { Metadata } from "next"
+import { type Locale } from "@/lib/i18n"
 import { RETURNS_SEO } from "@/lib/seo-metadata"
+import { buildPageMetadata } from "@/lib/seo"
 import SiteShell from "@/components/layout/SiteShell"
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
 
 export async function generateMetadata({
   params,
@@ -12,13 +11,13 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params
   const seo = RETURNS_SEO[(locale as Locale) ?? "en"] ?? RETURNS_SEO.en
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) alternates[loc] = `${SITE_URL}/${loc}/returns`
-  return {
+
+  return buildPageMetadata({
     title: seo.title,
     description: seo.description,
-    alternates: { canonical: `${SITE_URL}/${locale}/returns`, languages: alternates },
-  }
+    path: "/returns",
+    locale,
+  })
 }
 
 export default function ReturnsPage() {
@@ -29,7 +28,7 @@ export default function ReturnsPage() {
         <div className="space-y-4 text-[14px] text-dp-text-secondary leading-relaxed">
           <p>We offer a 100-day return policy on standard purchases. Items must be in original condition.</p>
           <p>Custom-made and auction-won items may have different return terms — contact support before returning.</p>
-          <p>To start a return, visit your order details or contact us at support@kolekcia.com.</p>
+          <p>To start a return, visit your order details or contact us at support@Koleqcia.com.</p>
         </div>
       </div>
     </SiteShell>

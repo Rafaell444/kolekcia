@@ -8,18 +8,28 @@ from apps.core.transliterate import smart_slugify
 
 
 class Category(SEOModelMixin):
+    # Titles omit trailing " | Koleqcia" — Next.js root layout title template adds it.
     SEO_TEMPLATES = {
         "en": {
-            "title": "{name} | Koleqcia",
-            "description": "Browse {name} collection on Koleqcia.",
+            "title": "{name} & Gaming Room Decor | Unique Anime Gifts",
+            "description": (
+                "Shop handmade {name} at Koleqcia. Discover the perfect gaming room decor, "
+                "unique anime gifts, and custom fanart wall art. Proudly made in Georgia."
+            ),
         },
         "ka": {
-            "title": "{name} | Koleqcia",
-            "description": "აღმოაჩინე {name} კოლექცია Koleqcia-ზე.",
+            "title": "{name} და უნიკალური საჩუქრები | ოთახის დეკორაცია",
+            "description": (
+                "შეიძინე {name} ონლაინ. აღმოაჩინე საუკეთესო ანიმესა და თამაშების ოთახის დეკორაცია. "
+                "იდეალური საჩუქარი გეიმერებისთვის, დამზადებულია საქართველოში."
+            ),
         },
         "ru": {
-            "title": "{name} | Koleqcia",
-            "description": "Коллекция {name} на Koleqcia. Выбирайте лучшее.",
+            "title": "{name}, Игровой Декор и Необычные Подарки",
+            "description": (
+                "Выбирайте {name} в Koleqcia. Уникальный аниме декор для игровой комнаты "
+                "и необычные подарки ручной работы. Сделано в Грузии."
+            ),
         },
     }
 
@@ -98,7 +108,7 @@ class PosterFrame(models.Model):
 class Product(SEOModelMixin):
     SEO_TEMPLATES = {
         "en": {
-            "title": "{name} - {category_name} | {vendor_name} by Koleqcia",
+            "title": "{name} - {category_name} | {vendor_name}",
             "description": "Buy the {name} online. Perfect {category_name} for your gaming setup or as a unique gift. Handmade in Georgia by {vendor_name}.",
         },
         "ka": {

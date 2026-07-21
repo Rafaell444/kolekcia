@@ -1,7 +1,7 @@
 "use client"
 
 import React, { Suspense, useState } from "react"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import { useRouter } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, CheckCircle2, Gift } from "lucide-react"
@@ -10,6 +10,7 @@ import { storeTokens, storeUser } from "@/lib/auth-storage"
 import { useAuth } from "@/contexts/auth-context"
 import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 import { captureReferralFromUrl, claimPendingReferral } from "@/lib/referral"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 const PERKS = [
   "Free shipping on your first order",
@@ -30,6 +31,7 @@ export default function RegisterPage(): React.ReactElement {
 
 function RegisterPageInner(): React.ReactElement {
   const router = useRouter()
+  const lp = useLocalePrefix()
   const { refreshUser, loginWithGoogle } = useAuth()
   const [name, setName]         = useState("")
   const [email, setEmail]       = useState("")
@@ -60,7 +62,7 @@ function RegisterPageInner(): React.ReactElement {
       await loginWithGoogle(idToken, false)
       await refreshUser()
       await claimPendingReferral()
-      router.push("/account")
+      router.push(`${lp}/account`)
     } catch (err: unknown) {
       const apiErr = err as { data?: { detail?: string } }
       setErrors({ detail: apiErr?.data?.detail ?? "Google sign-up failed. Please try again." })
@@ -85,7 +87,7 @@ function RegisterPageInner(): React.ReactElement {
       storeUser(data.user)
       await refreshUser()
       await claimPendingReferral()
-      router.push("/account")
+      router.push(`${lp}/account`)
     } catch (err: unknown) {
       const apiErr = err as { data?: Record<string, string[]> }
       if (apiErr?.data) {
@@ -121,7 +123,7 @@ function RegisterPageInner(): React.ReactElement {
               <span className="block w-6 h-6 rounded-sm border-2" style={{ borderColor: "var(--dp-accent-cta)" }} />
             </div>
             <h1 className="font-display text-4xl text-dp-text-primary tracking-wider mb-2">Create Account</h1>
-            <p className="text-[13px] text-dp-text-tertiary">Join 2.5 million art lovers on Kolekcia</p>
+            <p className="text-[13px] text-dp-text-tertiary">Join 2.5 million art lovers on Koleqcia</p>
           </div>
 
           <form onSubmit={handleSubmit} className="bg-dp-bg-surface border border-dp-border rounded-sm p-8 flex flex-col gap-5" noValidate>
@@ -235,9 +237,9 @@ function RegisterPageInner(): React.ReactElement {
             {/* Terms */}
             <p className="text-[11px] text-dp-text-tertiary leading-relaxed">
               By creating an account you agree to our{" "}
-              <Link href="/terms" className="underline hover:text-dp-text-primary transition-colors">Terms of Service</Link>
+              <LocalizedLink href="/terms" className="underline hover:text-dp-text-primary transition-colors">Terms of Service</LocalizedLink>
               {" "}and{" "}
-              <Link href="/privacy" className="underline hover:text-dp-text-primary transition-colors">Privacy Policy</Link>.
+              <LocalizedLink href="/privacy" className="underline hover:text-dp-text-primary transition-colors">Privacy Policy</LocalizedLink>.
             </p>
 
             {/* Submit */}
@@ -271,9 +273,9 @@ function RegisterPageInner(): React.ReactElement {
 
             <p className="text-center text-[13px] text-dp-text-secondary">
               Already have an account?{" "}
-              <Link href="/login" className="font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors">
+              <LocalizedLink href="/login" className="font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors">
                 Sign in
-              </Link>
+              </LocalizedLink>
             </p>
           </form>
         </div>
@@ -281,7 +283,7 @@ function RegisterPageInner(): React.ReactElement {
         {/* Right: perks panel — visible from md breakpoint */}
         <div className="hidden md:flex flex-col gap-6 max-w-sm w-full">
           <h2 className="font-display text-4xl text-dp-text-primary leading-tight">
-            Why join<br />Kolekcia?
+            Why join<br />Koleqcia?
           </h2>
           <ul className="flex flex-col gap-3">
             {PERKS.map((perk) => (

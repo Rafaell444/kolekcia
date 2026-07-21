@@ -1,9 +1,8 @@
-import type { Metadata } from "next"
-import { LOCALES, type Locale } from "@/lib/i18n"
+﻿import type { Metadata } from "next"
+import { type Locale } from "@/lib/i18n"
 import { ARTISTS_SEO } from "@/lib/seo-metadata"
+import { buildPageMetadata } from "@/lib/seo"
 import ArtistsPage from "./ArtistsPage"
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
 
 export async function generateMetadata({
   params,
@@ -13,25 +12,12 @@ export async function generateMetadata({
   const { locale } = await params
   const seo = ARTISTS_SEO[(locale as Locale) ?? "en"] ?? ARTISTS_SEO.en
 
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) {
-    alternates[loc] = `${SITE_URL}/${loc}/artists`
-  }
-
-  return {
+  return buildPageMetadata({
     title: seo.title,
     description: seo.description,
-    openGraph: {
-      title: seo.title,
-      description: seo.description,
-      locale,
-      type: "website",
-    },
-    alternates: {
-      canonical: `${SITE_URL}/${locale}/artists`,
-      languages: alternates,
-    },
-  }
+    path: "/artists",
+    locale,
+  })
 }
 
 export default function Page() {

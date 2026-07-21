@@ -4,14 +4,16 @@ import React from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Link from "next/link"
 import { Bell, ChevronLeft } from "lucide-react"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 export default function NotificationsPage(): React.ReactElement {
+  const lp = useLocalePrefix()
   return (
     <SiteShell>
       <div className="bg-dp-bg-surface border-b border-dp-border">
         <div className="dp-container py-6 md:py-8">
           <Link
-            href="/account"
+            href={`${lp}/account`}
             className="inline-flex items-center gap-1 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors mb-4"
           >
             <ChevronLeft size={14} /> Back to profile

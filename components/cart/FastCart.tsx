@@ -6,12 +6,14 @@ import { X, ShoppingCart, Minus, Plus, Trash2, ArrowRight, Package } from "lucid
 import { useCart } from "@/contexts/cart-context"
 import { useLocale } from "@/contexts/locale-context"
 import { useLocalePrefix } from "@/lib/use-localized-href"
+import { useTranslations } from "@/hooks/use-translations"
 import { CartItemExtras } from "@/components/cart/CartItemExtras"
 
 export default function FastCart() {
   const { cart, isOpen, closeCart, removeItem, updateQuantity, loading } = useCart()
   const { formatPrice } = useLocale()
   const lp = useLocalePrefix()
+  const { t } = useTranslations()
   const overlayRef = useRef<HTMLDivElement>(null)
 
   // Close on Escape key
@@ -52,7 +54,7 @@ export default function FastCart() {
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label="Shopping cart"
+        aria-label={t("cart.title")}
         className={`fixed top-0 right-0 z-[61] h-full w-full max-w-[400px] bg-dp-bg-surface border-l border-dp-border shadow-2xl flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
@@ -61,7 +63,7 @@ export default function FastCart() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border shrink-0">
           <div className="flex items-center gap-2.5">
             <ShoppingCart size={18} className="text-dp-accent-cta" />
-            <h2 className="font-display text-2xl text-dp-text-primary leading-none">Your Cart</h2>
+            <h2 className="font-display text-2xl text-dp-text-primary leading-none">{t("cart.title")}</h2>
             {items.length > 0 && (
               <span className="px-2 py-0.5 bg-dp-accent-cta text-white text-[11px] font-bold rounded-full">
                 {items.reduce((s, i) => s + i.quantity, 0)}
@@ -71,7 +73,7 @@ export default function FastCart() {
           <button
             onClick={closeCart}
             className="flex items-center justify-center w-8 h-8 rounded-sm border border-dp-border text-dp-text-tertiary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
-            aria-label="Close cart"
+            aria-label={t("cart.closeCart")}
           >
             <X size={15} />
           </button>
@@ -95,16 +97,16 @@ export default function FastCart() {
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-dp-text-tertiary py-16">
               <Package size={48} className="opacity-20" />
-              <p className="text-[14px] font-semibold text-dp-text-secondary">Your cart is empty</p>
+              <p className="text-[14px] font-semibold text-dp-text-secondary">{t("cart.empty")}</p>
               <p className="text-[12px] text-center leading-relaxed">
-                Discover our collection of artist-made metal posters.
+                {t("cart.emptyHint")}
               </p>
               <Link
                 href={`${lp}/catalog`}
                 onClick={closeCart}
                 className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-wider rounded-sm transition-colors"
               >
-                Shop Now <ArrowRight size={14} />
+                {t("common.shopNow")} <ArrowRight size={14} />
               </Link>
             </div>
           ) : (
@@ -220,14 +222,14 @@ export default function FastCart() {
             {/* Subtotal */}
             <div className="flex items-center justify-between">
               <p className="text-[13px] text-dp-text-secondary">
-                Subtotal ({items.reduce((s, i) => s + i.quantity, 0)} items)
+                {t("cart.subtotal")} ({items.reduce((s, i) => s + i.quantity, 0)} {t("cart.items")})
               </p>
               <p className="text-[18px] font-black text-dp-text-primary font-display">
                 {formatPrice(subtotal)}
               </p>
             </div>
             <p className="text-[11px] text-dp-text-tertiary -mt-1">
-              Shipping and taxes calculated at checkout
+              {t("cart.shippingNote")}
             </p>
 
             {/* CTAs */}
@@ -236,14 +238,14 @@ export default function FastCart() {
               onClick={closeCart}
               className="flex items-center justify-center gap-2 w-full py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors"
             >
-              Checkout — {formatPrice(subtotal)} <ArrowRight size={15} />
+              {t("cart.checkout")} — {formatPrice(subtotal)} <ArrowRight size={15} />
             </Link>
             <Link
               href={`${lp}/cart`}
               onClick={closeCart}
               className="flex items-center justify-center gap-2 w-full py-2.5 bg-transparent border border-dp-border hover:border-dp-border-hover text-dp-text-secondary hover:text-dp-text-primary text-[12px] font-semibold uppercase tracking-wider rounded-sm transition-colors"
             >
-              View Full Cart
+              {t("cart.viewFullCart")}
             </Link>
           </div>
         )}

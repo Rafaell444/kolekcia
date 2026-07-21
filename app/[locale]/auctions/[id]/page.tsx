@@ -1,8 +1,7 @@
 import type { Metadata } from "next"
-import { LOCALES } from "@/lib/i18n"
+import { buildPageMetadata } from "@/lib/seo"
 import AuctionDetail from "./AuctionDetail"
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 
 type PageParams = { locale: string; id: string }
@@ -29,32 +28,20 @@ export async function generateMetadata({
   if (!auction) return { title: "Auction Not Found" }
 
   const seo = auction.seo ?? {}
-  const title = seo.meta_title || `${auction.title} | Auction | Kolekcia`
+  const title = seo.meta_title || `${auction.title} | Auction`
   const description =
-    seo.meta_description || `Bid on ${auction.title} at Kolekcia auctions.`
+    seo.meta_description || `Bid on ${auction.title} at Koleqcia auctions.`
   const ogImage = seo.og_image || auction.image_url || ""
+  const pathKey = auction.slug || id
 
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) {
-    alternates[loc] = `${SITE_URL}/${loc}/auctions/${id}`
-  }
-
-  return {
+  return buildPageMetadata({
     title,
     description,
+    path: `/auctions/${pathKey}`,
+    locale,
+    image: ogImage || undefined,
     keywords: seo.meta_keywords || undefined,
-    openGraph: {
-      title,
-      description,
-      images: ogImage ? [ogImage] : undefined,
-      locale,
-      type: "website",
-    },
-    alternates: {
-      canonical: `${SITE_URL}/${locale}/auctions/${id}`,
-      languages: alternates,
-    },
-  }
+  })
 }
 
 export default function AuctionPage() {

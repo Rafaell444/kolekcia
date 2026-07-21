@@ -464,13 +464,14 @@ class CustomOrderImageUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        file = request.FILES.get("file")
-        if not file:
-            return Response({"detail": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
-        if not (file.content_type or "").startswith("image/"):
-            return Response({"detail": "Only image files are allowed."}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.core.uploads import validate_image_upload, safe_image_extension
 
-        ext = os.path.splitext(file.name)[1] or ".jpg"
+        file = request.FILES.get("file")
+        error = validate_image_upload(file)
+        if error:
+            return error
+
+        ext = safe_image_extension(file)
         filename = f"{uuid.uuid4()}{ext}"
         save_dir = os.path.join(django_settings.MEDIA_ROOT, "custom_orders")
         os.makedirs(save_dir, exist_ok=True)

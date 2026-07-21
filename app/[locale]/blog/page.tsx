@@ -1,10 +1,9 @@
-import type { Metadata } from "next"
-import Link from "next/link"
-import { LOCALES, type Locale } from "@/lib/i18n"
+﻿import type { Metadata } from "next"
+import LocalizedLink from "@/components/seo/LocalizedLink"
+import { type Locale } from "@/lib/i18n"
 import { BLOG_SEO } from "@/lib/seo-metadata"
+import { buildPageMetadata } from "@/lib/seo"
 import SiteShell from "@/components/layout/SiteShell"
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
 
 export async function generateMetadata({
   params,
@@ -14,25 +13,12 @@ export async function generateMetadata({
   const { locale } = await params
   const seo = BLOG_SEO[(locale as Locale) ?? "en"] ?? BLOG_SEO.en
 
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) {
-    alternates[loc] = `${SITE_URL}/${loc}/blog`
-  }
-
-  return {
+  return buildPageMetadata({
     title: seo.title,
     description: seo.description,
-    openGraph: {
-      title: seo.title,
-      description: seo.description,
-      locale,
-      type: "website",
-    },
-    alternates: {
-      canonical: `${SITE_URL}/${locale}/blog`,
-      languages: alternates,
-    },
-  }
+    path: "/blog",
+    locale,
+  })
 }
 
 type BlogPost = {
@@ -62,16 +48,16 @@ export default async function BlogPage() {
     <SiteShell>
       <div className="dp-container py-12">
         <nav className="flex items-center gap-2 text-[12px] text-dp-text-tertiary mb-6" aria-label="Breadcrumb">
-          <Link href="/" className="hover:text-dp-text-primary transition-colors">Home</Link>
+          <LocalizedLink href="/" className="hover:text-dp-text-primary transition-colors">Home</LocalizedLink>
           <span>/</span>
           <span className="text-dp-text-secondary">Blog</span>
         </nav>
         <h1 className="font-display text-5xl text-dp-text-primary">Blog</h1>
-        <p className="text-dp-text-secondary mt-2">Stories, tips, and updates from the Kolekcia team.</p>
+        <p className="text-dp-text-secondary mt-2">Stories, tips, and updates from the Koleqcia team.</p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
           {posts.map((post) => (
-            <Link key={post.id} href={`/blog/${post.slug}`} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden hover:border-dp-border-hover transition-colors">
+            <LocalizedLink key={post.id} href={`/blog/${post.slug}`} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden hover:border-dp-border-hover transition-colors">
               {post.cover_image_url && (
                 <div className="aspect-[16/9] overflow-hidden bg-dp-bg-elevated">
                   <img src={post.cover_image_url} alt={post.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
@@ -82,7 +68,7 @@ export default async function BlogPage() {
                 <h2 className="font-display text-2xl text-dp-text-primary mt-2">{post.title}</h2>
                 <p className="text-[13px] text-dp-text-secondary mt-2 line-clamp-3">{post.excerpt}</p>
               </div>
-            </Link>
+            </LocalizedLink>
           ))}
           {posts.length === 0 && (
             <p className="text-dp-text-tertiary">No blog posts published yet.</p>

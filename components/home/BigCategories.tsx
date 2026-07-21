@@ -1,5 +1,5 @@
 import Image from "next/image"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 
 const BIG_CATS = [
   {
@@ -48,12 +48,12 @@ export default function BigCategories() {
               </p>
             </div>
             <div className="absolute bottom-4 left-4 right-4">
-              <Link
+              <LocalizedLink
                 href={`/catalog?category=${cat.slug}`}
                 className="inline-block px-4 py-2 border border-white/80 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm hover:bg-white hover:text-black transition-colors"
               >
                 {cat.cta}
-              </Link>
+              </LocalizedLink>
             </div>
           </article>
         ))}

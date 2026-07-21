@@ -11,7 +11,7 @@ export function useLocalePrefix(): string {
 
 export function useLocalizedHref(path: string): string {
   const prefix = useLocalePrefix()
-  if (path.startsWith("http") || path.startsWith("#") || path.startsWith("/admin") || path.startsWith("/account") || path.startsWith("/api")) {
+  if (path.startsWith("http") || path.startsWith("#") || path.startsWith("/admin") || path.startsWith("/api")) {
     return path
   }
   return `${prefix}${path.startsWith("/") ? path : `/${path}`}`

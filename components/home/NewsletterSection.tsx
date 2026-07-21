@@ -1,7 +1,8 @@
-"use client"
+﻿"use client"
 
 import React, { useState } from "react"
 import Image from "next/image"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import { apiFetch } from "@/lib/api"
 
 export default function NewsletterSection({ content }: { content?: { heading?: string; subheading?: string; promoText?: string; imageUrl?: string } }): React.ReactElement {
@@ -57,7 +58,7 @@ export default function NewsletterSection({ content }: { content?: { heading?: s
                   {content?.heading ?? "Sign up and never miss a deal"}
                 </h2>
                 <p className="text-[13px] text-dp-text-secondary mb-5">
-                  {content?.subheading ?? "Join our newsletter for the latest discounts and Kolekcia goodies"}
+                  {content?.subheading ?? "Join our newsletter for the latest discounts and Koleqcia goodies"}
                 </p>
                 {error && <p className="text-[12px] text-red-600 mb-3">{error}</p>}
                 <form onSubmit={handleSubmit} className="flex gap-2">
@@ -81,7 +82,7 @@ export default function NewsletterSection({ content }: { content?: { heading?: s
                 </form>
                 <p className="text-[10px] text-dp-text-tertiary leading-relaxed mt-3">
                   By clicking &quot;Sign up&quot;, you agree to receiving emails and to processing of your personal data in accordance with the{" "}
-                  <a href="/privacy" className="underline hover:text-dp-text-primary">Privacy policy</a>.
+                  <LocalizedLink href="/privacy" className="underline hover:text-dp-text-primary">Privacy policy</LocalizedLink>.
                 </p>
               </>
             )}

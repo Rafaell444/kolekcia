@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, Suspense } from "react"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import { useRouter, useSearchParams } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
@@ -10,11 +10,14 @@ import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 import { useCart } from "@/contexts/cart-context"
 import { clearPendingCartIntent, getPendingCartIntent } from "@/lib/pending-cart"
 import { claimPendingReferral } from "@/lib/referral"
+import { useLocalePrefix } from "@/lib/use-localized-href"
+import { isValidLocale } from "@/lib/i18n"
 
 function LoginPageInner(): React.ReactElement {
   const { login, loginWithGoogle } = useAuth()
   const { addItem } = useCart()
   const router = useRouter()
+  const lp = useLocalePrefix()
   const searchParams = useSearchParams()
   const [email, setEmail]       = useState("")
   const [password, setPassword] = useState("")
@@ -29,7 +32,7 @@ function LoginPageInner(): React.ReactElement {
 
     const pending = getPendingCartIntent()
     const next = searchParams.get("next")
-    const returnTo = pending?.returnTo ?? next ?? "/account"
+    const returnTo = pending?.returnTo ?? next ?? `${lp}/account`
 
     if (pending) {
       try {
@@ -45,7 +48,9 @@ function LoginPageInner(): React.ReactElement {
       }
     }
 
-    router.push(returnTo.startsWith("/") ? returnTo : "/account")
+    const path = returnTo.startsWith("/") ? returnTo : `${lp}/account`
+    const first = path.split("/").filter(Boolean)[0]
+    router.push(first && isValidLocale(first) ? path : `${lp}${path}`)
   }
 
   async function handleGoogleSuccess(idToken: string) {
@@ -88,7 +93,7 @@ function LoginPageInner(): React.ReactElement {
               <span className="block w-6 h-6 rounded-sm border-2" style={{ borderColor: "var(--dp-accent-cta)" }} />
             </div>
             <h1 className="font-display text-4xl text-dp-text-primary tracking-wider mb-2">Welcome Back</h1>
-            <p className="text-[13px] text-dp-text-tertiary">Sign in to your Kolekcia account</p>
+            <p className="text-[13px] text-dp-text-tertiary">Sign in to your Koleqcia account</p>
           </div>
 
           <form onSubmit={handleSubmit} className="bg-dp-bg-surface border border-dp-border rounded-sm p-8 flex flex-col gap-5" noValidate>
@@ -136,9 +141,9 @@ function LoginPageInner(): React.ReactElement {
                 <label htmlFor="password" className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">
                   Password
                 </label>
-                <Link href="/forgot-password" className="text-[11px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
+                <LocalizedLink href="/forgot-password" className="text-[11px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
                   Forgot password?
-                </Link>
+                </LocalizedLink>
               </div>
               <div className="relative">
                 <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary" aria-hidden />
@@ -192,9 +197,9 @@ function LoginPageInner(): React.ReactElement {
             {/* Register link */}
             <p className="text-center text-[13px] text-dp-text-secondary">
               {"Don't have an account? "}
-              <Link href="/register" className="font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors">
+              <LocalizedLink href="/register" className="font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors">
                 Create one free
-              </Link>
+              </LocalizedLink>
             </p>
           </form>
 

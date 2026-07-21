@@ -18,6 +18,7 @@ import { useLocale } from "@/contexts/locale-context"
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
 import { productHref } from "@/lib/product-url"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 import InboxPanel from "@/components/messaging/InboxPanel"
 import { UnreadBadge } from "@/components/messaging/UnreadBadge"
 import { useInboxUnreadCount } from "@/hooks/use-inbox-unread"
@@ -118,6 +119,7 @@ function badgeRewardLabel(
 function OverviewTab() {
   const { profile } = useGamification()
   const { formatPrice } = useLocale()
+  const lp = useLocalePrefix()
   const [orders, setOrders] = useState<Order[]>([])
   const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([])
   const [referral, setReferral] = useState<ReferralStats | null>(null)
@@ -207,7 +209,7 @@ function OverviewTab() {
           <button className="text-[11px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors flex items-center gap-1">View all <ChevronRight size={11} /></button>
         </div>
         {orders.length === 0 ? (
-          <p className="text-[13px] text-dp-text-tertiary py-4">No orders yet. <Link href="/catalog" className="text-dp-accent-cta hover:underline">Shop now</Link></p>
+          <p className="text-[13px] text-dp-text-tertiary py-4">No orders yet. <Link href={`${lp}/catalog`} className="text-dp-accent-cta hover:underline">Shop now</Link></p>
         ) : (
           <div className="flex flex-col gap-3">
             {orders.map((order) => {
@@ -262,6 +264,7 @@ function OverviewTab() {
 }
 
 function OrdersTab() {
+  const lp = useLocalePrefix()
   const { formatPrice } = useLocale()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -282,7 +285,7 @@ function OrdersTab() {
           <Package size={40} className="text-dp-text-tertiary" />
           <p className="text-dp-text-secondary text-[14px]">No orders yet.</p>
           <Link
-            href="/catalog"
+            href={`${lp}/catalog`}
             className="px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
           >
             Shop Now
@@ -308,7 +311,7 @@ function OrdersTab() {
               <p className="text-[11px] text-dp-text-tertiary">Tracking: <span className="font-mono text-dp-text-secondary">{order.tracking_code}</span></p>
             )}
             <div className="flex gap-2 mt-3">
-              <Link href={`/account/orders/${order.id}`} className="px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">View Details</Link>
+              <Link href={`${lp}/account/orders/${order.id}`} className="px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">View Details</Link>
               {order.status === "delivered" && (
                 <button className="flex items-center gap-1 px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
                   <RotateCcw size={11} /> Return
@@ -323,6 +326,7 @@ function OrdersTab() {
 }
 
 function CustomOrdersTab() {
+  const lp = useLocalePrefix()
   const [orders, setOrders] = useState<CustomOrder[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -344,7 +348,7 @@ function CustomOrdersTab() {
         <div className="flex flex-col items-center gap-4 py-16">
           <FileText size={40} className="text-dp-text-tertiary" />
           <p className="text-dp-text-secondary text-[14px]">No custom orders yet.</p>
-          <Link href="/custom" className="px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
+          <Link href={`${lp}/custom`} className="px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
             Start Custom Order
           </Link>
         </div>
@@ -1100,12 +1104,13 @@ export default function AccountPage(): React.ReactElement {
   const { user, logout } = useAuth()
   const { profile, refresh } = useGamification()
   const router = useRouter()
+  const lp = useLocalePrefix()
   const inboxUnread = useInboxUnreadCount()
   const unseenBadges = profile?.unseen_badge_count ?? 0
 
   async function handleLogout() {
     await logout()
-    router.push("/login")
+    router.push(`${lp}/login`)
   }
 
   const tabContent: Record<string, React.ReactNode> = {
@@ -1140,7 +1145,7 @@ export default function AccountPage(): React.ReactElement {
                 <p className="text-[12px] text-dp-text-tertiary mt-0.5">Level {profile?.level ?? 1} · {(profile?.xp ?? 0).toLocaleString()} XP</p>
               </div>
               <Link
-                href={inboxUnread > 0 ? "/inbox" : "/account/notifications"}
+                href={inboxUnread > 0 ? `${lp}/inbox` : `${lp}/account/notifications`}
                 className="relative shrink-0 flex items-center justify-center w-9 h-9 rounded-sm border border-dp-border text-dp-text-secondary hover:text-dp-accent-cta hover:border-dp-border-hover transition-colors"
                 aria-label={inboxUnread > 0 ? `${inboxUnread} unread messages` : "Notifications"}
               >

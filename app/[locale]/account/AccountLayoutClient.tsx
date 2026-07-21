@@ -3,7 +3,7 @@
 import React from "react"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
 
-export default function AccountLayout({ children }: { children: React.ReactNode }): React.ReactElement {
+export default function AccountLayoutClient({ children }: { children: React.ReactNode }): React.ReactElement {
   const { loading } = useRequireAuth()
 
   if (loading) {

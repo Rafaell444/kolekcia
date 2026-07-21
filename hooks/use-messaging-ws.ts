@@ -12,6 +12,17 @@ function wsBase(): string {
   return `${proto}//${url.host}`
 }
 
+/** Prefer Sec-WebSocket-Protocol over ?token= so JWTs stay out of URLs/logs. */
+function openAuthedWebSocket(path: string, token: string): WebSocket {
+  const url = `${wsBase()}/${path}`
+  try {
+    return new WebSocket(url, ["access_token", token])
+  } catch {
+    // Some environments reject custom subprotocols; fall back to query string.
+    return new WebSocket(`${url}?token=${encodeURIComponent(token)}`)
+  }
+}
+
 function useStableWs(
   path: string | null,
   getToken: () => string | null,
@@ -28,8 +39,7 @@ function useStableWs(
     let token = getToken()
     if (!path || !token) return
 
-    const url = `${wsBase()}/${path}?token=${encodeURIComponent(token)}`
-    const ws = new WebSocket(url)
+    const ws = openAuthedWebSocket(path, token)
     wsRef.current = ws
 
     let wasAccepted = false

@@ -1,9 +1,24 @@
-import type { Metadata } from "next"
-import { LOCALES, type Locale } from "@/lib/i18n"
+﻿import type { Metadata } from "next"
+import { type Locale } from "@/lib/i18n"
 import { FAQ_SEO } from "@/lib/seo-metadata"
+import { buildPageMetadata } from "@/lib/seo"
+import FaqJsonLd from "@/components/seo/FaqJsonLd"
 import FaqPage from "./FaqPage"
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
+type Faq = { id: number; question: string; answer: string; category: string; order: number }
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+
+async function fetchFaqs(): Promise<Faq[]> {
+  try {
+    const res = await fetch(`${API_URL}/cms/faqs/`, { next: { revalidate: 300 } })
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
 
 export async function generateMetadata({
   params,
@@ -13,27 +28,21 @@ export async function generateMetadata({
   const { locale } = await params
   const seo = FAQ_SEO[(locale as Locale) ?? "en"] ?? FAQ_SEO.en
 
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) {
-    alternates[loc] = `${SITE_URL}/${loc}/faq`
-  }
-
-  return {
+  return buildPageMetadata({
     title: seo.title,
     description: seo.description,
-    openGraph: {
-      title: seo.title,
-      description: seo.description,
-      locale,
-      type: "website",
-    },
-    alternates: {
-      canonical: `${SITE_URL}/${locale}/faq`,
-      languages: alternates,
-    },
-  }
+    path: "/faq",
+    locale,
+  })
 }
 
-export default function Page() {
-  return <FaqPage />
+export default async function Page() {
+  const faqs = await fetchFaqs()
+
+  return (
+    <>
+      <FaqJsonLd faqs={faqs} />
+      <FaqPage initialFaqs={faqs} />
+    </>
+  )
 }

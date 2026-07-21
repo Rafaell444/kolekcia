@@ -1,11 +1,8 @@
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import type { Metadata } from "next"
 import SiteShell from "@/components/layout/SiteShell"
 import Breadcrumb from "@/components/seo/Breadcrumb"
-import { LOCALES } from "@/lib/i18n"
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
+import { buildPageMetadata } from "@/lib/seo"
 
 type ContentBlock =
   | { type: "paragraph"; text: string }
@@ -84,30 +81,21 @@ export async function generateMetadata({
   const post = await getPost(slug)
   if (!post) return { title: "Post Not Found" }
 
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) {
-    alternates[loc] = `${SITE_URL}/${loc}/blog/${slug}`
-  }
+  const title = `${post.title} | Koleqcia Blog`
+  const description = post.excerpt?.slice(0, 160) || ""
 
-  return {
-    title: `${post.title} | Kolekcia Blog`,
-    description: post.excerpt?.slice(0, 160) || "",
-    openGraph: {
-      title: post.title,
-      description: post.excerpt || "",
-      images: post.cover_image_url ? [post.cover_image_url] : undefined,
-      locale,
-      type: "article",
-    },
-    alternates: {
-      canonical: `${SITE_URL}/${locale}/blog/${slug}`,
-      languages: alternates,
-    },
-  }
+  return buildPageMetadata({
+    title,
+    description,
+    path: `/blog/${slug}`,
+    locale,
+    image: post.cover_image_url || undefined,
+    openGraphType: "article",
+  })
 }
 
 export default async function BlogDetailPage({ params }: { params: Promise<{ locale: string; slug: string }> }) {
-  const { slug } = await params
+  const { locale, slug } = await params
   const post = await getPost(slug)
   if (!post) notFound()
 
@@ -116,11 +104,14 @@ export default async function BlogDetailPage({ params }: { params: Promise<{ loc
   return (
     <SiteShell>
       <article className="dp-container py-8 max-w-3xl">
-        <Breadcrumb items={[
-          { name: "Home", url: "/" },
-          { name: "Blog", url: "/blog" },
-          { name: post.title, url: `/blog/${post.slug}` },
-        ]} />
+        <Breadcrumb
+          locale={locale}
+          items={[
+            { name: "Home", url: "/" },
+            { name: "Blog", url: "/blog" },
+            { name: post.title, url: `/blog/${post.slug}` },
+          ]}
+        />
 
         <p className="text-[11px] text-dp-text-tertiary">{new Date(post.published_at).toLocaleDateString()}</p>
         <h1 className="font-display text-4xl sm:text-5xl text-dp-text-primary mt-2 leading-tight">{post.title}</h1>

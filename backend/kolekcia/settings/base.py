@@ -3,6 +3,7 @@ from datetime import timedelta
 import environ
 import os
 import certifi
+from django.core.exceptions import ImproperlyConfigured
 
 os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
 os.environ.setdefault("SSL_CERT_FILE", certifi.where())
@@ -27,6 +28,13 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 FRONTEND_URL = env("FRONTEND_URL")
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")
+
+# Reject insecure default keys when running with DEBUG=False (production).
+if not DEBUG and str(SECRET_KEY).startswith("django-insecure-"):
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be a strong random value in production "
+        "(DEBUG=False). Do not use a django-insecure-* key."
+    )
 
 DJANGO_APPS = [
     "daphne",  # Must be before staticfiles to patch runserver for ASGI/WebSocket support
@@ -173,7 +181,9 @@ REST_FRAMEWORK = {
         "anon": "500/day",
         "user": "2000/day",
         "auth": "20/min",
-        "admin_auth": "60/min",
+        "admin_auth": "10/min",
+        "contact": "10/hour",
+        "newsletter": "20/hour",
         "checkout": "20/hour",
         "promo_apply": "20/hour",
         "xp_award": "10/hour",

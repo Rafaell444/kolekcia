@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
-import { LOCALES, type Locale } from "@/lib/i18n"
+import { type Locale } from "@/lib/i18n"
 import { HOMEPAGE_SEO } from "@/lib/seo-metadata"
+import { buildPageMetadata } from "@/lib/seo"
+import { getMessages } from "@/lib/messages"
 import SiteShell from "@/components/layout/SiteShell"
 import HeroCarousel from "@/components/home/HeroCarousel"
 import TrendingArtists from "@/components/home/TrendingArtists"
@@ -14,6 +16,7 @@ import HomeProductCard from "@/components/home/HomeProductCard"
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 import { fetchPageSections, sectionContent } from "@/lib/page-sections"
+import OrganizationJsonLd from "@/components/seo/OrganizationJsonLd"
 
 type ApiProduct = {
   id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string
@@ -34,39 +37,29 @@ async function getTrendingProducts(): Promise<ApiProduct[]> {
   }
 }
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
-
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ locale: string }>
 }): Promise<Metadata> {
   const { locale } = await params
-
   const seo = HOMEPAGE_SEO[(locale as Locale) ?? "en"] ?? HOMEPAGE_SEO.en
 
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) {
-    alternates[loc] = `${SITE_URL}/${loc}`
-  }
-
-  return {
+  return buildPageMetadata({
     title: seo.title,
     description: seo.description,
-    openGraph: {
-      title: seo.title,
-      description: seo.description,
-      locale,
-      type: "website",
-    },
-    alternates: {
-      canonical: `${SITE_URL}/${locale}`,
-      languages: alternates,
-    },
-  }
+    path: "/",
+    locale,
+  })
 }
 
-export default async function HomePage() {
+export default async function HomePage({
+  params,
+}: {
+  params: Promise<{ locale: string }>
+}) {
+  const { locale } = await params
+  const t = getMessages(locale)
   const [trendingProducts, sections] = await Promise.all([
     getTrendingProducts(),
     fetchPageSections("home"),
@@ -78,6 +71,7 @@ export default async function HomePage() {
 
   return (
     <SiteShell>
+      <OrganizationJsonLd />
       <HeroCarousel />
       <BrandsCarousel />
       <BigCategories />
@@ -85,9 +79,9 @@ export default async function HomePage() {
       {trendingProducts.length > 0 && (
         <section className="dp-container pb-14" aria-labelledby="trending-heading">
           <div className="flex items-end justify-between mb-6">
-            <h2 className="font-display text-3xl md:text-4xl text-dp-text-primary" id="trending-heading">Trending Now</h2>
-            <Link href="/catalog?sort=trending" className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
-              View All <ArrowRight size={12} />
+            <h2 className="font-display text-3xl md:text-4xl text-dp-text-primary" id="trending-heading">{t.home.trending}</h2>
+            <Link href={`/${locale}/catalog?sort=trending`} className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
+              {t.common.viewAll} <ArrowRight size={12} />
             </Link>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">

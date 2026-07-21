@@ -24,6 +24,8 @@ import LocaleSwitcher, { LocaleSwitcherInline } from "@/components/layout/Locale
 import { DesktopSearch, MobileHeaderSearch, MenuSearch } from "@/components/layout/ProductSearch"
 import { useLocale } from "@/contexts/locale-context"
 import { useLocalePrefix } from "@/lib/use-localized-href"
+import { useTranslations } from "@/hooks/use-translations"
+import { stripLocalePrefix } from "@/lib/i18n"
 
 type NavCategory = { id: string; name: string; slug: string }
 type NavVendor = { id: number; name: string; slug: string; logo_url: string; catalog_category_slug: string }
@@ -231,6 +233,7 @@ const LEVEL_XP: Record<number, number> = {
 function XpBar() {
   const { user } = useAuth()
   const { profile } = useGamification()
+  const lp = useLocalePrefix()
 
   if (!user || !profile) return null
 
@@ -241,7 +244,7 @@ function XpBar() {
 
   return (
     <Link
-      href="/account?tab=badges"
+      href={`${lp}/account?tab=badges`}
       className="hidden md:flex items-center gap-2 px-2.5 py-1.5 bg-dp-bg-elevated border border-dp-border rounded-sm hover:border-dp-border-hover transition-colors group"
       title={`Level ${level} · ${xp} XP · ${level < 10 ? `${nextXp - xp} XP to next level` : "Max level"}`}
     >
@@ -340,6 +343,7 @@ function AccountMenu() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const lp = useLocalePrefix()
+  const { t } = useTranslations()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const inboxUnread = useInboxUnreadCount()
@@ -379,7 +383,7 @@ function AccountMenu() {
         >
           <div className="px-4 py-3 border-b border-dp-border">
             <p className="text-[12px] font-bold text-dp-text-primary">
-              {user ? (user.name || user.email) : "My Account"}
+              {user ? (user.name || user.email) : t("nav.account")}
             </p>
             <p className="text-[11px] text-dp-text-tertiary mt-0.5">
               {user ? user.email : "Sign in for exclusive perks"}
@@ -388,11 +392,11 @@ function AccountMenu() {
           {user ? (
             <>
               {[
-                { href: "/account",          icon: <User    size={13} />, label: "Profile & Orders" },
-                { href: `${lp}/inbox`,       icon: <MessageSquare size={13} />, label: "Inbox" },
-                { href: "/account/wishlist", icon: <Heart   size={13} />, label: "Wishlist" },
-                { href: "/account/awards",   icon: <Award   size={13} />, label: "Awards & XP" },
-                { href: "/account/orders",   icon: <Package size={13} />, label: "Order History" },
+                { href: `${lp}/account`,          icon: <User    size={13} />, label: t("nav.profile") },
+                { href: `${lp}/inbox`,            icon: <MessageSquare size={13} />, label: t("nav.inbox") },
+                { href: `${lp}/account/wishlist`, icon: <Heart   size={13} />, label: t("nav.wishlist") },
+                { href: `${lp}/account/awards`,   icon: <Award   size={13} />, label: t("nav.awards") },
+                { href: `${lp}/account/orders`,   icon: <Package size={13} />, label: t("nav.orders") },
                 ...(user.role === "staff" ? [{ href: "/admin", icon: <Settings size={13} />, label: "Admin Panel" }] : []),
               ].map(({ href, icon, label }) => (
                 <Link
@@ -406,7 +410,7 @@ function AccountMenu() {
                     <span className="text-dp-text-tertiary">{icon}</span>
                     {label}
                   </span>
-                  {href === "/inbox" && <UnreadBadge count={inboxUnread} />}
+                  {href === `${lp}/inbox` && <UnreadBadge count={inboxUnread} />}
                 </Link>
               ))}
               <div className="border-t border-dp-border">
@@ -416,7 +420,7 @@ function AccountMenu() {
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors"
                 >
                   <LogOut size={13} className="text-dp-text-tertiary" />
-                  Sign Out
+                  {t("nav.signOut")}
                 </button>
               </div>
             </>
@@ -429,7 +433,7 @@ function AccountMenu() {
                 className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors"
               >
                 <LogOut size={13} className="text-dp-text-tertiary" />
-                Sign In / Register
+                {t("nav.login")}
               </Link>
             </div>
           )}
@@ -517,6 +521,7 @@ function SiteHeader({
 
   const closeMobileMenu = useCallback(() => onMobileOpenChange(false), [onMobileOpenChange])
   const lp = useLocalePrefix()
+  const { t } = useTranslations()
 
   return (
     <header
@@ -527,22 +532,22 @@ function SiteHeader({
       <div className="dp-container flex items-center justify-between gap-4 py-3">
 
         {/* Logo */}
-        <Link href={lp} className="flex items-center gap-2 shrink-0" aria-label="Kolekcia home">
+        <Link href={lp} className="flex items-center gap-2 shrink-0" aria-label="Koleqcia home">
           <span className="flex items-center justify-center w-7 h-7 rounded-sm border border-dp-border-hover bg-dp-bg-elevated" aria-hidden>
             <span className="block w-3.5 h-3.5 rounded-sm border-2" style={{ borderColor: "var(--dp-accent-cta)" }} />
           </span>
-          <span className="font-display text-xl text-dp-text-primary tracking-wider hidden sm:block">KOLEKCIA</span>
+          <span className="font-display text-xl text-dp-text-primary tracking-wider hidden sm:block">KOLEQCIA</span>
         </Link>
 
         {/* Desktop Nav */}
         <nav className="hidden lg:flex items-center gap-6" aria-label="Main navigation">
-          <MegaNavItem label="Shop" menuKey="shop" href={`${lp}/catalog`} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} isActive={pathname.includes("/catalog")} />
-          <MegaNavItem label="Artists"  menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/artists`}  isActive={pathname.includes("/artists")} />
-          <MegaNavItem label="Auctions" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/auctions`} isActive={pathname.includes("/auctions")} />
-          <MegaNavItem label="Blog" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/blog`} isActive={pathname.includes("/blog")} />
-          <MegaNavItem label="Custom"   menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/custom`}   isActive={pathname.includes("/custom")} />
-          <MegaNavItem label="About"      menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/about`}    isActive={pathname.includes("/about")} />
-          <MegaNavItem label="Contact Us" menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/contact`}  isActive={pathname.includes("/contact")} />
+          <MegaNavItem label={t("nav.shop")} menuKey="shop" href={`${lp}/catalog`} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} isActive={pathname.includes("/catalog")} />
+          <MegaNavItem label={t("nav.artists")}  menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/artists`}  isActive={pathname.includes("/artists")} />
+          <MegaNavItem label={t("nav.auctions")} menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/auctions`} isActive={pathname.includes("/auctions")} />
+          <MegaNavItem label={t("nav.blog")} menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/blog`} isActive={pathname.includes("/blog")} />
+          <MegaNavItem label={t("nav.custom")}   menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/custom`}   isActive={pathname.includes("/custom")} />
+          <MegaNavItem label={t("nav.about")}      menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/about`}    isActive={pathname.includes("/about")} />
+          <MegaNavItem label={t("nav.contact")} menuKey={null} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} href={`${lp}/contact`}  isActive={pathname.includes("/contact")} />
         </nav>
 
         {/* Actions */}
@@ -599,7 +604,7 @@ function SiteHeader({
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-dp-border shrink-0">
             <Link href={lp} onClick={closeMobileMenu} className="font-display text-lg text-dp-text-primary tracking-wider">
-              KOLEKCIA
+              KOLEQCIA
             </Link>
             <button
               type="button"
@@ -617,14 +622,14 @@ function SiteHeader({
                 onClick={() => setMobileShop((o) => !o)}
                 className="flex items-center justify-between py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors"
               >
-                Shop <ChevronDown size={14} className={`transition-transform ${mobileShop ? "rotate-180" : ""}`} />
+                {t("nav.shop")} <ChevronDown size={14} className={`transition-transform ${mobileShop ? "rotate-180" : ""}`} />
               </button>
               {mobileShop && (
                 <div className="pl-3 pb-2 flex flex-col gap-1 border-l-2 border-dp-accent-cta/30 ml-2">
                   {[
-                    { label: "All Designs",      href: `${lp}/catalog` },
-                    { label: "Wallpanels",       href: `${lp}/catalog?category=wallpanels` },
-                    { label: "Figures",          href: `${lp}/catalog?category=figures` },
+                    { label: t("footer.allProducts"), href: `${lp}/catalog` },
+                    { label: t("footer.wallpanels"),  href: `${lp}/catalog?category=wallpanels` },
+                    { label: t("footer.figures"),     href: `${lp}/catalog?category=figures` },
                     { label: "New Arrivals",      href: `${lp}/catalog?filter=new` },
                     { label: "Trending",          href: `${lp}/catalog?sort=popular` },
                     { label: "Limited Editions",  href: `${lp}/catalog?filter=limited` },
@@ -635,12 +640,12 @@ function SiteHeader({
                 </div>
               )}
 
-              <Link href={`${lp}/artists`}  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Artists</Link>
-              <Link href={`${lp}/auctions`} onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Auctions</Link>
-              <Link href={`${lp}/blog`} onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Blog</Link>
-              <Link href={`${lp}/custom`}   onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Custom</Link>
-              <Link href={`${lp}/about`}    onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">About Us</Link>
-              <Link href={`${lp}/contact`}  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">Contact Us</Link>
+              <Link href={`${lp}/artists`}  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">{t("nav.artists")}</Link>
+              <Link href={`${lp}/auctions`} onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">{t("nav.auctions")}</Link>
+              <Link href={`${lp}/blog`} onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">{t("nav.blog")}</Link>
+              <Link href={`${lp}/custom`}   onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">{t("nav.custom")}</Link>
+              <Link href={`${lp}/about`}    onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">{t("nav.aboutUs")}</Link>
+              <Link href={`${lp}/contact`}  onClick={closeMobileMenu} className="flex py-2.5 text-[14px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">{t("nav.contact")}</Link>
 
               <div className="pt-3 border-t border-dp-border mt-2">
                 <LocaleSwitcherInline />
@@ -659,7 +664,8 @@ function SiteHeader({
 // ── Footer ────────────────────────────────────────────────
 function SiteFooter() {
   const lp = useLocalePrefix()
-  const [siteName, setSiteName] = useState("Kolekcia")
+  const { t } = useTranslations()
+  const [siteName, setSiteName] = useState("Koleqcia")
   const [supportEmail, setSupportEmail] = useState("")
   const [supportPhone, setSupportPhone] = useState("")
 
@@ -686,7 +692,7 @@ function SiteFooter() {
               <span className="font-display text-lg text-dp-text-primary tracking-wider">{siteName.toUpperCase()}</span>
             </div>
             <p className="text-[12px] text-dp-text-tertiary leading-relaxed max-w-xs">
-              The world&apos;s finest metal poster marketplace. Artist-made originals, licensed collections, and custom prints.
+              {t("footer.tagline")}
             </p>
             {(supportEmail || supportPhone) && (
               <div className="mt-3 flex flex-col gap-1 text-[12px] text-dp-text-tertiary">
@@ -696,20 +702,20 @@ function SiteFooter() {
             )}
             <div className="flex items-center gap-1.5 mt-3">
               <Zap size={10} className="text-dp-accent-cta" aria-hidden />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta">Tool-free magnetic mounting</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta">{t("footer.magneticMount")}</span>
             </div>
           </div>
 
           {/* Shop */}
           <div>
-            <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Shop</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">{t("footer.shop")}</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "All Products", href: `${lp}/catalog` },
-                { label: "Wallpanels",   href: `${lp}/catalog?category=wallpanels` },
-                { label: "Figures",      href: `${lp}/catalog?category=figures` },
-                { label: "Custom",       href: `${lp}/custom` },
-                { label: "Auction",      href: `${lp}/auctions` },
+                { label: t("footer.allProducts"), href: `${lp}/catalog` },
+                { label: t("footer.wallpanels"),  href: `${lp}/catalog?category=wallpanels` },
+                { label: t("footer.figures"),     href: `${lp}/catalog?category=figures` },
+                { label: t("footer.custom"),      href: `${lp}/custom` },
+                { label: t("footer.auction"),     href: `${lp}/auctions` },
               ].map(({ label, href }) => (
                 <li key={label}>
                   <Link href={href} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
@@ -720,15 +726,15 @@ function SiteFooter() {
 
           {/* Company */}
           <div>
-            <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Company</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">{t("footer.company")}</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "About Us",    href: `${lp}/about` },
-                { label: "Contact Us",  href: `${lp}/contact` },
-                { label: "Artists",     href: `${lp}/artists` },
-                { label: "Blog",        href: `${lp}/blog` },
-                { label: "My Orders",   href: "/account/orders" },
-                { label: "Sign In",     href: `${lp}/login` },
+                { label: t("nav.aboutUs"),  href: `${lp}/about` },
+                { label: t("nav.contact"),  href: `${lp}/contact` },
+                { label: t("nav.artists"),  href: `${lp}/artists` },
+                { label: t("nav.blog"),     href: `${lp}/blog` },
+                { label: t("nav.myOrders"), href: `${lp}/account/orders` },
+                { label: t("nav.login"),    href: `${lp}/login` },
               ].map(({ label, href }) => (
                 <li key={label}>
                   <Link href={href} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
@@ -739,16 +745,16 @@ function SiteFooter() {
 
           {/* Support */}
           <div>
-            <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">Support</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-3">{t("footer.support")}</h3>
             <ul className="flex flex-col gap-2">
               {[
-                { label: "Help Center",   href: `${lp}/faq` },
-                { label: "FAQ",           href: `${lp}/faq` },
-                { label: "Shipping",      href: `${lp}/shipping` },
-                { label: "Returns",       href: `${lp}/returns` },
-                { label: "Contact Us",    href: `${lp}/contact` },
+                { label: t("footer.helpCenter"), href: `${lp}/faq` },
+                { label: t("footer.faq"),        href: `${lp}/faq` },
+                { label: t("footer.shipping"),   href: `${lp}/shipping` },
+                { label: t("footer.returns"),    href: `${lp}/returns` },
+                { label: t("nav.contact"),       href: `${lp}/contact` },
               ].map(({ label, href }) => (
-                <li key={label}>
+                <li key={href + label}>
                   <Link href={href} className="text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
                 </li>
               ))}
@@ -760,10 +766,10 @@ function SiteFooter() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-dp-border">
           <div className="flex flex-col gap-1">
             <p className="text-[11px] text-dp-text-tertiary">
-              &copy; {new Date().getFullYear()} {siteName}. All rights reserved.
+              &copy; {new Date().getFullYear()} {siteName}. {t("footer.rights")}
             </p>
             <p className="text-[11px] text-dp-text-tertiary">
-              Developed by{" "}
+              {t("footer.developedBy")}{" "}
               <a href="https://mozaikko.com" target="_blank" rel="noopener noreferrer" className="font-semibold text-dp-text-secondary hover:text-dp-accent-cta transition-colors">
                 MOZAIKKO
               </a>
@@ -771,9 +777,9 @@ function SiteFooter() {
           </div>
           <div className="flex items-center gap-4 flex-wrap justify-center">
             {[
-              { label: "Privacy", href: `${lp}/privacy` },
-              { label: "Terms", href: `${lp}/terms` },
-              { label: "Cookies", href: `${lp}/cookies` },
+              { label: t("footer.privacy"), href: `${lp}/privacy` },
+              { label: t("footer.terms"), href: `${lp}/terms` },
+              { label: t("footer.cookies"), href: `${lp}/cookies` },
             ].map(({ label, href }) => (
               <Link key={label} href={href} className="text-[11px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">{label}</Link>
             ))}
@@ -792,9 +798,10 @@ import FastCart from "@/components/cart/FastCart"
 export default function SiteShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const pathname = usePathname()
+  const path = stripLocalePrefix(pathname)
   const hideTrustBar =
-    pathname.startsWith("/account") ||
-    /^\/auctions\/[^/]+/.test(pathname)
+    path.startsWith("/account") ||
+    /^\/auctions\/[^/]+/.test(path)
 
   return (
     <div className="min-h-screen flex flex-col bg-background">

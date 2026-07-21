@@ -2,12 +2,18 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import NewsletterSubscriber
 
 
+class NewsletterThrottle(ScopedRateThrottle):
+    scope = "newsletter"
+
+
 class NewsletterSubscribeView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [NewsletterThrottle]
 
     def post(self, request):
         email = request.data.get("email", "").strip().lower()

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
@@ -7,6 +7,7 @@ import SiteShell from "@/components/layout/SiteShell"
 import { authFetch } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
 import { ArrowLeft, Package } from "lucide-react"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 type OrderItem = {
   id: number
@@ -55,6 +56,7 @@ export default function AccountOrderDetailPage(): React.ReactElement {
   const params = useParams()
   const orderId = params?.id as string
   const { formatPrice } = useLocale()
+  const lp = useLocalePrefix()
   const [order, setOrder] = useState<OrderDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -72,7 +74,7 @@ export default function AccountOrderDetailPage(): React.ReactElement {
   return (
     <SiteShell>
       <div className="dp-container py-12 max-w-3xl">
-        <Link href="/account/orders" className="inline-flex items-center gap-2 text-[13px] text-dp-text-secondary hover:text-dp-text-primary mb-6">
+        <Link href={`${lp}/account/orders`} className="inline-flex items-center gap-2 text-[13px] text-dp-text-secondary hover:text-dp-text-primary mb-6">
           <ArrowLeft size={14} /> Back to orders
         </Link>
 
@@ -110,7 +112,7 @@ export default function AccountOrderDetailPage(): React.ReactElement {
                     <p className="text-[14px] font-semibold text-dp-text-primary">{item.product_title}</p>
                     <p className="text-[12px] text-dp-text-tertiary">{item.artist_name}</p>
                     <p className="text-[11px] text-dp-text-tertiary mt-1">
-                      {[item.size_label, item.finish_label, item.frame_label].filter(Boolean).join(" · ")} · Qty {item.quantity}
+                      {[item.size_label, item.finish_label, item.frame_label].filter(Boolean).join(" ┬╖ ")} ┬╖ Qty {item.quantity}
                     </p>
                   </div>
                   <p className="text-[14px] font-bold text-dp-text-primary shrink-0">{formatPrice(parseFloat(item.line_total))}</p>

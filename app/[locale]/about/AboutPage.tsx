@@ -1,9 +1,10 @@
-"use client"
+﻿"use client"
 
 import React, { useEffect, useState } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
 import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import {
   ArrowRight, Zap, Shield, Award, Palette,
   Globe2, Truck, Heart, Star, CheckCircle2, ChevronRight, Users,
@@ -17,7 +18,7 @@ const TIMELINE = [
   { year: "2019", title: "First 1,000 Artists", body: "Word spread through online communities. Our first big artist cohort joined within 6 months." },
   { year: "2021", title: "Magnetic Mounting", body: "We invented our tool-free magnetic pin system — now shipped with every single order." },
   { year: "2023", title: "2 Million Designs", body: "Crossed 2 million active designs from artists in 80+ countries. The catalogue never stops growing." },
-  { year: "2025", title: "Kolekcia Platform", body: "Launched the full collector platform with auctions, XP rewards, and limited-edition drops." },
+  { year: "2025", title: "Koleqcia Platform", body: "Launched the full collector platform with auctions, XP rewards, and limited-edition drops." },
 ]
 
 const VALUES = [
@@ -136,16 +137,16 @@ export default function AboutPage(): React.ReactElement {
               WALL.
             </h1>
             <p className="text-white/70 text-[16px] leading-relaxed max-w-lg mb-10">
-              We started Kolekcia because we believed the best art in the world shouldn&apos;t live behind museum glass.
+              We started Koleqcia because we believed the best art in the world shouldn&apos;t live behind museum glass.
               It should hang in your bedroom, your studio, your office — everywhere you spend your life.
             </p>
             <div className="flex flex-wrap items-center gap-4">
-              <Link
+              <LocalizedLink
                 href="/catalog"
                 className="inline-flex items-center gap-2 px-8 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
               >
                 Explore the Shop <ArrowRight size={14} />
-              </Link>
+              </LocalizedLink>
               <Link
                 href="#team"
                 className="inline-flex items-center gap-2 px-8 py-4 border border-white/30 hover:border-white/60 text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors"
@@ -190,7 +191,7 @@ export default function AboutPage(): React.ReactElement {
                 We believe that&apos;s wrong. An artist in Manila or Kraków deserves the same global reach as one in New York or London.
               </p>
               <p>
-                Kolekcia takes zero upfront fees from artists. We print, ship, and handle everything — they simply upload their work and earn.
+                Koleqcia takes zero upfront fees from artists. We print, ship, and handle everything — they simply upload their work and earn.
                 Our royalty rates are the highest in the industry.
               </p>
               <p>
@@ -324,13 +325,13 @@ export default function AboutPage(): React.ReactElement {
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-2">The Creators</p>
             <h2 id="artists-heading" className="font-display text-5xl text-dp-text-primary">Star Artists</h2>
           </div>
-          <Link href="/catalog?sort=artist" className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
+          <LocalizedLink href="/catalog?sort=artist" className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
             Browse All <ArrowRight size={12} />
-          </Link>
+          </LocalizedLink>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
           {artists.map((artist) => (
-            <Link
+            <LocalizedLink
               key={artist.id}
               href={`/artists/${artist.handle}`}
               className="group flex flex-col items-center gap-2 p-4 bg-dp-bg-surface border border-dp-border rounded-sm hover:border-dp-accent-cta/50 transition-colors text-center"
@@ -345,7 +346,7 @@ export default function AboutPage(): React.ReactElement {
                   <span className="text-[10px] text-dp-text-tertiary">{artist.badge}</span>
                 </div>
               </div>
-            </Link>
+            </LocalizedLink>
           ))}
         </div>
       </section>
@@ -381,12 +382,12 @@ export default function AboutPage(): React.ReactElement {
               </p>
             </div>
             <div className="flex flex-col gap-3 shrink-0">
-              <Link href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
+              <LocalizedLink href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
                 See Open Roles <ArrowRight size={14} />
-              </Link>
-              <Link href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 border border-white/30 hover:border-white/60 text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
+              </LocalizedLink>
+              <LocalizedLink href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 border border-white/30 hover:border-white/60 text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
                 <Users size={14} /> Send Speculative CV
-              </Link>
+              </LocalizedLink>
             </div>
           </div>
         </div>
@@ -397,9 +398,9 @@ export default function AboutPage(): React.ReactElement {
         <div className="dp-container">
           <h2 className="font-display text-5xl md:text-7xl text-white mb-4">Ready to Transform Your Space?</h2>
           <p className="text-white/80 text-[14px] mb-8 max-w-md mx-auto">Over 2.5 million designs waiting for your walls. Free shipping over $49.</p>
-          <Link href="/catalog" className="inline-flex items-center gap-2 px-10 py-4 bg-white text-dp-accent-cta text-[13px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-bg-elevated transition-colors">
+          <LocalizedLink href="/catalog" className="inline-flex items-center gap-2 px-10 py-4 bg-white text-dp-accent-cta text-[13px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-bg-elevated transition-colors">
             Browse the Shop <ArrowRight size={15} />
-          </Link>
+          </LocalizedLink>
         </div>
       </section>
 

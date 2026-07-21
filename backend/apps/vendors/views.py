@@ -359,6 +359,7 @@ class VendorMediaUploadView(APIView):
         import os
         import uuid as uuid_lib
         from django.conf import settings as django_settings
+        from apps.core.uploads import validate_image_upload, safe_image_extension
 
         vendor = getattr(request.user, "vendor_profile", None)
         if not vendor:
@@ -366,12 +367,13 @@ class VendorMediaUploadView(APIView):
 
         file = request.FILES.get("file")
         kind = request.data.get("kind", "logo")
-        if not file:
-            return Response({"detail": "No file uploaded."}, status=400)
+        error = validate_image_upload(file)
+        if error:
+            return error
         if kind not in ("logo", "banner"):
             return Response({"detail": "kind must be logo or banner."}, status=400)
 
-        ext = os.path.splitext(file.name)[1] or ".jpg"
+        ext = safe_image_extension(file)
         filename = f"{vendor.slug}-{kind}-{uuid_lib.uuid4().hex[:8]}{ext}"
         save_dir = os.path.join(django_settings.MEDIA_ROOT, "vendors")
         os.makedirs(save_dir, exist_ok=True)

@@ -1,9 +1,8 @@
-import type { Metadata } from "next"
-import { LOCALES, type Locale } from "@/lib/i18n"
+﻿import type { Metadata } from "next"
+import { type Locale } from "@/lib/i18n"
 import { SHIPPING_SEO } from "@/lib/seo-metadata"
+import { buildPageMetadata } from "@/lib/seo"
 import SiteShell from "@/components/layout/SiteShell"
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
 
 export async function generateMetadata({
   params,
@@ -12,13 +11,13 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params
   const seo = SHIPPING_SEO[(locale as Locale) ?? "en"] ?? SHIPPING_SEO.en
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) alternates[loc] = `${SITE_URL}/${loc}/shipping`
-  return {
+
+  return buildPageMetadata({
     title: seo.title,
     description: seo.description,
-    alternates: { canonical: `${SITE_URL}/${locale}/shipping`, languages: alternates },
-  }
+    path: "/shipping",
+    locale,
+  })
 }
 
 export default function ShippingPage() {

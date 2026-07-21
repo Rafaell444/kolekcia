@@ -1,10 +1,11 @@
 import json
-from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import AccessToken
+
+from apps.core.ws_auth import extract_ws_token, preferred_ws_subprotocol
 
 User = get_user_model()
 
@@ -40,14 +41,13 @@ def _user_groups(user):
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
-    """Per-conversation channel: ws/messaging/chat/<conv_id>/?token=…"""
+    """Per-conversation channel: ws/messaging/chat/<conv_id>/ (token via subprotocol preferred)."""
 
     async def connect(self):
         self.conv_id = self.scope["url_route"]["kwargs"]["conv_id"]
         self.group_name = f"chat_{self.conv_id}"
 
-        query = parse_qs(self.scope.get("query_string", b"").decode())
-        token = (query.get("token") or [None])[0]
+        token = extract_ws_token(self.scope)
         self.user = await _authenticate(token)
 
         if not self.user:
@@ -60,7 +60,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
+        subprotocol = preferred_ws_subprotocol(self.scope)
+        await self.accept(subprotocol=subprotocol)
 
     async def disconnect(self, close_code):
         if hasattr(self, "group_name"):
@@ -90,11 +91,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):
-    """Per-user notification channel: ws/messaging/notifications/?token=…"""
+    """Per-user notification channel: ws/messaging/notifications/ (token via subprotocol preferred)."""
 
     async def connect(self):
-        query = parse_qs(self.scope.get("query_string", b"").decode())
-        token = (query.get("token") or [None])[0]
+        token = extract_ws_token(self.scope)
         self.user = await _authenticate(token)
 
         if not self.user:
@@ -105,7 +105,8 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         for g in self.groups_list:
             await self.channel_layer.group_add(g, self.channel_name)
 
-        await self.accept()
+        subprotocol = preferred_ws_subprotocol(self.scope)
+        await self.accept(subprotocol=subprotocol)
 
         unread = await self._get_unread_count()
         await self.send(text_data=json.dumps({

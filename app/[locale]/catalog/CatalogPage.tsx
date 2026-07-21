@@ -10,6 +10,7 @@ import { apiFetch } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
 import { resolveListProductPrice, formatAmount } from "@/lib/product-pricing"
 import CategoryVendorBanner from "@/components/catalog/CategoryVendorBanner"
+import { useTranslations } from "@/hooks/use-translations"
 
 type ApiCategory = { id: string; name: string; slug: string; count: number }
 
@@ -495,11 +496,11 @@ const SORT_MAP: Record<string, string> = {
 
 const CATEGORY_VENDOR_SLUGS = new Set(["figures", "wallpanels"])
 
-function catalogHeading(category: string, search: string): string {
+function catalogHeading(category: string, search: string, allDesignsLabel: string): string {
   if (search) return `Results for "${search}"`
   if (category === "figures") return "All Figure Designs"
   if (category === "wallpanels") return "All Wallpanel Designs"
-  return "All Designs"
+  return allDesignsLabel
 }
 
 // ─── Page ──────────────────────────────────────────────────
@@ -509,6 +510,7 @@ function CatalogPageInner(): React.ReactElement {
   const urlSearch = searchParams.get("search") ?? ""
   const urlCategory = searchParams.get("category") ?? ""
   const { currency, rates } = useLocale()
+  const { t } = useTranslations()
 
   // Local search input state — debounced auto-push to URL
   const [searchInput, setSearchInput] = useState(urlSearch)
@@ -682,10 +684,10 @@ function CatalogPageInner(): React.ReactElement {
       <div className="border-b border-dp-border bg-dp-bg-surface">
         <div className={`dp-container ${CATEGORY_VENDOR_SLUGS.has(urlCategory) ? "py-4 sm:py-5" : "py-6"}`}>
           <h1 className={`font-display text-dp-text-primary ${CATEGORY_VENDOR_SLUGS.has(urlCategory) ? "text-2xl sm:text-3xl md:text-4xl" : "text-4xl md:text-5xl"}`}>
-            {catalogHeading(urlCategory, urlSearch)}
+            {catalogHeading(urlCategory, urlSearch, t("catalog.allProducts"))}
           </h1>
           <p className="text-dp-text-secondary text-sm mt-1">
-            {fetchLoading ? "Loading…" : `${totalCount.toLocaleString()} results`}
+            {fetchLoading ? t("common.loading") : `${totalCount.toLocaleString()} ${t("common.results")}`}
           </p>
         </div>
       </div>
@@ -698,7 +700,7 @@ function CatalogPageInner(): React.ReactElement {
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search products…"
+            placeholder={t("common.searchProducts")}
             className="w-full pl-9 pr-8 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover"
           />
           {searchInput && (
@@ -769,7 +771,7 @@ function CatalogPageInner(): React.ReactElement {
             <div className="hidden lg:flex items-center justify-between mb-5">
               <span className="text-[13px] text-dp-text-secondary">
                 {totalCount} results for{" "}
-                <strong className="text-dp-text-primary">{catalogHeading(urlCategory, urlSearch)}</strong>
+                <strong className="text-dp-text-primary">{catalogHeading(urlCategory, urlSearch, t("catalog.allProducts"))}</strong>
               </span>
               <div className="flex items-center gap-3">
                 {/* Sort */}

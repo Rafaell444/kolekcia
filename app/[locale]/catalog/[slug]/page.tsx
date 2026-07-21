@@ -1,14 +1,26 @@
 import { notFound } from "next/navigation"
 import type { Metadata } from "next"
 import ProductDetail from "./ProductDetail"
-import { LOCALES, type Locale } from "@/lib/i18n"
+import { buildPageMetadata } from "@/lib/seo"
+import ProductJsonLd from "@/components/seo/ProductJsonLd"
 
 type PageParams = { locale: string; slug: string }
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 
-async function fetchProduct(slug: string, locale: string) {
+type ProductPayload = {
+  id: number
+  slug?: string
+  title: string
+  description?: string
+  base_price: string
+  status?: string
+  vendor_name?: string | null
+  images?: Array<{ url?: string; src?: string; media_type?: string }>
+  seo?: { meta_title?: string; meta_description?: string; og_image?: string; meta_keywords?: string }
+}
+
+async function fetchProduct(slug: string, locale: string): Promise<ProductPayload | null> {
   const res = await fetch(`${API_URL}/products/${slug}/?lang=${locale}`, {
     next: { revalidate: 60 },
   }).catch(() => null)
@@ -26,31 +38,18 @@ export async function generateMetadata({
   if (!product) return { title: "Product Not Found" }
 
   const seo = product.seo ?? {}
-  const title = seo.meta_title || `${product.title} | Kolekcia`
+  const title = seo.meta_title || product.title
   const description = seo.meta_description || product.description?.slice(0, 160) || ""
   const ogImage = seo.og_image || ""
 
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) {
-    alternates[loc] = `${SITE_URL}/${loc}/catalog/${slug}`
-  }
-
-  return {
+  return buildPageMetadata({
     title,
     description,
+    path: `/catalog/${slug}`,
+    locale,
+    image: ogImage || undefined,
     keywords: seo.meta_keywords || undefined,
-    openGraph: {
-      title,
-      description,
-      images: ogImage ? [ogImage] : undefined,
-      locale,
-      type: "website",
-    },
-    alternates: {
-      canonical: `${SITE_URL}/${locale}/catalog/${slug}`,
-      languages: alternates,
-    },
-  }
+  })
 }
 
 export default async function ProductDetailPage({
@@ -61,5 +60,30 @@ export default async function ProductDetailPage({
   const { locale, slug } = await params
   const product = await fetchProduct(slug, locale)
   if (!product) notFound()
-  return <ProductDetail product={product} />
+
+  const productSlug = product.slug || slug
+  const images = (product.images ?? [])
+    .filter((m) => m.media_type !== "video")
+    .map((m) => m.url || m.src || "")
+    .filter(Boolean)
+  const availability =
+    product.status === "sold" || product.status === "paused" ? "OutOfStock" : "InStock"
+
+  return (
+    <>
+      <ProductJsonLd
+        name={product.title}
+        description={product.description}
+        slug={productSlug}
+        locale={locale}
+        image={images}
+        price={product.base_price}
+        currency="USD"
+        availability={availability}
+        sku={product.id}
+        brand={product.vendor_name}
+      />
+      <ProductDetail product={product} />
+    </>
+  )
 }

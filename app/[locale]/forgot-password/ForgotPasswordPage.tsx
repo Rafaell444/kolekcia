@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import SiteShell from "@/components/layout/SiteShell"
 import { Mail, ArrowLeft, CheckCircle } from "lucide-react"
 import { apiFetch } from "@/lib/api"
@@ -43,9 +43,9 @@ export default function ForgotPasswordPage(): React.ReactElement {
               <p className="text-[13px] text-dp-text-secondary">
                 If <strong>{email}</strong> is registered, you will receive a password reset link shortly.
               </p>
-              <Link href="/login" className="text-[13px] font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover">
+              <LocalizedLink href="/login" className="text-[13px] font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover">
                 Back to login
-              </Link>
+              </LocalizedLink>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="bg-dp-bg-surface border border-dp-border rounded-sm p-8 flex flex-col gap-5">
@@ -86,9 +86,9 @@ export default function ForgotPasswordPage(): React.ReactElement {
                 ) : "Send Reset Link"}
               </button>
 
-              <Link href="/login" className="flex items-center justify-center gap-1 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
+              <LocalizedLink href="/login" className="flex items-center justify-center gap-1 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
                 <ArrowLeft size={12} /> Back to login
-              </Link>
+              </LocalizedLink>
             </form>
           )}
         </div>

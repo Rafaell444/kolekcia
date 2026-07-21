@@ -4,13 +4,12 @@ import React, { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import {
   Clock,
   Users,
   Trophy,
   Zap,
-  ChevronLeft,
   CheckCircle,
   AlertCircle,
   X,
@@ -27,6 +26,8 @@ import { useAuth } from "@/contexts/auth-context"
 import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
 import AuctionLiveChat from "@/components/auctions/AuctionLiveChat"
+import Breadcrumb from "@/components/seo/Breadcrumb"
+import { DEFAULT_LOCALE, isValidLocale } from "@/lib/i18n"
 
 // ─── Auction FAQ ─────────────────────────────────────────────
 
@@ -202,9 +203,9 @@ function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
         </div>
         <p className="text-[13px] text-dp-text-secondary mb-6">
           You need an account to place bids. Sign in or{" "}
-          <Link href="/register" className="text-dp-accent-cta hover:underline" onClick={onClose}>
+          <LocalizedLink href="/register" className="text-dp-accent-cta hover:underline" onClick={onClose}>
             create a free account
-          </Link>
+          </LocalizedLink>
           .
         </p>
 
@@ -243,13 +244,13 @@ function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
             {loading ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
             {loading ? "Signing in…" : "Sign In & Bid"}
           </button>
-          <Link
+          <LocalizedLink
             href="/forgot-password"
             className="text-center text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors"
             onClick={onClose}
           >
             Forgot password?
-          </Link>
+          </LocalizedLink>
         </form>
       </div>
     </div>
@@ -678,6 +679,8 @@ function BidRow({ bid, isTop, isNew }: { bid: ApiBid; isTop: boolean; isNew: boo
 export default function AuctionDetailPage(): React.ReactElement {
   const params = useParams()
   const lookup = params?.id as string
+  const localeParam = typeof params?.locale === "string" ? params.locale : ""
+  const locale = isValidLocale(localeParam) ? localeParam : DEFAULT_LOCALE
 
   const { user } = useAuth()
   const { formatPrice } = useLocale()
@@ -820,9 +823,9 @@ export default function AuctionDetailPage(): React.ReactElement {
       <SiteShell>
         <div className="dp-container py-24 text-center">
           <p className="font-display text-3xl text-dp-text-primary mb-2">Auction Not Found</p>
-          <Link href="/auctions" className="text-dp-accent-cta hover:underline text-[14px]">
+          <LocalizedLink href="/auctions" className="text-dp-accent-cta hover:underline text-[14px]">
             ← Back to Auctions
-          </Link>
+          </LocalizedLink>
         </div>
       </SiteShell>
     )
@@ -853,10 +856,14 @@ export default function AuctionDetailPage(): React.ReactElement {
       {/* Breadcrumb */}
       <div className="border-b border-dp-border bg-dp-bg-surface">
         <div className="dp-container py-3">
-          <Link href="/auctions" className="flex items-center gap-1.5 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors w-fit">
-            <ChevronLeft size={14} />
-            Back to Auctions
-          </Link>
+          <Breadcrumb
+            locale={locale}
+            items={[
+              { name: "Home", url: "/" },
+              { name: "Auctions", url: "/auctions" },
+              { name: auction.title, url: `/auctions/${auction.slug || auction.id}` },
+            ]}
+          />
         </div>
       </div>
 

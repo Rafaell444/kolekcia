@@ -1,5 +1,7 @@
-from django.conf import settings
+﻿from django.conf import settings
 from django.core.mail import send_mail
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -24,6 +26,8 @@ from .serializers import (
 from .google_auth import verify_google_id_token, authenticate_google_user
 from .services import award_registration_bonus
 from django.core.exceptions import ValidationError
+
+PASSWORD_RESET_TOKEN_TTL = timedelta(hours=1)
 
 
 class AuthThrottle(ScopedRateThrottle):
@@ -197,7 +201,7 @@ class ForgotPasswordView(APIView):
             token_obj = PasswordResetToken.objects.create(user=user)
             reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token_obj.token}"
             send_mail(
-                subject="Reset your Kolekcia password",
+                subject="Reset your Koleqcia password",
                 message=f"Click the link to reset your password: {reset_url}",
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[email],
@@ -220,6 +224,9 @@ class ResetPasswordView(APIView):
                 token=serializer.validated_data["token"], used=False
             )
         except PasswordResetToken.DoesNotExist:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if token_obj.created_at < timezone.now() - PASSWORD_RESET_TOKEN_TTL:
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
 
         token_obj.user.set_password(serializer.validated_data["password"])

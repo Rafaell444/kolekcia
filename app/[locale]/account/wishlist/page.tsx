@@ -8,6 +8,7 @@ import { Heart, ArrowRight, Trash2 } from "lucide-react"
 import { authFetch } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
 import { productHref } from "@/lib/product-url"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 type WishlistProduct = {
   id: string
@@ -29,6 +30,7 @@ export default function WishlistPage(): React.ReactElement {
   const [items, setItems] = useState<WishlistItem[]>([])
   const [loading, setLoading] = useState(true)
   const { formatPrice } = useLocale()
+  const lp = useLocalePrefix()
 
   useEffect(() => {
     let cancelled = false
@@ -49,7 +51,7 @@ export default function WishlistPage(): React.ReactElement {
       <div className="dp-container py-12">
         <div className="flex items-center justify-between mb-8">
           <h1 className="font-display text-4xl text-dp-text-primary">Wishlist</h1>
-          <Link href="/catalog" className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
+          <Link href={`${lp}/catalog`} className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
             Browse More <ArrowRight size={12} />
           </Link>
         </div>

@@ -160,7 +160,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="w-7 h-7 rounded-sm border border-dp-border-hover bg-dp-bg-elevated flex items-center justify-center" aria-hidden>
             <div className="w-3.5 h-3.5 rounded-sm border-2" style={{ borderColor: "var(--dp-accent-cta)" }} />
           </div>
-          <span className="font-display text-lg text-dp-text-primary tracking-wider">KOLEKCIA</span>
+          <span className="font-display text-lg text-dp-text-primary tracking-wider">KOLEQCIA</span>
         </div>
         <div className="flex items-center gap-1.5 mt-1">
           {isVendor ? (
@@ -249,7 +249,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         >
           <Menu size={20} />
         </button>
-        <span className="font-display text-lg text-dp-text-primary tracking-wider">KOLEKCIA</span>
+        <span className="font-display text-lg text-dp-text-primary tracking-wider">KOLEQCIA</span>
         <span className="text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta">
           {isVendor ? "Vendor" : "Admin"}
         </span>

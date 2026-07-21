@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from 'next'
+﻿import type { Metadata, Viewport } from 'next'
 import { Suspense } from 'react'
 import { headers } from 'next/headers'
 import { Barlow, Barlow_Condensed, Bebas_Neue, Geist_Mono } from 'next/font/google'
@@ -12,7 +12,7 @@ import ReferralTracker from '@/components/referrals/ReferralTracker'
 import './globals.css'
 
 /**
- * KOLEKCIA DESIGN SYSTEM — Font Loading
+ * KOLEQCIA DESIGN SYSTEM — Font Loading
  *
  * Display / Headings:  Bebas Neue  (condensed, all-caps impact)
  * Body / UI:           Barlow      (humanist sans, highly legible)
@@ -48,19 +48,31 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Kolekcia — Metal Poster Marketplace',
-    template: '%s | Kolekcia',
+    default: 'Unique Gifts, Anime & Gaming Decor Made in Georgia | Koleqcia',
+    template: '%s | Koleqcia',
   },
   description:
-    'Discover 2.5M+ metal poster designs. Artist-made originals, official licensed collections, and custom prints. Tool-free magnetic mounting included.',
-  keywords: ['metal posters', 'wall art', 'anime posters', 'gaming posters', 'artist marketplace', 'metal prints'],
-  authors: [{ name: 'Kolekcia' }],
-  creator: 'Kolekcia',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kolekcia.example.com'),
+    'Discover handmade anime, gaming, and movie decor. Shop unique gifts, wall art, and figures. Proudly made in Georgia. Find the perfect gift today!',
+  keywords: [
+    'anime figures',
+    'gaming decor',
+    'handmade gifts',
+    'wooden wall art',
+    'unique gifts Georgia',
+    'Koleqcia',
+  ],
+  authors: [{ name: 'Koleqcia' }],
+  creator: 'Koleqcia',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://koleqcia.com'),
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    siteName: 'Kolekcia',
+    siteName: 'Koleqcia',
+    images: [{ url: '/images/og-koleqcia.jpg', width: 1200, height: 630, alt: 'Koleqcia' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/images/og-koleqcia.jpg'],
   },
   robots: {
     index: true,

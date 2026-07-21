@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useEffect, useState } from "react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
@@ -46,9 +46,9 @@ function GeneralSettingsCard({
   saved: boolean
 }) {
   const fields = [
-    { key: "site_name", label: "Site Name", fallback: "Kolekcia" },
-    { key: "site_url", label: "Site URL", fallback: "https://kolekcia.com" },
-    { key: "support_email", label: "Support Email", fallback: "support@kolekcia.com", type: "email" },
+    { key: "site_name", label: "Site Name", fallback: "Koleqcia" },
+    { key: "site_url", label: "Site URL", fallback: "https://Koleqcia.com" },
+    { key: "support_email", label: "Support Email", fallback: "support@Koleqcia.com", type: "email" },
     { key: "support_phone", label: "Support Phone", fallback: "+995 000 000 000" },
   ] as const
 
@@ -100,9 +100,9 @@ export default function AdminSettingsPage(): React.ReactElement {
       await adminFetch("/admin/settings/", {
         method: "PATCH",
         body: JSON.stringify({
-          site_name: settings.site_name ?? "Kolekcia",
-          site_url: settings.site_url ?? "https://kolekcia.com",
-          support_email: settings.support_email ?? "support@kolekcia.com",
+          site_name: settings.site_name ?? "Koleqcia",
+          site_url: settings.site_url ?? "https://Koleqcia.com",
+          support_email: settings.support_email ?? "support@Koleqcia.com",
           support_phone: settings.support_phone ?? "",
         }),
       })

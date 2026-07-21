@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation"
+import { DEFAULT_LOCALE, isValidLocale } from "@/lib/i18n"
 
 const HANDLE_TO_CATEGORY: Record<string, string> = {
   ryo_tanabe: "figures",
@@ -10,14 +11,15 @@ const HANDLE_TO_CATEGORY: Record<string, string> = {
 export default async function ArtistProfileRedirect({
   params,
 }: {
-  params: Promise<{ handle: string }>
+  params: Promise<{ locale: string; handle: string }>
 }) {
-  const { handle } = await params
+  const { locale: rawLocale, handle } = await params
+  const locale = isValidLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE
   const category = HANDLE_TO_CATEGORY[handle.toLowerCase()]
 
   if (category) {
-    redirect(`/catalog?category=${category}`)
+    redirect(`/${locale}/catalog?category=${category}`)
   }
 
-  redirect("/artists")
+  redirect(`/${locale}/artists`)
 }

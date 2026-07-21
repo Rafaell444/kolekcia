@@ -1,6 +1,4 @@
-overrides:
-  hono: 4.12.25
-
+packages:
+  - "."
 onlyBuiltDependencies:
-  - sharp
-  - msw
+  - esbuild

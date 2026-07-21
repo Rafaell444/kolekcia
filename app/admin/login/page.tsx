@@ -54,7 +54,7 @@ export default function AdminLoginPage(): React.ReactElement {
             <Zap size={18} className="text-dp-accent-cta" />
           </div>
           <div>
-            <p className="font-display text-2xl text-dp-text-primary tracking-wider">KOLEKCIA</p>
+            <p className="font-display text-2xl text-dp-text-primary tracking-wider">KOLEQCIA</p>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-dp-accent-cta">Vendor & Admin Portal</p>
           </div>
         </div>

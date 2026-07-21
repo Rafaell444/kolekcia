@@ -1,21 +1,70 @@
 import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from "./auth-storage"
+import { DEFAULT_LOCALE, isValidLocale, type Locale } from "./i18n"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 
 // Singleton refresh promise — prevents concurrent refresh races
 let refreshPromise: Promise<string | null> | null = null
 
+/**
+ * Resolve UI locale for API requests.
+ * Priority: NEXT_LOCALE cookie → path segment → Accept-Language → default.
+ * Passed as `?lang=` and `Accept-Language` so the backend can localize responses.
+ */
+export function getRequestLocale(): Locale {
+  if (typeof window !== "undefined") {
+    try {
+      const match = document.cookie.match(/(?:^|;\s*)NEXT_LOCALE=([^;]+)/)
+      const cookie = match?.[1]
+      if (cookie && isValidLocale(cookie)) return cookie
+    } catch {
+      /* ignore */
+    }
+    const segment = window.location.pathname.split("/").filter(Boolean)[0]
+    if (segment && isValidLocale(segment)) return segment
+  }
+  return DEFAULT_LOCALE
+}
+
+function withLangParam(url: string, locale: Locale): string {
+  if (url.includes("lang=")) return url
+  const sep = url.includes("?") ? "&" : "?"
+  return `${url}${sep}lang=${locale}`
+}
+
 export async function refreshAccessToken(): Promise<string | null> {
   if (refreshPromise) return refreshPromise
 
   refreshPromise = (async () => {
-    const refresh = getRefreshToken()
-    if (!refresh) {
-      clearTokens()
-      return null
-    }
-
     try {
+      // Prefer httpOnly cookie via Next.js proxy; fall back to storage refresh.
+      try {
+        const cookieRes = await fetch("/api/auth/refresh", {
+          method: "POST",
+          credentials: "include",
+        })
+        if (cookieRes.ok) {
+          const data = await cookieRes.json() as { access: string; refresh?: string }
+          const rememberMe = !!localStorage.getItem("kol_access")
+          const nextRefresh = data.refresh ?? getRefreshToken()
+          if (nextRefresh) {
+            storeTokens(data.access, nextRefresh, rememberMe)
+          } else if (typeof window !== "undefined") {
+            const storage = rememberMe ? localStorage : sessionStorage
+            storage.setItem("kol_access", data.access)
+          }
+          return data.access
+        }
+      } catch {
+        // fall through to storage-based refresh
+      }
+
+      const refresh = getRefreshToken()
+      if (!refresh) {
+        clearTokens()
+        return null
+      }
+
       const res = await fetch(`${API_BASE}/auth/refresh/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -64,8 +113,12 @@ async function request<T>(
   authenticated = false,
   retries = 0,
 ): Promise<T> {
+  const locale = getRequestLocale()
+  const localizedUrl = withLangParam(url, locale)
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "Accept-Language": locale,
     ...(options.headers as Record<string, string> | undefined),
   }
 
@@ -74,13 +127,13 @@ async function request<T>(
     if (token) headers["Authorization"] = `Bearer ${token}`
   }
 
-  const res = await fetch(`${API_BASE}${url}`, { ...options, headers })
+  const res = await fetch(`${API_BASE}${localizedUrl}`, { ...options, headers })
 
   if (res.status === 401 && authenticated) {
     const newToken = await refreshAccessToken()
     if (newToken) {
       headers["Authorization"] = `Bearer ${newToken}`
-      const retry = await fetch(`${API_BASE}${url}`, { ...options, headers })
+      const retry = await fetch(`${API_BASE}${localizedUrl}`, { ...options, headers })
       if (!retry.ok) {
         const errData = await retry.json().catch(() => ({}))
         const err: ApiError = { status: retry.status, data: errData as Record<string, unknown> }

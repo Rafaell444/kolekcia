@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Package, ArrowRight } from "lucide-react"
 import { authFetch } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 type OrderItem = { id: number; product_title: string; quantity: number }
 type Order = {
@@ -28,6 +29,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function OrdersPage(): React.ReactElement {
   const { formatPrice } = useLocale()
+  const lp = useLocalePrefix()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -52,7 +54,7 @@ export default function OrdersPage(): React.ReactElement {
           <div className="flex flex-col items-center gap-4 py-24">
             <Package size={40} className="text-dp-text-tertiary" />
             <p className="text-dp-text-secondary">No orders yet.</p>
-            <Link href="/catalog" className="px-6 py-3 bg-dp-accent-cta text-white text-[12px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors">
+            <Link href={`${lp}/catalog`} className="px-6 py-3 bg-dp-accent-cta text-white text-[12px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors">
               Shop Now
             </Link>
           </div>
@@ -77,7 +79,7 @@ export default function OrdersPage(): React.ReactElement {
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
                   <span className="font-bold text-[16px] text-dp-text-primary">{formatPrice(parseFloat(order.total))}</span>
-                  <Link href={`/account/orders/${order.id}`} className="flex items-center gap-1 text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">
+                  <Link href={`${lp}/account/orders/${order.id}`} className="flex items-center gap-1 text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">
                     Details <ArrowRight size={12} />
                   </Link>
                 </div>

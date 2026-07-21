@@ -1,4 +1,4 @@
-from django.contrib.auth import authenticate
+﻿from django.contrib.auth import authenticate
 from django.db.models import Sum, Count, Q, Max
 from django.db.models.functions import TruncMonth, TruncDate
 from django.utils import timezone
@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import serializers
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .permissions import IsAdminUser, IsAdminOrVendor
@@ -20,11 +21,16 @@ class AdminNoPaginationMixin:
     pagination_class = None
 
 
+class AdminAuthThrottle(ScopedRateThrottle):
+    scope = "admin_auth"
+
+
 # ── Admin login ────────────────────────────────────────────────────────────────
 
 class AdminLoginView(APIView):
     """Login endpoint exclusively for staff and vendor users."""
     permission_classes = [AllowAny]
+    throttle_classes = [AdminAuthThrottle]
 
     def post(self, request):
         email = request.data.get("email", "").strip().lower()
@@ -395,7 +401,7 @@ def _send_shipping_email(order):
             body = body.replace("{{tracking_info}}", tracking_info)
             subject = (vendor.shipping_email_subject or f"Your order {order_number} has shipped!")
             subject = subject.replace("{{order_number}}", order_number)
-            from_email = vendor.payment_email or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@kolekcia.com")
+            from_email = vendor.payment_email or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@Koleqcia.com")
         else:
             items_list = "\n".join(
                 f"  • {item.product_title} × {item.quantity}"
@@ -403,18 +409,18 @@ def _send_shipping_email(order):
             )
             body = (
                 f"Hi {customer_name},\n\n"
-                f"Great news — your Kolekcia order {order_number} has been shipped!{tracking_info}\n\n"
+                f"Great news — your Koleqcia order {order_number} has been shipped!{tracking_info}\n\n"
                 f"Items in your order:\n{items_list}\n\n"
                 f"Shipping to:\n"
                 f"  {order.shipping_line1}"
                 + (f", {order.shipping_line2}" if order.shipping_line2 else "")
                 + f"\n  {order.shipping_city}, {order.shipping_state} {order.shipping_zip}\n"
                 f"  {order.shipping_country}\n\n"
-                f"Thank you for shopping with Kolekcia!\n"
-                f"— The Kolekcia Team"
+                f"Thank you for shopping with Koleqcia!\n"
+                f"— The Koleqcia Team"
             )
             subject = f"Your order {order_number} has shipped!"
-            from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@kolekcia.com")
+            from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@Koleqcia.com")
 
         send_mail(
             subject=subject,
@@ -508,19 +514,21 @@ class AdminMediaUploadView(APIView):
         import os
         import uuid as uuid_lib
         from django.conf import settings as django_settings
+        from apps.core.uploads import validate_image_upload, safe_image_extension
 
         uploaded_file = request.FILES.get("file")
         folder = (request.data.get("folder") or "cms").strip().lower()
 
-        if not uploaded_file:
-            return Response({"detail": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+        error = validate_image_upload(uploaded_file)
+        if error:
+            return error
         if folder not in ALLOWED_MEDIA_FOLDERS:
             return Response(
                 {"detail": f"folder must be one of: {', '.join(sorted(ALLOWED_MEDIA_FOLDERS))}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        ext = os.path.splitext(uploaded_file.name)[1] or ".bin"
+        ext = safe_image_extension(uploaded_file)
         filename = f"{uuid_lib.uuid4().hex}{ext}"
         save_dir = os.path.join(django_settings.MEDIA_ROOT, folder)
         os.makedirs(save_dir, exist_ok=True)

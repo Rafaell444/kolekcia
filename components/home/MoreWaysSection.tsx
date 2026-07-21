@@ -1,4 +1,4 @@
-import Image from "next/image"
+﻿import Image from "next/image"
 import Link from "next/link"
 
 const WAYS = [
@@ -20,7 +20,7 @@ const WAYS = [
   },
   {
     id: "club",
-    label: "KolekciaClub",
+    label: "KoleqciaClub",
     desc: "Perks await! Join and unlock free shipping, early access to limited drops — and more.",
     href: "/catalog",
     imageUrl: "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=800&h=600&fit=crop",
@@ -29,9 +29,24 @@ const WAYS = [
   },
 ]
 
-export default function MoreWaysSection({ content }: { content?: { heading?: string; cards?: typeof WAYS } }) {
+export default function MoreWaysSection({
+  content,
+}: {
+  content?: {
+    heading?: string
+    cards?: Array<{
+      id: string
+      label: string
+      desc: string
+      href: string
+      imageUrl: string
+      overlay?: string
+      accent?: string
+    }>
+  }
+}) {
   const ways = content?.cards ?? WAYS
-  const heading = content?.heading ?? "More Ways to Kolekcia"
+  const heading = content?.heading ?? "More Ways to Koleqcia"
   return (
     <section className="dp-container py-14" aria-labelledby="more-ways-heading">
       <h2

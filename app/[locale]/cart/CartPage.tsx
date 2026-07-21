@@ -2,7 +2,7 @@
 
 import React, { useState } from "react"
 import SiteShell from "@/components/layout/SiteShell"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import Image from "next/image"
 import { ShoppingCart, ArrowRight, Trash2, Tag, X } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
@@ -50,9 +50,9 @@ export default function CartPage(): React.ReactElement {
         <div className="dp-container py-24 flex flex-col items-center gap-4 text-center">
           <ShoppingCart size={40} className="text-dp-text-tertiary" />
           <p className="text-[15px] text-dp-text-secondary">Sign in to view your cart.</p>
-          <Link href="/login" className="px-6 py-3 bg-dp-accent-cta text-white text-[12px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors">
+          <LocalizedLink href="/login" className="px-6 py-3 bg-dp-accent-cta text-white text-[12px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors">
             Sign In
-          </Link>
+          </LocalizedLink>
         </div>
       </SiteShell>
     )
@@ -70,9 +70,9 @@ export default function CartPage(): React.ReactElement {
           <div className="flex flex-col items-center gap-4 py-24 text-center">
             <ShoppingCart size={40} className="text-dp-text-tertiary" />
             <p className="text-[15px] text-dp-text-secondary">Your cart is empty.</p>
-            <Link href="/catalog" className="px-6 py-3 bg-dp-accent-cta text-white text-[12px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors">
+            <LocalizedLink href="/catalog" className="px-6 py-3 bg-dp-accent-cta text-white text-[12px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-accent-cta-hover transition-colors">
               Browse Shop
-            </Link>
+            </LocalizedLink>
           </div>
         ) : (
           <div className="grid lg:grid-cols-3 gap-8">
@@ -168,12 +168,12 @@ export default function CartPage(): React.ReactElement {
               <div className="border-t border-dp-border pt-4 flex justify-between font-bold text-[16px] text-dp-text-primary">
                 <span>Total</span><span>{formatPrice(total)}</span>
               </div>
-              <Link
+              <LocalizedLink
                 href="/checkout"
                 className="flex items-center justify-center gap-2 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
               >
                 Checkout <ArrowRight size={14} />
-              </Link>
+              </LocalizedLink>
             </div>
           </div>
         )}

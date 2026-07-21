@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useMemo } from "react"
 import Image from "next/image"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import LocalizedLink from "@/components/seo/LocalizedLink"
+import { useRouter, useParams } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import { apiFetch, authFetch, getApiErrorMessage } from "@/lib/api"
 import { useCart } from "@/contexts/cart-context"
@@ -21,6 +21,8 @@ import {
 } from "lucide-react"
 import ProductCmsSections, { type ProductCmsContent } from "@/components/product/ProductCmsSections"
 import Breadcrumb from "@/components/seo/Breadcrumb"
+import { DEFAULT_LOCALE, isValidLocale } from "@/lib/i18n"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 // ── Variant selector ──────────────────────────────────────
 function VariantSelector<T extends { id: string; label: string; surcharge: number }>({
@@ -112,16 +114,19 @@ type ApiProduct = {
   categories_data?: { slug: string; name: string }[]
   vendor_id?: number | null
   vendor_slug?: string | null
+  vendor_name?: string | null
   base_price: string; original_price: string | null
   regional_prices?: Record<string, { price?: string | number | null; original?: string | number | null }>
   description?: string; material?: string; processing_time_label?: string
   rating: string; review_count: number
   is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean
   allow_custom_size?: boolean
+  status?: string
   images: { url: string; src?: string; media_type?: string }[]; tags: string[]
   sizes: ApiVariantOption[]; finishes: ApiVariantOption[]; frames: ApiVariantOption[]
   variants: ApiVariant[]
   size_variants?: SizeVariant[]
+  breadcrumbs?: { name: string; url: string }[]
 }
 type RelatedProduct = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
 
@@ -139,6 +144,7 @@ function ProductContactModal({
   initialMessage?: string
 }) {
   const router = useRouter()
+  const lp = useLocalePrefix()
   const defaultMessage = initialMessage ?? "Hi, I'm interested in this product. Could you tell me more about availability, sizing, or custom options?"
   const [message, setMessage] = useState(defaultMessage)
   const [sending, setSending] = useState(false)
@@ -147,7 +153,7 @@ function ProductContactModal({
   async function handleSend() {
     if (!message.trim()) return
     if (!getAccessToken()) {
-      router.push(`/login?next=${encodeURIComponent(productHref({ id: product.id, slug: product.slug }))}`)
+      router.push(`${lp}/login?next=${encodeURIComponent(productHref({ id: product.id, slug: product.slug }))}`)
       return
     }
     setSending(true)
@@ -162,7 +168,7 @@ function ProductContactModal({
           initial_message: message.trim(),
         }),
       })
-      router.push(`/inbox?conv=${conv.id}`)
+      router.push(`${lp}/inbox?conv=${conv.id}`)
     } catch {
       setError("Failed to send message. Please try again.")
       setSending(false)
@@ -210,6 +216,10 @@ function ProductContactModal({
 export default function ProductDetail({ product, categoryContext }: { product: ApiProduct; categoryContext?: string }) {
   const selfHref = productHref({ id: product.id, slug: product.slug, categorySlug: categoryContext })
   const router = useRouter()
+  const lp = useLocalePrefix()
+  const params = useParams()
+  const localeParam = typeof params?.locale === "string" ? params.locale : ""
+  const locale = isValidLocale(localeParam) ? localeParam : DEFAULT_LOCALE
   const { addItem } = useCart()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()
   const { formatPrice, currency, rates, detectedCountry } = useLocale()
@@ -444,7 +454,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
   async function handleAddToCart() {
     if (!getAccessToken()) {
-      router.push(`/login?next=${encodeURIComponent(selfHref)}`)
+      router.push(`${lp}/login?next=${encodeURIComponent(selfHref)}`)
       return
     }
 
@@ -499,7 +509,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
   async function handleWishlist() {
     if (!getAccessToken()) {
-      router.push(`/login?next=${encodeURIComponent(selfHref)}`)
+      router.push(`${lp}/login?next=${encodeURIComponent(selfHref)}`)
       return
     }
     setWishWorking(true)
@@ -529,15 +539,18 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   return (
     <SiteShell>
       <div className="dp-container py-4">
-        <Breadcrumb items={product.breadcrumbs ?? [
-          { name: "Home", url: "/" },
-          { name: "Shop", url: "/catalog" },
-          ...(categorySlug && categoryName ? [{ name: categoryName, url: `/catalog?category=${categorySlug}` }] : []),
-          { name: product.title, url: `/catalog/${product.slug}` },
-        ]} />
-        <Link href="/catalog" className="md:hidden inline-flex items-center gap-1 mt-3 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
+        <Breadcrumb
+          locale={locale}
+          items={product.breadcrumbs ?? [
+            { name: "Home", url: "/" },
+            { name: "Shop", url: "/catalog" },
+            ...(categorySlug && categoryName ? [{ name: categoryName, url: `/catalog?category=${categorySlug}` }] : []),
+            { name: product.title, url: `/catalog/${product.slug}` },
+          ]}
+        />
+        <LocalizedLink href="/catalog" className="md:hidden inline-flex items-center gap-1 mt-3 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors">
           <ChevronLeft size={13} /> Back to catalog
-        </Link>
+        </LocalizedLink>
       </div>
 
       {/* ── Main product section ──────────────────────────── */}
@@ -603,20 +616,20 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
           {/* Right: details */}
           <div className="flex flex-col gap-5">
-            <Link href="/catalog" className="hidden md:inline-flex items-center gap-1 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors w-fit">
+            <LocalizedLink href="/catalog" className="hidden md:inline-flex items-center gap-1 text-[12px] text-dp-text-tertiary hover:text-dp-text-primary transition-colors w-fit">
               <ChevronLeft size={13} /> Back to catalog
-            </Link>
+            </LocalizedLink>
 
             <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">
               by{" "}
               {artistHandle ? (
-                <Link href={`/artists/${artistHandle}`} className="hover:text-dp-accent-cta transition-colors">
+                <LocalizedLink href={`/artists/${artistHandle}`} className="hover:text-dp-accent-cta transition-colors">
                   {product.artist_name}
-                </Link>
+                </LocalizedLink>
               ) : (
-                <Link href={`/catalog?q=${encodeURIComponent(product.artist_name)}`} className="hover:text-dp-accent-cta transition-colors">
+                <LocalizedLink href={`/catalog?q=${encodeURIComponent(product.artist_name)}`} className="hover:text-dp-accent-cta transition-colors">
                   {product.artist_name}
-                </Link>
+                </LocalizedLink>
               )}
             </p>
 
@@ -650,10 +663,10 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
             <div className="flex flex-wrap gap-2">
               {(product.tags ?? []).map((tag) => (
-                <Link key={tag} href={`/catalog?tag=${tag}`}
+                <LocalizedLink key={tag} href={`/catalog?tag=${tag}`}
                   className="px-3 py-1 text-[11px] font-semibold uppercase tracking-widest border border-dp-border rounded-full text-dp-text-tertiary hover:border-dp-border-hover hover:text-dp-text-secondary transition-colors">
                   {tag}
-                </Link>
+                </LocalizedLink>
               ))}
             </div>
 
@@ -718,7 +731,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                   setContactSubject(`Request for custom size — ${product.title}`)
                   setContactMessage(`Hi, I'm interested in a custom size for "${product.title}". Could you let me know what options are available and the pricing?\n\nThank you!`)
                   if (!getAccessToken()) {
-                    router.push(`/login?next=${encodeURIComponent(selfHref)}`)
+                    router.push(`${lp}/login?next=${encodeURIComponent(selfHref)}`)
                     return
                   }
                   setShowContact(true)
@@ -930,7 +943,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               <button
                 onClick={() => {
                   if (!getAccessToken()) {
-                    router.push(`/login?next=${encodeURIComponent(selfHref)}`)
+                    router.push(`${lp}/login?next=${encodeURIComponent(selfHref)}`)
                     return
                   }
                   setContactSubject("")
@@ -1152,12 +1165,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 shrink-0">
-                <Link href="/catalog?category=figures" className="inline-flex items-center justify-center gap-2 px-6 py-3 border border-white/20 hover:border-white/40 text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
+                <LocalizedLink href="/catalog?category=figures" className="inline-flex items-center justify-center gap-2 px-6 py-3 border border-white/20 hover:border-white/40 text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
                   Shop Figures <ArrowRight size={14} />
-                </Link>
-                <Link href="/custom" className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
+                </LocalizedLink>
+                <LocalizedLink href="/custom" className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
                   Commission a Figure <ArrowRight size={14} />
-                </Link>
+                </LocalizedLink>
               </div>
             </div>
           </section>
@@ -1177,9 +1190,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 Metal prints capture light differently than paper or canvas — colours pop with a luminous depth you have to see to believe.
                 No glass glare, no warping, and built to last decades.
               </p>
-              <Link href="/catalog" className="inline-flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
+              <LocalizedLink href="/catalog" className="inline-flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
                 Shop All Metal Prints <ArrowRight size={14} />
-              </Link>
+              </LocalizedLink>
             </div>
             <div className="grid grid-cols-2 gap-4 flex-1 w-full max-w-sm">
               {[
@@ -1287,13 +1300,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             <h2 id="related-heading" className="font-display text-3xl md:text-4xl text-dp-text-primary">
               More from {categoryName || "this collection"}
             </h2>
-            <Link href={`/catalog?category=${categorySlug}`} className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
+            <LocalizedLink href={`/catalog?category=${categorySlug}`} className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
               View All <ArrowRight size={12} />
-            </Link>
+            </LocalizedLink>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {related.map((p) => (
-              <Link key={p.id} href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover">
+              <LocalizedLink key={p.id} href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover">
                 <div className="aspect-poster relative bg-dp-bg-elevated overflow-hidden">
                   {p.image_url && <Image src={p.image_url} alt={p.title} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 640px) 50vw, 25vw" />}
                 </div>
@@ -1302,7 +1315,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                   <p className="text-[13px] font-semibold text-dp-text-primary truncate mt-0.5">{p.title}</p>
                   <p className="text-[14px] font-bold text-dp-text-primary mt-1">{formatPrice(parseFloat(p.base_price))}</p>
                 </div>
-              </Link>
+              </LocalizedLink>
             ))}
           </div>
         </section>

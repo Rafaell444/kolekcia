@@ -62,7 +62,13 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
     const token = getAccessToken()
     if (!token) return
 
-    const ws = new WebSocket(`${wsBaseUrl()}/ws/auctions/${auctionId}/?token=${encodeURIComponent(token)}`)
+    const url = `${wsBaseUrl()}/ws/auctions/${auctionId}/`
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(url, ["access_token", token])
+    } catch {
+      ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`)
+    }
     wsRef.current = ws
 
     ws.onmessage = (event) => {

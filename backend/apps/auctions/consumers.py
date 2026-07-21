@@ -1,10 +1,11 @@
 import json
-from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import AccessToken
+
+from apps.core.ws_auth import extract_ws_token, preferred_ws_subprotocol
 
 User = get_user_model()
 
@@ -14,8 +15,7 @@ class AuctionChatConsumer(AsyncWebsocketConsumer):
         self.auction_id = self.scope["url_route"]["kwargs"]["auction_id"]
         self.group_name = f"auction_{self.auction_id}"
 
-        query = parse_qs(self.scope.get("query_string", b"").decode())
-        token = (query.get("token") or [None])[0]
+        token = extract_ws_token(self.scope)
         self.user = await self._authenticate(token)
 
         if not self.user:
@@ -23,7 +23,8 @@ class AuctionChatConsumer(AsyncWebsocketConsumer):
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
+        subprotocol = preferred_ws_subprotocol(self.scope)
+        await self.accept(subprotocol=subprotocol)
 
     async def disconnect(self, close_code):
         if hasattr(self, "group_name"):

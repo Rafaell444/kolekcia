@@ -1,9 +1,8 @@
-import type { Metadata } from "next"
-import { LOCALES, type Locale } from "@/lib/i18n"
+﻿import type { Metadata } from "next"
+import { type Locale } from "@/lib/i18n"
 import { COOKIES_SEO } from "@/lib/seo-metadata"
+import { buildPageMetadata } from "@/lib/seo"
 import SiteShell from "@/components/layout/SiteShell"
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kolekcia.example.com"
 
 export async function generateMetadata({
   params,
@@ -12,13 +11,13 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params
   const seo = COOKIES_SEO[(locale as Locale) ?? "en"] ?? COOKIES_SEO.en
-  const alternates: Record<string, string> = {}
-  for (const loc of LOCALES) alternates[loc] = `${SITE_URL}/${loc}/cookies`
-  return {
+
+  return buildPageMetadata({
     title: seo.title,
     description: seo.description,
-    alternates: { canonical: `${SITE_URL}/${locale}/cookies`, languages: alternates },
-  }
+    path: "/cookies",
+    locale,
+  })
 }
 
 export default function CookiesPage() {
@@ -28,7 +27,7 @@ export default function CookiesPage() {
         <h1 className="font-display text-5xl text-dp-text-primary mb-4">Cookie Policy</h1>
         <p className="text-[13px] text-dp-text-tertiary mb-8">Last updated: June 30, 2026</p>
         <div className="space-y-4 text-[14px] text-dp-text-secondary leading-relaxed">
-          <p>Kolekcia uses cookies and similar technologies to keep you signed in, remember preferences, and analyze site usage.</p>
+          <p>Koleqcia uses cookies and similar technologies to keep you signed in, remember preferences, and analyze site usage.</p>
           <h2 className="font-display text-2xl text-dp-text-primary mt-8">Essential Cookies</h2>
           <p>Required for authentication, cart, and checkout. These cannot be disabled.</p>
           <h2 className="font-display text-2xl text-dp-text-primary mt-8">Preference Cookies</h2>
