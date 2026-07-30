@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useCallback, useEffect, useState } from "react"
-import { Pencil, Save, Star, X } from "lucide-react"
+import { Save, Star } from "lucide-react"
 import { adminFetch } from "@/lib/admin-auth"
 
 type HomepageReview = {
@@ -36,15 +36,15 @@ export default function AdminReviewsPage(): React.ReactElement {
   const [reviews, setReviews] = useState<HomepageReview[]>([])
   const [socials, setSocials] = useState<SocialLink[]>([])
   const [loading, setLoading] = useState(true)
-  const [socialForm, setSocialForm] = useState<SocialLink | null>(null)
+  const [savingSocialId, setSavingSocialId] = useState<number | null>(null)
   const [message, setMessage] = useState("")
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const [r, s] = await Promise.all([
-        adminFetch<HomepageReview[]>("/reviews/"),
-        adminFetch<SocialLink[]>("/community-links/"),
+        adminFetch<HomepageReview[]>("/admin/reviews/"),
+        adminFetch<SocialLink[]>("/admin/community-links/"),
       ])
       setReviews(Array.isArray(r) ? r : [])
       setSocials(Array.isArray(s) ? s : [])
@@ -63,16 +63,18 @@ export default function AdminReviewsPage(): React.ReactElement {
     setReviews((prev) => prev.map((r) => r.id === id ? updated : r))
   }
 
-  async function saveSocial(e: React.FormEvent) {
-    e.preventDefault()
-    if (!socialForm) return
-    const updated = await adminFetch<SocialLink>(`/community-links/${socialForm.id}/`, {
-      method: "PATCH",
-      body: JSON.stringify(socialForm),
-    })
-    setSocials((prev) => prev.map((s) => s.id === updated.id ? updated : s))
-    setSocialForm(null)
-    setMessage("Social link saved.")
+  async function saveSocial(link: SocialLink) {
+    setSavingSocialId(link.id)
+    try {
+      const updated = await adminFetch<SocialLink>(`/admin/community-links/${link.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(link),
+      })
+      setSocials((prev) => prev.map((s) => s.id === updated.id ? updated : s))
+      setMessage(`${updated.name} link saved.`)
+    } finally {
+      setSavingSocialId(null)
+    }
   }
 
   const googleReviews = reviews.filter((r) => r.source === "google")
@@ -112,33 +114,42 @@ export default function AdminReviewsPage(): React.ReactElement {
 
       <section>
         <h2 className="font-display text-xl text-dp-text-primary mb-4">Community social links</h2>
-        <p className="text-[12px] text-dp-text-tertiary mb-4">Edit only the destination links for the fixed homepage platforms.</p>
-
-        {socialForm && (
-          <form onSubmit={saveSocial} className="mb-6 p-5 border border-dp-border rounded-sm bg-dp-bg-surface grid grid-cols-2 gap-4">
-            <div><label className={labelCls}>Platform</label><input disabled className={inputCls} value={socialForm.name} /></div>
-            <div><label className={labelCls}>Badge</label><input disabled className={inputCls} value={socialForm.abbr} /></div>
-            <div className="col-span-2"><label className={labelCls}>URL</label><input required type="url" className={inputCls} placeholder="https://" value={socialForm.url} onChange={(e) => setSocialForm((f) => f ? { ...f, url: e.target.value } : f)} /></div>
-            <label className="col-span-2 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={socialForm.is_active} onChange={(e) => setSocialForm((f) => f ? { ...f, is_active: e.target.checked } : f)} /> Active on homepage</label>
-            <div className="col-span-2 flex gap-2">
-              <button type="submit" className="inline-flex items-center gap-1 px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase rounded-sm"><Save size={12} /> Save link</button>
-              <button type="button" onClick={() => setSocialForm(null)} className="px-4 py-2 border border-dp-border text-[11px] font-bold uppercase rounded-sm"><X size={12} className="inline" /> Cancel</button>
-            </div>
-          </form>
-        )}
+        <p className="text-[12px] text-dp-text-tertiary mb-4">Put the destination URL for each fixed homepage platform. Leave the URL empty to hide that platform on the homepage.</p>
 
         <div className="space-y-3">
           {socials.map((s) => (
-            <div key={s.id} className="flex items-center justify-between gap-4 p-4 border border-dp-border rounded-sm bg-dp-bg-surface">
-              <div className="flex items-center gap-3 min-w-0">
+            <form key={s.id} onSubmit={(e) => { e.preventDefault(); void saveSocial(s) }} className="grid grid-cols-1 gap-3 p-4 border border-dp-border rounded-sm bg-dp-bg-surface md:grid-cols-[minmax(170px,220px)_1fr_auto] md:items-end">
+              <div className="flex items-center gap-3 min-w-0 md:pb-1">
                 <span className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-black" style={{ background: s.bg_color, color: s.text_color }}>{s.abbr}</span>
                 <div className="min-w-0">
                   <p className="font-semibold text-dp-text-primary">{s.name}</p>
-                  <p className="text-[12px] text-dp-text-tertiary truncate">{s.url || "No link set"}</p>
+                  <p className="text-[11px] text-dp-text-tertiary">{s.url.trim() ? "Visible when active" : "Hidden until URL is added"}</p>
                 </div>
               </div>
-              <button onClick={() => setSocialForm({ ...s })} className="p-2 border border-dp-border rounded-sm"><Pencil size={13} /></button>
-            </div>
+              <div>
+                <label className={labelCls}>URL</label>
+                <input
+                  type="url"
+                  className={inputCls}
+                  placeholder="https://"
+                  value={s.url}
+                  onChange={(e) => setSocials((prev) => prev.map((item) => item.id === s.id ? { ...item, url: e.target.value, is_active: e.target.value.trim() ? item.is_active : false } : item))}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-[12px] text-dp-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={s.is_active}
+                    onChange={(e) => setSocials((prev) => prev.map((item) => item.id === s.id ? { ...item, is_active: e.target.checked } : item))}
+                  />
+                  Active
+                </label>
+                <button type="submit" disabled={savingSocialId === s.id} className="inline-flex items-center gap-1 px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase rounded-sm disabled:opacity-50">
+                  <Save size={12} /> {savingSocialId === s.id ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
           ))}
         </div>
       </section>

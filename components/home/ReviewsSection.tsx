@@ -28,15 +28,6 @@ const FALLBACK_REVIEWS: HomepageReview[] = [
   { id: 2, author_name: "Mia H.", author_initials: "MH", rating: 5, review_date: "May 2024", text: "My partner couldn't believe this was a metal poster — it looks like a painting. Fast shipping, gorgeous packaging.", source: "google" },
 ]
 
-const FALLBACK_SOCIALS: SocialLink[] = [
-  { id: 1, name: "Reddit", url: "#", abbr: "r/", bg_color: "#FF4500", text_color: "#fff" },
-  { id: 2, name: "Discord", url: "#", abbr: "dis", bg_color: "#5865F2", text_color: "#fff" },
-  { id: 3, name: "Pinterest", url: "#", abbr: "P", bg_color: "#E60023", text_color: "#fff" },
-  { id: 4, name: "Facebook", url: "#", abbr: "f", bg_color: "#1877F2", text_color: "#fff" },
-  { id: 5, name: "X", url: "#", abbr: "X", bg_color: "#000", text_color: "#fff" },
-  { id: 6, name: "TikTok", url: "#", abbr: "TT", bg_color: "#010101", text_color: "#fff" },
-]
-
 function StarRow({ rating }: { rating: number }) {
   return (
     <div className="flex items-center gap-0.5" aria-label={`${rating} out of 5 stars`}>
@@ -59,7 +50,7 @@ function initialsFor(name: string, stored?: string) {
 
 export default function ReviewsSection() {
   const [reviews, setReviews] = useState<HomepageReview[]>(FALLBACK_REVIEWS)
-  const [socials, setSocials] = useState<SocialLink[]>(FALLBACK_SOCIALS)
+  const [socials, setSocials] = useState<SocialLink[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -69,12 +60,13 @@ export default function ReviewsSection() {
     ]).then(([r, s]) => {
       if (cancelled) return
       if (Array.isArray(r) && r.length) setReviews(r)
-      if (Array.isArray(s) && s.length) setSocials(s)
+      if (Array.isArray(s)) setSocials(s)
     })
     return () => { cancelled = true }
   }, [])
 
   const shown = reviews.filter((r) => r.source === "google")
+  const visibleSocials = socials.filter((s) => s.url.trim() && s.url.trim() !== "#")
   const average = shown.length ? (shown.reduce((sum, review) => sum + review.rating, 0) / shown.length).toFixed(1) : "0.0"
 
   return (
@@ -143,17 +135,17 @@ export default function ReviewsSection() {
           ))}
         </div>
 
-        <div className="text-center">
+        {visibleSocials.length > 0 && <div className="text-center">
           <p className="text-[13px] font-bold text-dp-text-secondary mb-4 uppercase tracking-widest">
             Join our Community on
           </p>
           <div className="flex flex-wrap justify-center gap-3">
-            {socials.map((s) => (
+            {visibleSocials.map((s) => (
               <a
                 key={s.id}
-                href={s.url || "#"}
-                target={s.url && s.url !== "#" ? "_blank" : undefined}
-                rel={s.url && s.url !== "#" ? "noopener noreferrer" : undefined}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dp-border hover:border-dp-border-hover hover:shadow-md transition-all"
                 aria-label={`Join on ${s.name}`}
               >
@@ -168,7 +160,7 @@ export default function ReviewsSection() {
               </a>
             ))}
           </div>
-        </div>
+        </div>}
       </div>
     </section>
   )

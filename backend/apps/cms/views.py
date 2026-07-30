@@ -54,7 +54,7 @@ class CommunitySocialLinkListView(generics.ListAPIView):
 
     def get_queryset(self):
         ensure_global_homepage_defaults()
-        return CommunitySocialLink.objects.filter(is_active=True)
+        return CommunitySocialLink.objects.filter(is_active=True).exclude(url="")
 
 
 class TrustBarItemListView(generics.ListAPIView):
