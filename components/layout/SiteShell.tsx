@@ -36,19 +36,27 @@ const VENDOR_CATEGORY_LABELS: Record<string, string> = {
   wallpanels: "Wallpanels",
 }
 
+let cachedPromoMessages: string[] | null = null
+
 function PromoBanner() {
-  const [messages, setMessages] = useState<string[]>([])
+  const [messages, setMessages] = useState<string[]>(cachedPromoMessages ?? [])
   const [idx, setIdx] = useState(0)
-  const [loaded, setLoaded] = useState(false)
+  const [loaded, setLoaded] = useState(cachedPromoMessages !== null)
 
   useEffect(() => {
     let cancelled = false
     apiFetch<{ messages: string[]; is_active: boolean }>("/cms/announcement/")
       .then((data) => {
         if (cancelled) return
-        setMessages(data.is_active && data.messages?.length ? data.messages : [])
+        const nextMessages = data.is_active && data.messages?.length ? data.messages : []
+        cachedPromoMessages = nextMessages
+        setMessages(nextMessages)
       })
-      .catch(() => { if (!cancelled) setMessages([]) })
+      .catch(() => {
+        if (cancelled) return
+        cachedPromoMessages ??= []
+        setMessages(cachedPromoMessages)
+      })
       .finally(() => { if (!cancelled) setLoaded(true) })
     return () => { cancelled = true }
   }, [])
