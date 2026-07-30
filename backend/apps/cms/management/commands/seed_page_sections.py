@@ -154,37 +154,9 @@ SECTIONS = [
     },
     {
         "page": "about",
-        "section_key": "press",
-        "title": "Press",
-        "sort_order": 5,
-        "content": {
-            "eyebrow": "As Seen In",
-            "items": [
-                {"name": "Wired", "quote": "\"The Spotify of wall art.\""},
-                {"name": "TechCrunch", "quote": "\"Disrupting how we think about home decor.\""},
-                {"name": "Fast Company", "quote": "\"The smartest mounting system we've ever tested.\""},
-                {"name": "Dezeen", "quote": "\"A marketplace with genuine taste and purpose.\""},
-            ],
-        },
-    },
-    {
-        "page": "about",
-        "section_key": "careers",
-        "title": "Careers CTA",
-        "sort_order": 6,
-        "content": {
-            "eyebrow": "Join Us",
-            "heading": "We're Hiring Brilliant People.",
-            "body": "Remote-first, passion-led, and growing fast. We're looking for engineers, designers, and art-lovers who want to build something that matters.",
-            "primaryCta": "See Open Roles",
-            "secondaryCta": "Send Speculative CV",
-        },
-    },
-    {
-        "page": "about",
         "section_key": "final_cta",
         "title": "Final CTA",
-        "sort_order": 7,
+        "sort_order": 5,
         "content": {
             "heading": "Ready to Transform Your Space?",
             "body": "Over 2.5 million designs waiting for your walls. Free shipping over $49.",

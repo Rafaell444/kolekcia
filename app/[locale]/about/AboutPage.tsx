@@ -7,16 +7,14 @@ import Link from "next/link"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import {
   ArrowRight, Zap, Shield, Award, Palette,
-  Globe2, Truck, Heart, Star, CheckCircle2, ChevronRight, Users,
+  Globe2, Truck, Heart, CheckCircle2, ChevronRight,
 } from "lucide-react"
-import { apiFetch, getRequestLocale, parseList, type PaginatedResponse } from "@/lib/api"
+import { apiFetch, getRequestLocale } from "@/lib/api"
 import { sectionContent, type PageSection } from "@/lib/page-sections"
 
-type Artist = { id: number; name: string; handle: string; avatar_url: string; badge: string; verified: boolean }
 type TimelineItem = { year: string; title: string; body: string }
 type ValueCard = { icon?: string; title: string; body: string }
 type TeamMember = { name: string; role: string; bio: string; img: string }
-type PressItem = { name: string; quote: string }
 type StatItem = { num: string; label: string }
 
 type AboutHeroContent = {
@@ -42,8 +40,6 @@ type AboutMissionContent = {
 type AboutValuesContent = { eyebrow?: string; heading?: string; cards?: ValueCard[] }
 type AboutTimelineContent = { eyebrow?: string; heading?: string; items?: TimelineItem[] }
 type AboutTeamContent = { eyebrow?: string; heading?: string; subheading?: string; members?: TeamMember[] }
-type AboutPressContent = { eyebrow?: string; items?: PressItem[] }
-type AboutCareersContent = { eyebrow?: string; heading?: string; body?: string; primaryCta?: string; secondaryCta?: string }
 type AboutFinalCtaContent = { heading?: string; body?: string; cta?: string }
 
 const TIMELINE = [
@@ -114,13 +110,6 @@ const TEAM = [
   },
 ]
 
-const PRESS = [
-  { name: "Wired",       quote: "\"The Spotify of wall art.\"" },
-  { name: "TechCrunch",  quote: "\"Disrupting how we think about home decor.\"" },
-  { name: "Fast Company",quote: "\"The smartest mounting system we've ever tested.\"" },
-  { name: "Dezeen",      quote: "\"A marketplace with genuine taste and purpose.\"" },
-]
-
 const DEFAULT_HERO: Required<AboutHeroContent> = {
   eyebrow: "Our Story",
   headline: "ART FOR\nEVERY\nWALL.",
@@ -173,7 +162,6 @@ function valueIcon(name?: string): React.ReactNode {
 }
 
 export default function AboutPage(): React.ReactElement {
-  const [artists, setArtists] = useState<Artist[]>([])
   const [sections, setSections] = useState<PageSection[]>([])
 
   const locale = getRequestLocale()
@@ -186,15 +174,10 @@ export default function AboutPage(): React.ReactElement {
   })
   const timelineSection = withFallback(sections, "timeline", locale, { eyebrow: "Our Journey", heading: "How We Got Here", items: TIMELINE })
   const team = withFallback(sections, "team", locale, { eyebrow: "The People", heading: "Meet the Team", subheading: "A small crew of artists, engineers and collectors — united by a belief that art should be for everyone.", members: TEAM })
-  const press = withFallback(sections, "press", locale, { eyebrow: "As Seen In", items: PRESS })
-  const careers = withFallback(sections, "careers", locale, { eyebrow: "Join Us", heading: "We're Hiring Brilliant People.", body: "Remote-first, passion-led, and growing fast. We're looking for engineers, designers, and art-lovers who want to build something that matters.", primaryCta: "See Open Roles", secondaryCta: "Send Speculative CV" })
   const finalCta = withFallback(sections, "final_cta", locale, { heading: "Ready to Transform Your Space?", body: "Over 2.5 million designs waiting for your walls. Free shipping over $49.", cta: "Browse the Shop" })
 
   useEffect(() => {
     let cancelled = false
-    apiFetch<Artist[] | PaginatedResponse<Artist>>("/products/artists/?page_size=6")
-      .then((d) => { if (!cancelled) setArtists(parseList(d).slice(0, 6)) })
-      .catch(() => {})
     apiFetch<PageSection[]>("/cms/pages/about/")
       .then((data) => { if (!cancelled) setSections(data) })
       .catch(() => {})
@@ -391,81 +374,6 @@ export default function AboutPage(): React.ReactElement {
                 <p className="text-[12px] text-white/60 leading-relaxed">{bio}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── FEATURED ARTISTS ─────────────────────────────────────── */}
-      <section className="dp-container py-20" aria-labelledby="artists-heading">
-        <div className="flex items-end justify-between mb-8">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-2">The Creators</p>
-            <h2 id="artists-heading" className="font-display text-5xl text-dp-text-primary">Star Artists</h2>
-          </div>
-          <LocalizedLink href="/catalog?sort=artist" className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
-            Browse All <ArrowRight size={12} />
-          </LocalizedLink>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-          {artists.map((artist) => (
-            <LocalizedLink
-              key={artist.id}
-              href={`/artists/${artist.handle}`}
-              className="group flex flex-col items-center gap-2 p-4 bg-dp-bg-surface border border-dp-border rounded-sm hover:border-dp-accent-cta/50 transition-colors text-center"
-            >
-              <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-dp-border group-hover:border-dp-accent-cta transition-colors">
-                {artist.avatar_url && <Image src={artist.avatar_url} alt={artist.name} fill className="object-cover" sizes="64px" />}
-              </div>
-              <div>
-                <p className="text-[12px] font-bold text-dp-text-primary group-hover:text-dp-accent-cta transition-colors leading-tight">{artist.name}</p>
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <Star size={9} className="fill-dp-accent-gold text-dp-accent-gold" />
-                  <span className="text-[10px] text-dp-text-tertiary">{artist.badge}</span>
-                </div>
-              </div>
-            </LocalizedLink>
-          ))}
-        </div>
-      </section>
-
-      {/* ── PRESS ────────────────────────────────────────────────── */}
-      <section id="press" className="bg-dp-bg-elevated border-y border-dp-border py-14" aria-labelledby="press-heading">
-        <div className="dp-container">
-          <p className="text-center text-[11px] font-black uppercase tracking-[0.22em] text-dp-text-tertiary mb-8">{press.eyebrow}</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {press.items.map(({ name, quote }) => (
-              <div key={name} className="bg-dp-bg-surface border border-dp-border rounded-sm px-6 py-5">
-                <p className="font-display text-2xl text-dp-text-primary mb-3">{name}</p>
-                <p className="text-[13px] text-dp-text-secondary italic leading-relaxed">{quote}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── CAREERS ──────────────────────────────────────────────── */}
-      <section id="careers" className="dp-container py-20" aria-labelledby="careers-heading">
-        <div className="bg-dp-text-primary rounded-sm overflow-hidden relative">
-          {/* Background pattern */}
-          <div className="absolute inset-0 opacity-5" style={{ backgroundImage: "repeating-linear-gradient(45deg, #fff 0, #fff 1px, transparent 0, transparent 50%)", backgroundSize: "12px 12px" }} aria-hidden />
-          <div className="relative flex flex-col md:flex-row items-center gap-8 px-8 md:px-16 py-14">
-            <div className="flex-1 text-center md:text-left">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">{careers.eyebrow}</p>
-              <h2 id="careers-heading" className="font-display text-5xl md:text-6xl text-white leading-tight mb-4">
-                {careers.heading}
-              </h2>
-              <p className="text-white/70 text-[14px] leading-relaxed max-w-md">
-                {careers.body}
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 shrink-0">
-              <LocalizedLink href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
-                {careers.primaryCta} <ArrowRight size={14} />
-              </LocalizedLink>
-              <LocalizedLink href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 border border-white/30 hover:border-white/60 text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-                <Users size={14} /> {careers.secondaryCta}
-              </LocalizedLink>
-            </div>
           </div>
         </div>
       </section>

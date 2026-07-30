@@ -66,6 +66,11 @@ DEFAULT_SOCIAL_LINKS = [
     ("TikTok", "TT", "#010101", "#ffffff", 5),
 ]
 
+OBSOLETE_PAGE_SECTIONS = [
+    ("about", "press"),
+    ("about", "careers"),
+]
+
 
 def ensure_global_homepage_defaults():
     from .models import CommunitySocialLink, FandomBrand, TrustBarItem
@@ -107,6 +112,9 @@ def ensure_global_homepage_defaults():
 def ensure_page_section_defaults():
     from .models import PageSection
     from .management.commands.seed_page_sections import SECTIONS
+
+    for page, section_key in OBSOLETE_PAGE_SECTIONS:
+        PageSection.objects.filter(page=page, section_key=section_key).delete()
 
     def merge_missing(default, current):
         if not current:

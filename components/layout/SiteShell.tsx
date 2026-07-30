@@ -36,26 +36,20 @@ const VENDOR_CATEGORY_LABELS: Record<string, string> = {
   wallpanels: "Wallpanels",
 }
 
-// ── Promo banner ──────────────────────────────────────────
-const FALLBACK_PROMO_MESSAGES = [
-  "FREE SHIPPING on orders over $49 — use code FREESHIP",
-  "LIMITED EDITIONS: New drops every Friday at noon",
-  "EARN XP with every purchase — unlock exclusive badges",
-]
-
 function PromoBanner() {
-  const [messages, setMessages] = useState<string[]>(FALLBACK_PROMO_MESSAGES)
+  const [messages, setMessages] = useState<string[]>([])
   const [idx, setIdx] = useState(0)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     apiFetch<{ messages: string[]; is_active: boolean }>("/cms/announcement/")
       .then((data) => {
-        if (!cancelled && data.is_active && data.messages?.length) {
-          setMessages(data.messages)
-        }
+        if (cancelled) return
+        setMessages(data.is_active && data.messages?.length ? data.messages : [])
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setMessages([]) })
+      .finally(() => { if (!cancelled) setLoaded(true) })
     return () => { cancelled = true }
   }, [])
 
@@ -65,7 +59,7 @@ function PromoBanner() {
     return () => clearInterval(id)
   }, [messages.length])
 
-  if (!messages.length) return null
+  if (!loaded || !messages.length) return null
 
   return (
     <div className="bg-dp-accent-cta text-white text-center py-2 px-4" role="banner">
