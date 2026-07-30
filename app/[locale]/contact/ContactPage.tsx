@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import { apiFetch, getRequestLocale } from "@/lib/api"
 import { sectionContent, type PageSection } from "@/lib/page-sections"
+import { usePageSections } from "@/lib/use-page-sections"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import {
   Mail, Phone, MapPin, Package,
@@ -374,7 +375,7 @@ function ContactForm() {
 export default function ContactPage() {
   const [supportEmail, setSupportEmail] = useState("support@kolekcia.com")
   const [supportPhone, setSupportPhone] = useState("")
-  const [sections, setSections] = useState<PageSection[]>([])
+  const { sections, loaded } = usePageSections("contact")
   const locale = getRequestLocale()
   const hero = withFallback<Required<ContactHeroContent>>(sections, "hero", locale, DEFAULT_CONTACT_HERO)
   const reasons = withFallback<Required<ContactReasonsContent>>(sections, "reasons", locale, DEFAULT_CONTACT_REASONS)
@@ -396,10 +397,15 @@ export default function ContactPage() {
         if (d.support_phone) setSupportPhone(d.support_phone)
       })
       .catch(() => {})
-    apiFetch<PageSection[]>("/cms/pages/contact/")
-      .then(setSections)
-      .catch(() => {})
   }, [])
+
+  if (!loaded) {
+    return (
+      <SiteShell>
+        <div className="min-h-[60vh] bg-dp-text-primary" aria-hidden />
+      </SiteShell>
+    )
+  }
 
   return (
     <SiteShell>

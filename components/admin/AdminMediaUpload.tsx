@@ -51,7 +51,7 @@ export default function AdminMediaUpload({
     }
   }
 
-  const isVideo = previewUrl && /\.(mp4|webm|mov|ogg)(\?|$)/i.test(previewUrl)
+  const isVideo = previewUrl && (accept.includes("video") || /\.(mp4|webm|mov|ogg)(\?|$)/i.test(previewUrl))
 
   return (
     <div className="flex flex-col gap-2">

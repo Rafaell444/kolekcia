@@ -25,6 +25,7 @@ export default function HeroCarousel(): React.ReactElement {
   const [dragging,   setDragging]   = useState(false)
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const activeVideoRef = useRef<HTMLVideoElement | null>(null)
   const dragStart    = useRef({ x: 0, t: 0 })
 
   // ── Fetch ─────────────────────────────────────────────────
@@ -61,6 +62,13 @@ export default function HeroCarousel(): React.ReactElement {
     const id = setInterval(next, 5000)
     return () => clearInterval(id)
   }, [next, paused, slides.length])
+
+  useEffect(() => {
+    const video = activeVideoRef.current
+    if (!video) return
+    video.currentTime = 0
+    void video.play().catch(() => {})
+  }, [current])
 
   // ── Track position (pure math, no ref tricks) ─────────────
   //
@@ -155,7 +163,7 @@ export default function HeroCarousel(): React.ReactElement {
         >
           {slides.map((s, i) => {
             const isVideo = s.type === "video" && s.video_url
-            const src = isVideo ? (s.video_poster_url || s.video_url) : s.image_url
+            const src = isVideo ? s.video_poster_url : s.image_url
             const active = i === current
 
             return (
@@ -189,15 +197,27 @@ export default function HeroCarousel(): React.ReactElement {
                     />
                   )}
 
-                  {isVideo && s.video_url ? (
+                  {isVideo && s.video_url && active ? (
                     <video
+                      ref={activeVideoRef}
                       src={s.video_url}
                       poster={s.video_poster_url || undefined}
                       autoPlay
                       muted
                       loop
                       playsInline
+                      preload="auto"
                       className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  ) : isVideo && s.video_poster_url ? (
+                    <Image
+                      src={s.video_poster_url}
+                      alt={s.headline}
+                      fill
+                      priority={i === 0}
+                      className="object-cover"
+                      draggable={false}
+                      sizes="90vw"
                     />
                   ) : src ? (
                     <Image

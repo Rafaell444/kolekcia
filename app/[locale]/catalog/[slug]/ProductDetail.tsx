@@ -23,6 +23,8 @@ import ProductCmsSections, { type ProductCmsContent } from "@/components/product
 import Breadcrumb from "@/components/seo/Breadcrumb"
 import { DEFAULT_LOCALE, isValidLocale } from "@/lib/i18n"
 import { useLocalePrefix } from "@/lib/use-localized-href"
+import { sectionContent } from "@/lib/page-sections"
+import { usePageSections } from "@/lib/use-page-sections"
 
 // ── Variant selector ──────────────────────────────────────
 function VariantSelector<T extends { id: string; label: string; surcharge: number }>({
@@ -264,7 +266,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const [giftWrapPrice, setGiftWrapPrice] = useState(0)
   const [processingOption, setProcessingOption] = useState("standard")
   const [processingOptions, setProcessingOptions] = useState<ProcessingOpt[]>([])
-  const [productCmsContent, setProductCmsContent] = useState<ProductCmsContent | null>(null)
+  const { sections: productCmsSections, loaded: productCmsLoaded } = usePageSections("product")
 
   const wishlisted = isWishlisted(product.id)
 
@@ -304,18 +306,10 @@ export default function ProductDetail({ product, categoryContext }: { product: A
       .catch(() => {})
   }, [isWallpanel])
 
-  useEffect(() => {
-    let cancelled = false
+  const productCmsContent = useMemo(() => {
     const sectionKey = isFigure ? "figures" : isWallpanel ? "wallpanels" : "default"
-    apiFetch<Array<{ section_key: string; content: Record<string, unknown> }>>("/cms/pages/product/")
-      .then((sections) => {
-        if (cancelled) return
-        const match = sections.find((s) => s.section_key === sectionKey)
-        if (match?.content) setProductCmsContent(match.content as ProductCmsContent)
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [isFigure, isWallpanel])
+    return sectionContent<ProductCmsContent>(productCmsSections, sectionKey, locale)
+  }, [isFigure, isWallpanel, locale, productCmsSections])
 
   useEffect(() => () => {
     if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
@@ -1084,7 +1078,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
       {productCmsContent?.blocks?.length ? (
         <ProductCmsSections content={productCmsContent} />
-      ) : isFigure ? (
+      ) : !productCmsLoaded && (isFigure || isWallpanel) ? null : isFigure ? (
         <>
           <section className="border-y border-dp-border bg-dp-bg-elevated py-14" aria-labelledby="figures-craft-heading">
             <div className="dp-container">

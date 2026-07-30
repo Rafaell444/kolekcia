@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import React, { useEffect, useState } from "react"
+import React from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
 import Link from "next/link"
@@ -9,8 +9,9 @@ import {
   ArrowRight, Zap, Shield, Award, Palette,
   Globe2, Truck, Heart, CheckCircle2, ChevronRight,
 } from "lucide-react"
-import { apiFetch, getRequestLocale } from "@/lib/api"
+import { getRequestLocale } from "@/lib/api"
 import { sectionContent, type PageSection } from "@/lib/page-sections"
+import { usePageSections } from "@/lib/use-page-sections"
 
 type TimelineItem = { year: string; title: string; body: string }
 type ValueCard = { icon?: string; title: string; body: string }
@@ -162,7 +163,7 @@ function valueIcon(name?: string): React.ReactNode {
 }
 
 export default function AboutPage(): React.ReactElement {
-  const [sections, setSections] = useState<PageSection[]>([])
+  const { sections, loaded } = usePageSections("about")
 
   const locale = getRequestLocale()
   const hero = withFallback(sections, "hero", locale, DEFAULT_HERO)
@@ -176,13 +177,13 @@ export default function AboutPage(): React.ReactElement {
   const team = withFallback(sections, "team", locale, { eyebrow: "The People", heading: "Meet the Team", subheading: "A small crew of artists, engineers and collectors — united by a belief that art should be for everyone.", members: TEAM })
   const finalCta = withFallback(sections, "final_cta", locale, { heading: "Ready to Transform Your Space?", body: "Over 2.5 million designs waiting for your walls. Free shipping over $49.", cta: "Browse the Shop" })
 
-  useEffect(() => {
-    let cancelled = false
-    apiFetch<PageSection[]>("/cms/pages/about/")
-      .then((data) => { if (!cancelled) setSections(data) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
+  if (!loaded) {
+    return (
+      <SiteShell>
+        <div className="min-h-[70vh] bg-dp-text-primary" aria-hidden />
+      </SiteShell>
+    )
+  }
 
   return (
     <SiteShell>
