@@ -4,11 +4,12 @@ from .models import PromoCode, PromoCodeUsage
 
 class PromoCodeSerializer(serializers.ModelSerializer):
     usage_count = serializers.SerializerMethodField()
+    owner_email = serializers.EmailField(source="owner.email", read_only=True, allow_null=True)
 
     class Meta:
         model = PromoCode
         fields = (
-            "id", "code", "discount_type", "discount_value",
+            "id", "code", "owner", "owner_email", "discount_type", "discount_value",
             "max_uses", "max_uses_per_user", "min_order_value",
             "expires_at", "is_active", "usage_count", "created_at",
         )

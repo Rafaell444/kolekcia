@@ -27,8 +27,8 @@ __pycache__/
 *.py[cod]
 *.pyo
 
-# Django — db.sqlite3 is committed intentionally (seeded demo data)
-# backend/db.sqlite3  ← keep tracked
+# Django
+*.sqlite3
 backend/media/
 
 # Editor / IDE
@@ -36,3 +36,4 @@ backend/media/
 
 # TypeScript
 tsconfig.tsbuildinfo
+.env*

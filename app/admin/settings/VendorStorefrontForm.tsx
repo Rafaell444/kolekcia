@@ -3,13 +3,18 @@
 import React, { useEffect, useState } from "react"
 import { adminFetch, getAdminToken } from "@/lib/admin-auth"
 import { Save, Store, Upload, Mail } from "lucide-react"
+import TranslationFields from "@/components/admin/TranslationFields"
 
 type VendorProfile = {
   name: string
+  name_ka?: string
+  name_ru?: string
   slug: string
   logo_url: string
   banner_url: string
   description: string
+  description_ka?: string
+  description_ru?: string
   catalog_category_slug: string
   social_instagram: string
   social_facebook: string
@@ -18,7 +23,7 @@ type VendorProfile = {
 }
 
 const EMPTY: VendorProfile = {
-  name: "", slug: "", logo_url: "", banner_url: "", description: "", catalog_category_slug: "",
+  name: "", name_ka: "", name_ru: "", slug: "", logo_url: "", banner_url: "", description: "", description_ka: "", description_ru: "", catalog_category_slug: "",
   social_instagram: "", social_facebook: "", social_tiktok: "", social_youtube: "",
 }
 
@@ -186,6 +191,7 @@ export function VendorStorefrontForm({
   return (
     <div className="flex flex-col gap-5">
       <Field label="Store name" value={draft.name} onChange={(v) => set("name", v)} />
+      <TranslationFields value={draft} onChange={setDraft} inputClassName="w-full px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "name_ka", label: "Store name · Georgian" }, { key: "name_ru", label: "Store name · Russian" }, { key: "description_ka", label: "Description · Georgian", multiline: true }, { key: "description_ru", label: "Description · Russian", multiline: true }]} />
       <MediaUpload label="Logo" previewUrl={draft.logo_url} kind="logo" onUploaded={(url) => set("logo_url", url)} />
       <MediaUpload label="Banner" previewUrl={draft.banner_url} kind="banner" onUploaded={(url) => set("banner_url", url)} />
       <Field label="Short description" value={draft.description} onChange={(v) => set("description", v)} multiline />

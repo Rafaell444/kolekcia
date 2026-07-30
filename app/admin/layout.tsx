@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Users, Paintbrush,
   Gavel, MessageSquare, Tag, Settings, ChevronRight, BarChart2,
   Image as ImageIcon, Bell, LogOut, Trophy, Shield, Store, Menu, X, Truck,
-  FileText, ScrollText, Mail,
+  FileText, ScrollText, Mail, Megaphone,
 } from "lucide-react"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { ThemeProvider } from "@/components/ThemeProvider"
@@ -33,6 +33,7 @@ const SUPERADMIN_NAV = [
       { href: "/admin/orders",        label: "Orders",         Icon: ShoppingCart },
       { href: "/admin/custom-orders", label: "Custom Orders",  Icon: Package },
       { href: "/admin/coupons",       label: "Coupons",        Icon: Tag },
+      { href: "/admin/creators",      label: "Creators",       Icon: Megaphone },
     ],
   },
   {

@@ -177,9 +177,9 @@ function PriceRangeSlider({
   const leftPct  = valueToPct(min)
   const rightPct = valueToPct(max)
 
-  // Display values are in local currency (USD × rate)
-  function fmt(usd: number) {
-    const v = Math.round(usd * rate)
+  // Display values as-is for the active market (no FX)
+  function fmt(amount: number) {
+    const v = Math.round(amount)
     return v >= 1000 ? `${sym}${(v / 1000).toFixed(1)}k` : `${sym}${v}`
   }
 

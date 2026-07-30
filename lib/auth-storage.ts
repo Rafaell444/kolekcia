@@ -34,18 +34,17 @@ async function clearRefreshCookie(): Promise<void> {
  */
 export function storeTokens(access: string, refresh: string, rememberMe: boolean): void {
   if (typeof window === "undefined") return
+  // Security fix #1: refresh token stored ONLY in httpOnly cookie, never in storage
   if (rememberMe) {
     sessionStorage.removeItem(ACCESS_KEY)
     sessionStorage.removeItem(REFRESH_KEY)
     sessionStorage.removeItem(USER_KEY)
     localStorage.setItem(ACCESS_KEY, access)
-    localStorage.setItem(REFRESH_KEY, refresh)
   } else {
     localStorage.removeItem(ACCESS_KEY)
     localStorage.removeItem(REFRESH_KEY)
     localStorage.removeItem(USER_KEY)
     sessionStorage.setItem(ACCESS_KEY, access)
-    sessionStorage.setItem(REFRESH_KEY, refresh)
   }
   void persistRefreshCookie(refresh, rememberMe)
 }

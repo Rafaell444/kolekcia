@@ -12,6 +12,12 @@ from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 
 from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption
+from .pricing import (
+    normalize_currency,
+    resolve_gift_wrap_price,
+    resolve_processing,
+    resolve_unit_price,
+)
 from .serializers import (
     CartSerializer,
     AddToCartSerializer,
@@ -39,23 +45,11 @@ def _absolute_product_image(url: str, request=None) -> str:
     return url
 
 
-def _resolve_gift_wrap_price(variant, size_variant, currency="USD"):
-    """Resolve per-vendor gift wrap price in the requested currency."""
-    vendor = None
-    if size_variant:
-        vendor = getattr(size_variant.product, "vendor", None)
-    elif variant:
-        vendor = getattr(variant.product, "vendor", None)
-    if vendor:
-        return Decimal(vendor.gift_wrap_price_gel if currency == "GEL" else vendor.gift_wrap_price_usd)
-    try:
-        from apps.cms.models import SiteSettings
-        setting = SiteSettings.objects.filter(key="gift_wrap_price").first()
-        if setting and setting.value:
-            return Decimal(setting.value)
-    except Exception:
-        pass
-    return Decimal("0")
+# Back-compat aliases used elsewhere in this module
+_resolve_gift_wrap_price = resolve_gift_wrap_price
+_resolve_processing = resolve_processing
+_resolve_unit_price = resolve_unit_price
+_normalize_currency = normalize_currency
 
 
 class CheckoutThrottle(ScopedRateThrottle):
@@ -115,42 +109,68 @@ class CartItemView(APIView):
             if variant.stock < quantity:
                 return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
 
+        currency = _normalize_currency(currency)
+        unit_price = _resolve_unit_price(variant, size_variant, currency)
         gift_wrap_price = _resolve_gift_wrap_price(variant, size_variant, currency) if gift_wrap else Decimal("0")
+        processing_fee, processing_label, processing_days = _resolve_processing(
+            variant, size_variant, processing_option, currency
+        )
 
         cart, _ = Cart.objects.get_or_create(user=request.user)
 
         defaults = {
             "quantity": quantity,
+            "unit_price": unit_price,
+            "currency": currency,
             "gift_wrap": gift_wrap,
             "gift_wrap_price": gift_wrap_price,
             "gift_wrap_note": gift_wrap_note,
             "gift_wrap_image_url": gift_wrap_image_url,
             "delivery_type": delivery_type,
             "processing_option": processing_option,
+            "processing_fee": processing_fee,
+            "processing_label": processing_label,
+            "processing_days": processing_days,
         }
+
+        update_fields = [
+            "quantity", "unit_price", "currency",
+            "gift_wrap", "gift_wrap_price", "gift_wrap_note", "gift_wrap_image_url",
+            "processing_option", "processing_fee", "processing_label", "processing_days",
+        ]
 
         if size_variant:
             item = CartItem.objects.filter(cart=cart, size_variant=size_variant).first()
             if item:
                 item.quantity = F("quantity") + quantity
+                item.unit_price = unit_price
+                item.currency = currency
                 item.gift_wrap = gift_wrap
                 item.gift_wrap_price = gift_wrap_price
                 item.gift_wrap_note = gift_wrap_note
                 item.gift_wrap_image_url = gift_wrap_image_url
                 item.processing_option = processing_option
-                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "gift_wrap_note", "gift_wrap_image_url", "processing_option"])
+                item.processing_fee = processing_fee
+                item.processing_label = processing_label
+                item.processing_days = processing_days
+                item.save(update_fields=update_fields)
             else:
                 CartItem.objects.create(cart=cart, size_variant=size_variant, **defaults)
         else:
             item = CartItem.objects.filter(cart=cart, variant=variant).first()
             if item:
                 item.quantity = F("quantity") + quantity
+                item.unit_price = unit_price
+                item.currency = currency
                 item.gift_wrap = gift_wrap
                 item.gift_wrap_price = gift_wrap_price
                 item.gift_wrap_note = gift_wrap_note
                 item.gift_wrap_image_url = gift_wrap_image_url
                 item.processing_option = processing_option
-                item.save(update_fields=["quantity", "gift_wrap", "gift_wrap_price", "gift_wrap_note", "gift_wrap_image_url", "processing_option"])
+                item.processing_fee = processing_fee
+                item.processing_label = processing_label
+                item.processing_days = processing_days
+                item.save(update_fields=update_fields)
             else:
                 CartItem.objects.create(cart=cart, variant=variant, **defaults)
 
@@ -193,6 +213,8 @@ class PromoApplyView(APIView):
 
     def post(self, request):
         from apps.promo.models import PromoCode
+        from apps.creators.services import product_subtotal_from_cart
+
         code = request.data.get("code", "").strip().upper()
         if not code:
             return Response({"detail": "Promo code is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -205,8 +227,19 @@ class PromoApplyView(APIView):
         if not promo.is_active and not promo.user_has_grant(request.user):
             return Response({"detail": "Invalid or expired promo code."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Creator vouchers: owner cannot use their own code
+        if promo.owner_id and promo.owner_id == request.user.id:
+            return Response(
+                {"detail": "You cannot use your own creator voucher."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         cart, _ = Cart.objects.get_or_create(user=request.user)
-        error = promo.validate(request.user, cart.subtotal)
+        # Only one voucher at a time — applying replaces any existing code
+        validate_base = (
+            product_subtotal_from_cart(cart) if promo.owner_id else cart.subtotal
+        )
+        error = promo.validate(request.user, validate_base)
         if error:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -217,6 +250,57 @@ class PromoApplyView(APIView):
     def delete(self, request):
         Cart.objects.filter(user=request.user).update(promo_code=None)
         cart, _ = Cart.objects.get_or_create(user=request.user)
+        return Response(CartSerializer(cart, context={"request": request}).data)
+
+
+class CartRepriceView(APIView):
+    """
+    Re-resolve all cart item prices for a market currency using admin-written
+    regional prices (no FX). Used when checkout shipping country switches market.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        currency = _normalize_currency(request.data.get("currency", "USD"))
+        cart, _ = Cart.objects.prefetch_related(
+            "items__variant__product",
+            "items__size_variant__product",
+        ).get_or_create(user=request.user)
+
+        for item in cart.items.select_related(
+            "variant__product__vendor",
+            "size_variant__product__vendor",
+        ):
+            unit_price = _resolve_unit_price(item.variant, item.size_variant, currency)
+            wrap = (
+                _resolve_gift_wrap_price(item.variant, item.size_variant, currency)
+                if item.gift_wrap else Decimal("0")
+            )
+            proc_fee, proc_label, proc_days = _resolve_processing(
+                item.variant, item.size_variant, item.processing_option or "", currency
+            )
+            if not item.processing_option:
+                proc_fee, proc_label, proc_days = Decimal("0"), "", ""
+            item.unit_price = unit_price
+            item.currency = currency
+            item.gift_wrap_price = wrap
+            item.processing_fee = proc_fee
+            if proc_label:
+                item.processing_label = proc_label
+            if proc_days:
+                item.processing_days = proc_days
+            item.save(update_fields=[
+                "unit_price", "currency", "gift_wrap_price",
+                "processing_fee", "processing_label", "processing_days",
+            ])
+
+        cart = Cart.objects.prefetch_related(
+            "items__variant__product__images",
+            "items__variant__size",
+            "items__variant__finish",
+            "items__variant__frame",
+            "items__size_variant__product__images",
+        ).get(pk=cart.pk)
         return Response(CartSerializer(cart, context={"request": request}).data)
 
 
@@ -291,15 +375,8 @@ class CheckoutView(APIView):
                 if sv and sv.stock is not None:
                     SizeVariant.objects.filter(pk=item.size_variant_id).update(stock=F("stock") - item.quantity)
 
-        subtotal = cart.subtotal
-        discount = Decimal("0")
-        promo = cart.promo_code
-        if promo:
-            from apps.promo.models import PromoCode
-            discount = promo.calculate_discount(subtotal)
-
-        # Delivery price
-        currency = data.get("currency", "USD")
+        # Resolve all money in checkout currency (admin market prices, no FX)
+        currency = _normalize_currency(data.get("currency", "USD"))
         req_delivery_type = data.get("delivery_type", "standard")
         delivery_price = Decimal("0")
         try:
@@ -309,12 +386,46 @@ class CheckoutView(APIView):
         except Exception:
             pass
 
-        # Gift wrap total
-        gift_wrap_total = sum(
-            Decimal(item.gift_wrap_price) for item in items_to_process if item.gift_wrap
-        )
+        # Build priced lines (re-resolve unit / wrap / processing for checkout currency)
+        priced_lines = []
+        product_subtotal = Decimal("0")
+        gift_wrap_total = Decimal("0")
+        processing_fee_total = Decimal("0")
+        for item in items_to_process:
+            unit_price = _resolve_unit_price(item.variant, item.size_variant, currency)
+            wrap = (
+                _resolve_gift_wrap_price(item.variant, item.size_variant, currency)
+                if item.gift_wrap else Decimal("0")
+            )
+            proc_fee, proc_label, proc_days = _resolve_processing(
+                item.variant, item.size_variant, item.processing_option or "", currency
+            )
+            if not item.processing_option:
+                proc_fee, proc_label, proc_days = Decimal("0"), "", ""
+            product_subtotal += unit_price * item.quantity
+            gift_wrap_total += wrap
+            processing_fee_total += proc_fee
+            priced_lines.append({
+                "item": item,
+                "unit_price": unit_price,
+                "wrap": wrap,
+                "proc_fee": proc_fee,
+                "proc_label": proc_label or item.processing_label,
+                "proc_days": proc_days or item.processing_days,
+            })
 
-        total = subtotal - discount + delivery_price + gift_wrap_total
+        discount = Decimal("0")
+        promo = cart.promo_code
+        if promo:
+            if promo.owner_id:
+                # Creator voucher: one shared % off products only
+                discount = promo.calculate_product_discount(product_subtotal)
+            else:
+                # Regular promo applies to products + extras (not shipping)
+                discount = promo.calculate_discount(product_subtotal + gift_wrap_total + processing_fee_total)
+
+        # subtotal = products only; extras + shipping listed separately
+        total = product_subtotal + gift_wrap_total + processing_fee_total - discount + delivery_price
 
         order = Order.objects.create(
             user=request.user,
@@ -329,36 +440,29 @@ class CheckoutView(APIView):
             shipping_email=data["shipping_email"],
             shipping_phone=data.get("shipping_phone", ""),
             promo_code=promo,
-            subtotal=subtotal,
+            subtotal=product_subtotal,
             discount=discount,
             delivery_type=req_delivery_type,
             delivery_price=delivery_price,
             gift_wrap_total=gift_wrap_total,
+            processing_fee_total=processing_fee_total,
             currency=currency,
             total=total,
-            status="pending",
+            status="processing",
         )
 
-        for item in items_to_process:
+        for line in priced_lines:
+            item = line["item"]
             if item.size_variant_id:
                 sv = item.size_variant
                 product = sv.product
                 img = product.images.first()
-                # Prefer size-variant image when assigned
                 sv_img = sv.images.first() if hasattr(sv, "images") else None
                 image_url = ""
                 if sv_img:
                     image_url = sv_img.url or (sv_img.video_file.url if sv_img.video_file else "")
                 elif img:
                     image_url = img.url or (img.video_file.url if getattr(img, "video_file", None) else "")
-                if currency == "GEL" and sv.price_gel is not None:
-                    unit_price = Decimal(sv.price_gel)
-                elif currency == "EUR" and sv.price_eur is not None:
-                    unit_price = Decimal(sv.price_eur)
-                elif currency == "GBP" and sv.price_gbp is not None:
-                    unit_price = Decimal(sv.price_gbp)
-                else:
-                    unit_price = Decimal(sv.price_usd)
                 OrderItem.objects.create(
                     order=order,
                     vendor=product.vendor,
@@ -368,12 +472,15 @@ class CheckoutView(APIView):
                     size_label=sv.label,
                     finish_label="",
                     frame_label="",
-                    price=unit_price,
+                    price=line["unit_price"],
                     quantity=item.quantity,
                     gift_wrap=item.gift_wrap,
                     gift_wrap_note=item.gift_wrap_note,
                     gift_wrap_image_url=_absolute_product_image(item.gift_wrap_image_url, request),
                     processing_option=item.processing_option,
+                    processing_fee=line["proc_fee"],
+                    processing_label=line["proc_label"],
+                    processing_days=line["proc_days"],
                 )
             elif item.variant_id:
                 variant = item.variant
@@ -390,15 +497,27 @@ class CheckoutView(APIView):
                     size_label=variant.size.label,
                     finish_label=variant.finish.label,
                     frame_label=variant.frame.label,
-                    price=variant.price,
+                    price=line["unit_price"],
                     quantity=item.quantity,
                     gift_wrap=item.gift_wrap,
                     gift_wrap_note=item.gift_wrap_note,
                     gift_wrap_image_url=_absolute_product_image(item.gift_wrap_image_url, request),
                     processing_option=item.processing_option,
+                    processing_fee=line["proc_fee"],
+                    processing_label=line["proc_label"],
+                    processing_days=line["proc_days"],
                 )
 
-        OrderStatusHistory.objects.create(order=order, status="pending", changed_by=request.user)
+        OrderStatusHistory.objects.create(
+            order=order, status="processing", note="Payment successful — order is being processed.", changed_by=request.user
+        )
+
+        # Creator voucher earnings credit on paid checkout
+        try:
+            from apps.creators.services import credit_creator_for_paid_order
+            credit_creator_for_paid_order(order)
+        except Exception:
+            pass
 
         try:
             from apps.admin_api.audit import log_action
@@ -407,6 +526,7 @@ class CheckoutView(APIView):
                 "total": str(order.total),
                 "currency": currency,
                 "item_count": len(items_to_process),
+                "status": "processing",
             })
         except Exception:
             pass

@@ -3,11 +3,12 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import HeroSlide, Banner, FAQ, SiteSettings, AnnouncementBar, PageSection, HomepageReview, CommunitySocialLink
+from .models import HeroSlide, Banner, FAQ, SiteSettings, AnnouncementBar, PageSection, HomepageReview, CommunitySocialLink, TrustBarItem, FandomBrand
 from .serializers import (
     HeroSlideSerializer, BannerSerializer, FAQSerializer, SiteSettingsSerializer,
     AnnouncementBarSerializer, PageSectionSerializer, HomepageReviewSerializer,
     CommunitySocialLinkSerializer,
+    TrustBarItemSerializer, FandomBrandSerializer,
 )
 
 
@@ -48,6 +49,20 @@ class HomepageReviewListView(generics.ListAPIView):
 class CommunitySocialLinkListView(generics.ListAPIView):
     queryset = CommunitySocialLink.objects.filter(is_active=True)
     serializer_class = CommunitySocialLinkSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+
+class TrustBarItemListView(generics.ListAPIView):
+    queryset = TrustBarItem.objects.filter(is_active=True)
+    serializer_class = TrustBarItemSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+
+class FandomBrandListView(generics.ListAPIView):
+    queryset = FandomBrand.objects.filter(is_active=True)
+    serializer_class = FandomBrandSerializer
     permission_classes = [AllowAny]
     pagination_class = None
 

@@ -266,10 +266,12 @@ class Command(BaseCommand):
                 ProductImage.objects.create(product=product, url=img_url, order=0)
 
                 for sort_order, (label, sv_price) in enumerate(size_variants):
+                    usd = Decimal(sv_price)
                     SizeVariant.objects.create(
                         product=product,
                         label=label,
-                        price_usd=Decimal(sv_price),
+                        price_usd=usd,
+                        price_gel=(usd * Decimal("2.65")).quantize(Decimal("0.01")),
                         sort_order=sort_order,
                         is_active=True,
                     )

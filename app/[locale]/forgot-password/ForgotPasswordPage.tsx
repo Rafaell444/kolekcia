@@ -6,11 +6,19 @@ import SiteShell from "@/components/layout/SiteShell"
 import { Mail, ArrowLeft, CheckCircle } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 
+type ForgotPasswordResponse = {
+  detail: string
+  remaining?: number
+  limit?: number
+}
+
 export default function ForgotPasswordPage(): React.ReactElement {
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState("")
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const [limit, setLimit] = useState(5)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -18,14 +26,31 @@ export default function ForgotPasswordPage(): React.ReactElement {
     if (!email) { setError("Email is required."); return }
     setLoading(true)
     try {
-      await apiFetch("/auth/forgot-password/", { method: "POST", body: JSON.stringify({ email }) })
+      const data = await apiFetch<ForgotPasswordResponse>("/auth/forgot-password/", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      })
+      if (typeof data.limit === "number") setLimit(data.limit)
+      if (typeof data.remaining === "number") setRemaining(data.remaining)
       setSent(true)
-    } catch {
-      setError("Something went wrong. Please try again.")
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number; data?: ForgotPasswordResponse }
+      if (typeof apiErr?.data?.limit === "number") setLimit(apiErr.data.limit)
+      if (typeof apiErr?.data?.remaining === "number") setRemaining(apiErr.data.remaining)
+      if (apiErr?.status === 429) {
+        setError(apiErr.data?.detail || "Too many reset requests. Try again later.")
+      } else {
+        setError("Something went wrong. Please try again.")
+      }
     } finally {
       setLoading(false)
     }
   }
+
+  const attemptsLeftLabel =
+    remaining === null
+      ? `Up to ${limit} reset emails per hour for this address.`
+      : `${remaining} of ${limit} reset emails remaining this hour.`
 
   return (
     <SiteShell>
@@ -43,6 +68,7 @@ export default function ForgotPasswordPage(): React.ReactElement {
               <p className="text-[13px] text-dp-text-secondary">
                 If <strong>{email}</strong> is registered, you will receive a password reset link shortly.
               </p>
+              <p className="text-[12px] text-dp-text-tertiary">{attemptsLeftLabel}</p>
               <LocalizedLink href="/login" className="text-[13px] font-bold text-dp-accent-cta hover:text-dp-accent-cta-hover">
                 Back to login
               </LocalizedLink>
@@ -73,9 +99,11 @@ export default function ForgotPasswordPage(): React.ReactElement {
                 </div>
               </div>
 
+              <p className="text-[11px] text-dp-text-tertiary -mt-2">{attemptsLeftLabel}</p>
+
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || remaining === 0}
                 className="flex items-center justify-center gap-2 w-full py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors"
               >
                 {loading ? (

@@ -7,12 +7,16 @@ import { adminFetch } from "@/lib/admin-auth"
 type AnnouncementBar = {
   id: number
   messages: string[]
+  messages_ka?: string[]
+  messages_ru?: string[]
   is_active: boolean
 }
 
 export default function BannersAdminPanel({ embedded = false }: { embedded?: boolean }) {
   const [bar, setBar] = useState<AnnouncementBar | null>(null)
   const [messages, setMessages] = useState<string[]>([])
+  const [messagesKa, setMessagesKa] = useState<string[]>([])
+  const [messagesRu, setMessagesRu] = useState<string[]>([])
   const [isActive, setIsActive] = useState(true)
   const [newMsg, setNewMsg] = useState("")
   const [loading, setLoading] = useState(true)
@@ -23,6 +27,8 @@ export default function BannersAdminPanel({ embedded = false }: { embedded?: boo
       .then((d) => {
         setBar(d)
         setMessages(d.messages ?? [])
+        setMessagesKa(d.messages_ka ?? [])
+        setMessagesRu(d.messages_ru ?? [])
         setIsActive(d.is_active)
       })
       .catch(() => {})
@@ -34,10 +40,12 @@ export default function BannersAdminPanel({ embedded = false }: { embedded?: boo
     try {
       const updated = await adminFetch<AnnouncementBar>("/admin/announcement/", {
         method: "PATCH",
-        body: JSON.stringify({ messages, is_active: isActive }),
+        body: JSON.stringify({ messages, messages_ka: messagesKa, messages_ru: messagesRu, is_active: isActive }),
       })
       setBar(updated)
       setMessages(updated.messages)
+      setMessagesKa(updated.messages_ka ?? [])
+      setMessagesRu(updated.messages_ru ?? [])
       setIsActive(updated.is_active)
     } catch {
       alert("Failed to save.")
@@ -108,6 +116,17 @@ export default function BannersAdminPanel({ embedded = false }: { embedded?: boo
           {messages.length === 0 && <p className="text-center py-12 text-dp-text-tertiary">No messages configured.</p>}
         </div>
       )}
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <label className="flex flex-col gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Georgian messages</span>
+          <textarea rows={5} value={messagesKa.join("\n")} onChange={(e) => setMessagesKa(e.target.value.split("\n"))} placeholder="One message per line" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
+        </label>
+        <label className="flex flex-col gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Russian messages</span>
+          <textarea rows={5} value={messagesRu.join("\n")} onChange={(e) => setMessagesRu(e.target.value.split("\n"))} placeholder="One message per line" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
+        </label>
+      </div>
 
       <div className="flex gap-2">
         <input

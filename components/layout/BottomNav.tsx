@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
+import { getAccessToken } from "@/lib/auth-storage"
 
 // ─── SVG Icons ───────────────────────────────────────────────
 
@@ -107,15 +108,16 @@ export default function BottomNav() {
   const searchParams = useSearchParams()
   const [cartCount, setCartCount] = useState(0)
 
-  // Lightly fetch cart item count (best-effort, no crash if fails)
+  // Lightly fetch cart item count — only when authenticated
   useEffect(() => {
+    if (!getAccessToken()) return
     authFetch<{ items: { quantity: number }[] }>("/orders/cart/")
       .then((data) => {
         const count = (data.items ?? []).reduce((s: number, i: { quantity: number }) => s + i.quantity, 0)
         setCartCount(count)
       })
       .catch(() => {})
-  }, [pathname]) // re-check when page changes
+  }, [pathname])
 
   function isActive(href: string, key: string) {
     if (key === "home") return pathname === "/"

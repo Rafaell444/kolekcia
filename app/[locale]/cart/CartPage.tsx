@@ -1,48 +1,43 @@
 "use client"
 
-import React, { useState } from "react"
+import React from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import Image from "next/image"
-import { ShoppingCart, ArrowRight, Trash2, Tag, X } from "lucide-react"
+import { ShoppingCart, ArrowRight, Trash2 } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
 import { useAuth } from "@/contexts/auth-context"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
 import { useLocale } from "@/contexts/locale-context"
 import { CartItemExtras } from "@/components/cart/CartItemExtras"
+import { PromoCodeBox } from "@/components/cart/PromoCodeBox"
 
 export default function CartPage(): React.ReactElement {
   useRequireAuth()
   const { user } = useAuth()
-  const { cart, loading, removeItem, updateQuantity, applyPromo, removePromo } = useCart()
+  const { cart, loading, removeItem, updateQuantity } = useCart()
   const { formatPrice } = useLocale()
-  const [promoInput, setPromoInput] = useState("")
-  const [promoError, setPromoError] = useState("")
-  const [promoLoading, setPromoLoading] = useState(false)
 
-  const subtotal = cart ? parseFloat(cart.subtotal) : 0
-  const giftWrapTotal = cart?.items.reduce(
+  const items = cart?.items ?? []
+  const giftWrapTotal = items.reduce(
     (sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0),
     0,
-  ) ?? 0
-  const shipping = subtotal >= 49 ? 0 : 7.99
-  const total = subtotal + shipping
-
-  async function handleApplyPromo(e: React.FormEvent) {
-    e.preventDefault()
-    if (!promoInput.trim()) return
-    setPromoError("")
-    setPromoLoading(true)
-    try {
-      await applyPromo(promoInput.trim())
-      setPromoInput("")
-    } catch (err: unknown) {
-      const apiErr = err as { data?: { detail?: string } }
-      setPromoError(apiErr?.data?.detail ?? "Invalid promo code.")
-    } finally {
-      setPromoLoading(false)
-    }
-  }
+  )
+  const processingTotal = items.reduce(
+    (sum, item) => sum + (item.processing_option ? parseFloat(item.processing_fee || "0") : 0),
+    0,
+  )
+  const productsTotal = items.reduce((sum, item) => {
+    const unit = parseFloat(item.unit_price || "0")
+    if (unit > 0) return sum + unit * item.quantity
+    const line = parseFloat(item.line_total || "0")
+    const wrap = item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0
+    const proc = item.processing_option ? parseFloat(item.processing_fee || "0") : 0
+    return sum + Math.max(0, line - wrap - proc)
+  }, 0)
+  const discount = parseFloat(cart?.discount || "0")
+  const subtotal = productsTotal + giftWrapTotal + processingTotal
+  const total = Math.max(0, subtotal - discount)
 
   if (!user) {
     return (
@@ -124,46 +119,32 @@ export default function CartPage(): React.ReactElement {
               <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Order Summary</h2>
 
               {/* Promo code */}
-              {cart.promo_code_str ? (
-                <div className="flex items-center justify-between px-3 py-2 bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm">
-                  <span className="text-[12px] font-bold text-dp-accent-cta flex items-center gap-1.5">
-                    <Tag size={12} /> {cart.promo_code_str}
-                  </span>
-                  <button onClick={removePromo} aria-label="Remove promo code">
-                    <X size={14} className="text-dp-accent-cta" />
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleApplyPromo} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={promoInput}
-                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-                    placeholder="Promo code"
-                    className="flex-1 px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover"
-                    aria-label="Promo code"
-                  />
-                  <button
-                    type="submit"
-                    disabled={promoLoading}
-                    className="px-4 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] font-bold text-dp-text-secondary hover:text-dp-text-primary disabled:opacity-50 transition-colors"
-                  >
-                    Apply
-                  </button>
-                </form>
-              )}
-              {promoError && <p className="text-[11px] text-dp-accent-cta">{promoError}</p>}
+              <PromoCodeBox />
 
               <div className="flex justify-between text-[13px] text-dp-text-secondary">
-                <span>Subtotal</span><span>{formatPrice(subtotal)}</span>
+                <span>Products</span><span>{formatPrice(productsTotal)}</span>
               </div>
+              {processingTotal > 0 && (
+                <div className="flex justify-between text-[13px] text-dp-text-secondary">
+                  <span>Processing</span><span>{formatPrice(processingTotal)}</span>
+                </div>
+              )}
               {giftWrapTotal > 0 && (
                 <div className="flex justify-between text-[13px] text-dp-text-secondary">
-                  <span>Gift wrapping</span><span>+{formatPrice(giftWrapTotal)}</span>
+                  <span>Gift wrap</span><span>{formatPrice(giftWrapTotal)}</span>
+                </div>
+              )}
+              {discount > 0 && (
+                <div className="flex justify-between text-[13px] text-dp-success">
+                  <span>
+                    Discount{cart?.promo_code_str ? ` (${cart.promo_code_str})` : ""}
+                    {cart?.promo_products_only ? " · products" : ""}
+                  </span>
+                  <span>−{formatPrice(discount)}</span>
                 </div>
               )}
               <div className="flex justify-between text-[13px] text-dp-text-secondary">
-                <span>Shipping</span><span>{shipping === 0 ? "Free" : formatPrice(shipping)}</span>
+                <span>Shipping</span><span className="text-dp-text-tertiary">At checkout</span>
               </div>
               <div className="border-t border-dp-border pt-4 flex justify-between font-bold text-[16px] text-dp-text-primary">
                 <span>Total</span><span>{formatPrice(total)}</span>

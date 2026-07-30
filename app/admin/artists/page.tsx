@@ -6,9 +6,10 @@ import { CheckCircle, Pencil, X } from "lucide-react"
 import { adminFetch } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 import AdminMediaUpload from "@/components/admin/AdminMediaUpload"
+import TranslationFields from "@/components/admin/TranslationFields"
 
 type AdminArtist = {
-  id: number; name: string; handle: string; avatar_url: string; cover_url: string
+  id: number; name: string; name_ka?: string; name_ru?: string; bio?: string; bio_ka?: string; bio_ru?: string; handle: string; avatar_url: string; cover_url: string
   verified: boolean; level: number; badge: string
 }
 
@@ -24,7 +25,7 @@ export default function AdminArtistsPage(): React.ReactElement {
   const [artists, setArtists] = useState<AdminArtist[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<AdminArtist | null>(null)
-  const [form, setForm] = useState({ avatar_url: "", cover_url: "" })
+  const [form, setForm] = useState({ avatar_url: "", cover_url: "", name: "", name_ka: "", name_ru: "", bio: "", bio_ka: "", bio_ru: "" })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function AdminArtistsPage(): React.ReactElement {
 
   function openEdit(a: AdminArtist) {
     setEditing(a)
-    setForm({ avatar_url: a.avatar_url ?? "", cover_url: a.cover_url ?? "" })
+    setForm({ avatar_url: a.avatar_url ?? "", cover_url: a.cover_url ?? "", name: a.name ?? "", name_ka: a.name_ka ?? "", name_ru: a.name_ru ?? "", bio: a.bio ?? "", bio_ka: a.bio_ka ?? "", bio_ru: a.bio_ru ?? "" })
   }
 
   async function saveEdit(e: React.FormEvent) {
@@ -115,6 +116,7 @@ export default function AdminArtistsPage(): React.ReactElement {
               <button onClick={() => setEditing(null)} className="text-dp-text-tertiary hover:text-dp-text-primary"><X size={18} /></button>
             </div>
             <form onSubmit={saveEdit} className="p-5 flex flex-col gap-4">
+              <TranslationFields value={form} onChange={setForm} inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "name", label: "Name · English", required: true }, { key: "name_ka", label: "Name · Georgian" }, { key: "name_ru", label: "Name · Russian" }, { key: "bio", label: "Bio · English", multiline: true }, { key: "bio_ka", label: "Bio · Georgian", multiline: true }, { key: "bio_ru", label: "Bio · Russian", multiline: true }]} />
               <AdminMediaUpload label="Avatar" previewUrl={form.avatar_url} folder="artists" onUploaded={(url) => setForm((f) => ({ ...f, avatar_url: url }))} previewClassName="w-16 h-16 rounded-full" />
               <AdminMediaUpload label="Cover" previewUrl={form.cover_url} folder="artists" onUploaded={(url) => setForm((f) => ({ ...f, cover_url: url }))} previewClassName="w-full h-24" />
               <div className="flex gap-2">

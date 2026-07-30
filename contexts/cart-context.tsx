@@ -16,6 +16,8 @@ export type CartItemType = {
   } | null
   size_variant?: { id: number; label: string; price_usd: string } | null
   quantity: number
+  unit_price?: string
+  currency?: string
   line_total: string
   product_title: string
   product_image: string
@@ -26,6 +28,9 @@ export type CartItemType = {
   gift_wrap_image_url?: string
   delivery_type: string
   processing_option: string
+  processing_fee?: string
+  processing_label?: string
+  processing_days?: string
 }
 
 export type CartType = {
@@ -33,6 +38,9 @@ export type CartType = {
   items: CartItemType[]
   subtotal: string
   promo_code_str: string | null
+  discount?: string
+  promo_percent?: string | null
+  promo_products_only?: boolean
 }
 
 type CartContextValue = {
@@ -48,6 +56,8 @@ type CartContextValue = {
   updateQuantity: (itemId: number, quantity: number) => Promise<void>
   applyPromo: (code: string) => Promise<void>
   removePromo: () => Promise<void>
+  /** Re-resolve cart prices for a market currency (admin GEL/USD — no FX). */
+  repriceCart: (currency: string) => Promise<void>
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
@@ -128,10 +138,18 @@ export function CartProvider({ children }: { children: React.ReactNode }): React
     setCart(data)
   }, [])
 
+  const repriceCart = useCallback(async (currency: string) => {
+    const data = await authFetch<CartType>("/orders/cart/reprice/", {
+      method: "POST",
+      body: JSON.stringify({ currency }),
+    })
+    setCart(data)
+  }, [])
+
   const itemCount = cart?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0
 
   return (
-    <CartContext.Provider value={{ cart, itemCount, loading, isOpen, openCart, closeCart, refresh, addItem, removeItem, updateQuantity, applyPromo, removePromo }}>
+    <CartContext.Provider value={{ cart, itemCount, loading, isOpen, openCart, closeCart, refresh, addItem, removeItem, updateQuantity, applyPromo, removePromo, repriceCart }}>
       {children}
     </CartContext.Provider>
   )

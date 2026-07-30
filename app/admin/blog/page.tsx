@@ -5,6 +5,7 @@ import Link from "next/link"
 import { adminFetch } from "@/lib/admin-auth"
 import { Plus, Save, Trash2, ChevronUp, ChevronDown, ExternalLink } from "lucide-react"
 import AdminMediaUpload from "@/components/admin/AdminMediaUpload"
+import TranslationFields from "@/components/admin/TranslationFields"
 
 type ContentBlock =
   | { type: "paragraph"; text: string }
@@ -17,7 +18,10 @@ type BlogPost = {
   title: string
   slug: string
   excerpt: string
+  title_ka?: string; title_ru?: string
+  excerpt_ka?: string; excerpt_ru?: string
   content: string
+  content_ka?: string; content_ru?: string
   content_blocks: ContentBlock[]
   cover_image_url: string
   is_published: boolean
@@ -26,8 +30,11 @@ type BlogPost = {
 
 const EMPTY_FORM = {
   title: "",
+  title_ka: "", title_ru: "",
   excerpt: "",
+  excerpt_ka: "", excerpt_ru: "",
   content: "",
+  content_ka: "", content_ru: "",
   cover_image_url: "",
   is_published: false,
   content_blocks: [] as ContentBlock[],
@@ -58,8 +65,11 @@ export default function AdminBlogPage(): React.ReactElement {
     setSelected(post)
     setForm({
       title: post.title,
+      title_ka: post.title_ka ?? "", title_ru: post.title_ru ?? "",
       excerpt: post.excerpt,
+      excerpt_ka: post.excerpt_ka ?? "", excerpt_ru: post.excerpt_ru ?? "",
       content: post.content,
+      content_ka: post.content_ka ?? "", content_ru: post.content_ru ?? "",
       cover_image_url: post.cover_image_url,
       is_published: post.is_published,
       content_blocks: post.content_blocks ?? [],
@@ -153,6 +163,7 @@ export default function AdminBlogPage(): React.ReactElement {
           )}
         </div>
         <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Post title" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-primary" />
+        <TranslationFields value={form} onChange={setForm} inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-primary" fields={[{ key: "title_ka", label: "Title · Georgian" }, { key: "title_ru", label: "Title · Russian" }, { key: "excerpt_ka", label: "Excerpt · Georgian", multiline: true }, { key: "excerpt_ru", label: "Excerpt · Russian", multiline: true }, { key: "content_ka", label: "Content · Georgian", multiline: true }, { key: "content_ru", label: "Content · Russian", multiline: true }]} />
         <AdminMediaUpload label="Cover image" previewUrl={form.cover_image_url} folder="blog" onUploaded={(url) => setForm((f) => ({ ...f, cover_image_url: url }))} previewClassName="w-full h-36" />
         <textarea value={form.excerpt} onChange={(e) => setForm((f) => ({ ...f, excerpt: e.target.value }))} rows={3} placeholder="Excerpt" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-primary" />
 

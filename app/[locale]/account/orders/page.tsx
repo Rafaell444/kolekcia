@@ -4,8 +4,9 @@ import React, { useEffect, useState } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Link from "next/link"
 import { Package, ArrowRight } from "lucide-react"
-import { authFetch } from "@/lib/api"
-import { useLocale } from "@/contexts/locale-context"
+import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import { formatAmount } from "@/lib/product-pricing"
+import type { Currency } from "@/contexts/locale-context"
 import { useLocalePrefix } from "@/lib/use-localized-href"
 
 type OrderItem = { id: number; product_title: string; quantity: number }
@@ -17,26 +18,32 @@ type Order = {
   created_at: string
   items: OrderItem[]
   tracking_code: string
+  currency?: string
 }
 
 const STATUS_COLORS: Record<string, string> = {
   delivered:  "text-dp-success bg-dp-success/10 border-dp-success/30",
   shipped:    "text-dp-accent-cta bg-dp-accent-cta/10 border-dp-accent-cta/30",
   processing: "text-dp-accent-gold bg-dp-accent-gold/10 border-dp-accent-gold/30",
-  pending:    "text-dp-text-tertiary bg-dp-bg-elevated border-dp-border",
   cancelled:  "text-dp-accent-cta/70 bg-dp-accent-cta/5 border-dp-accent-cta/20",
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  processing: "Processing",
+  shipped:    "Shipped",
+  delivered:  "Delivered",
+  cancelled:  "Cancelled",
+}
+
 export default function OrdersPage(): React.ReactElement {
-  const { formatPrice } = useLocale()
   const lp = useLocalePrefix()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    authFetch<{ results: Order[] }>("/orders/")
-      .then((data) => { if (!cancelled) setOrders(data.results) })
+    authFetch<Order[] | PaginatedResponse<Order>>("/orders/")
+      .then((data) => { if (!cancelled) setOrders(parseList(data)) })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -65,8 +72,8 @@ export default function OrdersPage(): React.ReactElement {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-1">
                     <span className="font-bold text-dp-text-primary text-[14px]">{order.order_number}</span>
-                    <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 border rounded-sm ${STATUS_COLORS[order.status] ?? STATUS_COLORS["pending"]}`}>
-                      {order.status}
+                    <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 border rounded-sm ${STATUS_COLORS[order.status] ?? STATUS_COLORS["processing"]}`}>
+                      {STATUS_LABELS[order.status] ?? order.status}
                     </span>
                   </div>
                   <p className="text-[12px] text-dp-text-tertiary">
@@ -78,7 +85,9 @@ export default function OrdersPage(): React.ReactElement {
                   )}
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
-                  <span className="font-bold text-[16px] text-dp-text-primary">{formatPrice(parseFloat(order.total))}</span>
+                  <span className="font-bold text-[16px] text-dp-text-primary">
+                    {formatAmount(parseFloat(order.total), (order.currency ?? "USD") as Currency)}
+                  </span>
                   <Link href={`${lp}/account/orders/${order.id}`} className="flex items-center gap-1 text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">
                     Details <ArrowRight size={12} />
                   </Link>

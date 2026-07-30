@@ -1,6 +1,5 @@
 import React from "react"
 import Image from "next/image"
-import { ArrowRight } from "lucide-react"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 
@@ -35,19 +34,16 @@ export default async function TrendingArtists(): Promise<React.ReactElement> {
 
   return (
     <section className="dp-container pb-14" aria-labelledby="artists-heading">
-      <div className="flex items-end justify-between mb-6">
+      <div className="flex items-end justify-center mb-6">
         <h2 className="font-display text-3xl md:text-4xl text-dp-text-primary" id="artists-heading">Our Artists</h2>
-        <LocalizedLink href="/artists" className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
-          View Studios <ArrowRight size={12} />
-        </LocalizedLink>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl">
-        {vendors.map((vendor) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl mx-auto justify-items-center">
+        {vendors.slice(0, 2).map((vendor) => (
           <LocalizedLink
             key={vendor.id}
             href={`/catalog?category=${vendor.catalog_category_slug}`}
-            className="group flex items-center gap-4 p-4 bg-dp-bg-surface border border-dp-border rounded-sm dp-card-hover"
+            className="group flex items-center gap-4 p-4 bg-dp-bg-surface border border-dp-border rounded-sm"
           >
             <div className="relative w-16 h-16 rounded-sm overflow-hidden border border-dp-border shrink-0 bg-dp-bg-elevated">
               {vendor.logo_url && (
@@ -63,7 +59,6 @@ export default async function TrendingArtists(): Promise<React.ReactElement> {
               </p>
               <p className="text-[11px] text-dp-text-tertiary truncate">Browse the full collection</p>
             </div>
-            <ArrowRight size={14} className="text-dp-text-tertiary group-hover:text-dp-accent-cta shrink-0" />
           </LocalizedLink>
         ))}
       </div>

@@ -8,7 +8,6 @@ import HeroCarousel from "@/components/home/HeroCarousel"
 import TrendingArtists from "@/components/home/TrendingArtists"
 import BrandsCarousel from "@/components/home/BrandsCarousel"
 import BigCategories from "@/components/home/BigCategories"
-import MoreWaysSection from "@/components/home/MoreWaysSection"
 import VideoSection from "@/components/home/VideoSection"
 import ReviewsSection from "@/components/home/ReviewsSection"
 import NewsletterSection from "@/components/home/NewsletterSection"
@@ -64,7 +63,6 @@ export default async function HomePage({
     getTrendingProducts(),
     fetchPageSections("home"),
   ])
-  const moreWays = sectionContent<{ heading?: string; cards?: Array<{ id: string; label: string; desc: string; href: string; imageUrl: string; accent?: string }> }>(sections, "more_ways")
   const video = sectionContent<{ heading?: string; cards?: Array<{ id: string; label: string; thumb: string }> }>(sections, "video")
   const newsletter = sectionContent<{ heading?: string; subheading?: string; promoText?: string; imageUrl?: string }>(sections, "newsletter")
   const stats = sectionContent<{ stats?: Array<{ stat: string; label: string }> }>(sections, "stats")
@@ -90,14 +88,13 @@ export default async function HomePage({
         </section>
       )}
 
-      <MoreWaysSection content={moreWays ?? undefined} />
       <TrendingArtists />
       <VideoSection content={video ?? undefined} />
       <ReviewsSection />
       <NewsletterSection content={newsletter ?? undefined} />
 
       <section className="dp-container py-12" aria-label="Social proof statistics">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center max-w-4xl mx-auto">
           {(stats?.stats ?? [
             { stat: "2.5M+", label: "Designs available" },
             { stat: "150K+", label: "Artist creators" },

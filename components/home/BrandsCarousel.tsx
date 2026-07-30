@@ -2,6 +2,7 @@
 
 // Infinite carousel — virtual offset so drag works both directions without hitting scroll edges
 import React, { useCallback, useEffect, useRef } from "react"
+import { apiFetch } from "@/lib/api"
 
 const BRANDS = [
   { id: "b1",  name: "The Witcher",       bg: "#000",   text: "#fff", abbr: "THE WITCHER" },
@@ -38,6 +39,7 @@ function applyOffset(el: HTMLDivElement, offset: number) {
 }
 
 export default function BrandsCarousel() {
+  const [brands, setBrands] = React.useState(BRANDS)
   const trackRef = useRef<HTMLDivElement>(null)
   const offsetRef = useRef(0)
   const draggingRef = useRef(false)
@@ -57,6 +59,9 @@ export default function BrandsCarousel() {
   }, [paint])
 
   useEffect(() => {
+    apiFetch<Array<{ id: number; name: string; abbreviation: string; background: string; text_color: string }>>("/cms/fandoms/").then((data) => {
+      if (Array.isArray(data) && data.length) setBrands(data.map((b) => ({ id: String(b.id), name: b.name, bg: b.background, text: b.text_color, abbr: b.abbreviation })))
+    }).catch(() => {})
     const el = trackRef.current
     if (!el) return
 
@@ -119,7 +124,7 @@ export default function BrandsCarousel() {
           onPointerCancel={endDrag}
           aria-hidden
         >
-          {LOOP.map((brand, i) => (
+          {[...brands, ...brands, ...brands].map((brand, i) => (
             <div
               key={`${brand.id}-${i}`}
               className="shrink-0 w-[110px] h-[72px] rounded-lg flex items-center justify-center"

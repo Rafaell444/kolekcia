@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/auth-context"
 import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 import { captureReferralFromUrl, claimPendingReferral } from "@/lib/referral"
 import { useLocalePrefix } from "@/lib/use-localized-href"
+import { getPasswordRules, isPasswordValid, validatePassword } from "@/lib/password"
 
 const PERKS = [
   "Free shipping on your first order",
@@ -50,7 +51,8 @@ function RegisterPageInner(): React.ReactElement {
     const e: Record<string, string> = {}
     if (!name.trim())          e.name     = "Name is required."
     if (!email.includes("@")) e.email    = "Enter a valid email."
-    if (password.length < 8)   e.password = "Password must be at least 8 characters."
+    const pwError = validatePassword(password)
+    if (pwError) e.password = pwError
     if (password !== confirm)  e.confirm  = "Passwords do not match."
     return e
   }
@@ -104,9 +106,10 @@ function RegisterPageInner(): React.ReactElement {
     }
   }
 
+  const rules = getPasswordRules(password)
   const strength = password.length === 0 ? 0
-    : password.length < 6 ? 1
-    : password.length < 10 ? 2
+    : !isPasswordValid(password) ? 1
+    : password.length < 12 ? 2
     : 3
 
   const strengthLabel = ["", "Weak", "Good", "Strong"][strength]
@@ -210,6 +213,19 @@ function RegisterPageInner(): React.ReactElement {
                   </div>
                   <span className="text-[10px] text-dp-text-tertiary font-semibold">{strengthLabel}</span>
                 </div>
+              )}
+              {password.length > 0 && (
+                <ul className="mt-2 flex flex-col gap-1">
+                  {rules.map((rule) => (
+                    <li
+                      key={rule.key}
+                      className={`text-[11px] flex items-center gap-1.5 ${rule.ok ? "text-dp-success" : "text-dp-text-tertiary"}`}
+                    >
+                      <CheckCircle2 size={12} className={rule.ok ? "opacity-100" : "opacity-30"} aria-hidden />
+                      {rule.label}
+                    </li>
+                  ))}
+                </ul>
               )}
               {errors.password && <p className="text-[11px] text-dp-accent-cta mt-1">{errors.password}</p>}
             </div>

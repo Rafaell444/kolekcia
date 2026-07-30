@@ -1,4 +1,8 @@
-﻿from django.contrib.auth import authenticate
+import logging
+from urllib.parse import urlparse
+
+from django.contrib.auth import authenticate
+from django.core.cache import cache
 from django.db.models import Sum, Count, Q, Max
 from django.db.models.functions import TruncMonth, TruncDate
 from django.utils import timezone
@@ -15,6 +19,66 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .permissions import IsAdminUser, IsAdminOrVendor
 from .models import AuditLog
 from .audit import log_action
+
+logger = logging.getLogger(__name__)
+
+# ── Security: Account lockout constants ──────────────────────────────────────
+LOCKOUT_THRESHOLD = 5  # failed attempts before lockout
+LOCKOUT_DURATION = 900  # 15 minutes in seconds
+
+# ── Security: Valid ISO 3166-1 alpha-2 country codes ─────────────────────────
+VALID_COUNTRY_CODES = frozenset({
+    "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT",
+    "AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI",
+    "BJ", "BL", "BM", "BN", "BO", "BR", "BS", "BT", "BV", "BW", "BY", "BZ",
+    "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO",
+    "CR", "CU", "CV", "CW", "CX", "CY", "CZ", "DE", "DJ", "DK", "DM", "DO",
+    "DZ", "EC", "EE", "EG", "EH", "ER", "ES", "ET", "FI", "FJ", "FK", "FM",
+    "FO", "FR", "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM",
+    "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY", "HK", "HM", "HN",
+    "HR", "HT", "HU", "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS",
+    "IT", "JE", "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN", "KP",
+    "KR", "KW", "KY", "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT",
+    "LU", "LV", "LY", "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML",
+    "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX",
+    "MY", "MZ", "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR",
+    "NU", "NZ", "OM", "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN",
+    "PR", "PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS", "RU", "RW", "SA",
+    "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN",
+    "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ", "TC", "TD", "TF", "TG",
+    "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ",
+    "UA", "UG", "UM", "US", "UY", "UZ", "VA", "VC", "VE", "VG", "VI", "VN",
+    "VU", "WF", "WS", "YE", "YT", "ZA", "ZM", "ZW",
+})
+
+
+def _login_lockout_key(email: str) -> str:
+    return f"login_lockout:{email.strip().lower()}"
+
+
+def _login_attempts_key(email: str) -> str:
+    return f"login_attempts:{email.strip().lower()}"
+
+
+def _check_lockout(email: str) -> bool:
+    """Returns True if account is currently locked out."""
+    return bool(cache.get(_login_lockout_key(email)))
+
+
+def _record_failed_login(email: str) -> int:
+    """Record a failed login attempt. Returns current count. Triggers lockout if threshold hit."""
+    key = _login_attempts_key(email)
+    attempts = int(cache.get(key, 0) or 0) + 1
+    cache.set(key, attempts, timeout=LOCKOUT_DURATION)
+    if attempts >= LOCKOUT_THRESHOLD:
+        cache.set(_login_lockout_key(email), True, timeout=LOCKOUT_DURATION)
+    return attempts
+
+
+def _clear_failed_logins(email: str) -> None:
+    """Clear failed login counter on successful auth."""
+    cache.delete(_login_attempts_key(email))
+    cache.delete(_login_lockout_key(email))
 
 
 class AdminNoPaginationMixin:
@@ -36,14 +100,23 @@ class AdminLoginView(APIView):
         email = request.data.get("email", "").strip().lower()
         password = request.data.get("password", "")
 
+        # Security fix #9: Account lockout after repeated failures
+        if _check_lockout(email):
+            return Response(
+                {"detail": "Account temporarily locked due to too many failed attempts. Try again later."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         user = authenticate(request, username=email, password=password)
         if not user or not user.is_active:
+            _record_failed_login(email)
             return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
         is_vendor = hasattr(user, "vendor_profile")
         if not user.is_staff and not is_vendor:
             return Response({"detail": "Access denied. Vendor or admin account required."}, status=status.HTTP_403_FORBIDDEN)
 
+        _clear_failed_logins(email)
         refresh = RefreshToken.for_user(user)
 
         vendor_data = None
@@ -364,6 +437,25 @@ class AdminOrderUpdateView(APIView):
                     "amount": str(order.total),
                     "currency": order.currency,
                 })
+                try:
+                    from apps.creators.services import credit_creator_for_paid_order
+                    credited = credit_creator_for_paid_order(order)
+                    if credited:
+                        log_action(request.user, "creator_credit", "Order", order.pk, {
+                            "order_number": order.order_number,
+                            "promo": order.promo_code.code if order.promo_code_id else None,
+                        })
+                except Exception:
+                    pass
+            if new_status == "cancelled":
+                try:
+                    from apps.creators.services import clawback_creator_for_order
+                    if clawback_creator_for_order(order):
+                        log_action(request.user, "creator_clawback", "Order", order.pk, {
+                            "order_number": order.order_number,
+                        })
+                except Exception:
+                    pass
 
         if tracking is not None:
             order.tracking_code = tracking
@@ -372,6 +464,9 @@ class AdminOrderUpdateView(APIView):
 
         # Send shipping confirmation email when status moves to "shipped"
         if new_status == "shipped" and prev_status != "shipped":
+            from django.utils import timezone
+            order.shipped_at = timezone.now()
+            order.save(update_fields=["shipped_at"])
             _send_shipping_email(order)
 
         return Response(OrderSerializer(order).data)
@@ -414,7 +509,9 @@ def _send_shipping_email(order):
             body = body.replace("{{tracking_info}}", tracking_info)
             subject = (vendor.shipping_email_subject or f"Your order {order_number} has shipped!")
             subject = subject.replace("{{order_number}}", order_number)
-            from_email = vendor.payment_email or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@koleqcia.com")
+            from_email = getattr(django_settings, "EMAIL_FROM_ORDERS", None) or getattr(
+                django_settings, "DEFAULT_FROM_EMAIL", "orders@koleqcia.com"
+            )
         else:
             body = (
                 f"Hi {customer_name},\n\n"
@@ -425,17 +522,20 @@ def _send_shipping_email(order):
                 f"— The Koleqcia Team"
             )
             subject = f"Your order {order_number} has shipped!"
-            from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@koleqcia.com")
+            from_email = getattr(django_settings, "EMAIL_FROM_ORDERS", None) or getattr(
+                django_settings, "DEFAULT_FROM_EMAIL", "orders@koleqcia.com"
+            )
 
         send_mail(
             subject=subject,
             message=body,
             from_email=from_email,
             recipient_list=[order.shipping_email],
-            fail_silently=True,
+            fail_silently=False,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Security fix #17: log email failures instead of silently swallowing
+        logger.error("Shipping email failed for order %s to %s: %s", order.order_number, order.shipping_email, exc)
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -527,7 +627,8 @@ class AdminMediaUploadView(APIView):
         error = validate_image_upload(uploaded_file)
         if error:
             return error
-        if folder not in ALLOWED_MEDIA_FOLDERS:
+        # Security fix #14: path traversal prevention
+        if folder not in ALLOWED_MEDIA_FOLDERS or os.path.basename(folder) != folder:
             return Response(
                 {"detail": f"folder must be one of: {', '.join(sorted(ALLOWED_MEDIA_FOLDERS))}"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -783,6 +884,46 @@ class AdminCommunitySocialLinkDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         from apps.cms.models import CommunitySocialLink
         return CommunitySocialLink.objects.all()
+
+
+class AdminTrustBarItemListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+    def get_serializer_class(self):
+        from apps.cms.serializers import TrustBarItemSerializer
+        return TrustBarItemSerializer
+    def get_queryset(self):
+        from apps.cms.models import TrustBarItem
+        return TrustBarItem.objects.all()
+
+
+class AdminTrustBarItemDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+    def get_serializer_class(self):
+        from apps.cms.serializers import TrustBarItemSerializer
+        return TrustBarItemSerializer
+    def get_queryset(self):
+        from apps.cms.models import TrustBarItem
+        return TrustBarItem.objects.all()
+
+
+class AdminFandomBrandListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+    def get_serializer_class(self):
+        from apps.cms.serializers import FandomBrandSerializer
+        return FandomBrandSerializer
+    def get_queryset(self):
+        from apps.cms.models import FandomBrand
+        return FandomBrand.objects.all()
+
+
+class AdminFandomBrandDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+    def get_serializer_class(self):
+        from apps.cms.serializers import FandomBrandSerializer
+        return FandomBrandSerializer
+    def get_queryset(self):
+        from apps.cms.models import FandomBrand
+        return FandomBrand.objects.all()
 
 
 class AdminFAQListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
@@ -1306,12 +1447,22 @@ class AdminProcessingOptionListView(APIView):
 class AdminProcessingOptionDetailView(APIView):
     permission_classes = [IsAdminOrVendor]
 
-    def patch(self, request, pk):
+    def _get_option(self, request, pk):
+        """Security fix #13: enforce vendor isolation on processing options."""
         from apps.orders.models import ProcessingOption
-        from apps.orders.serializers import ProcessingOptionSerializer
         try:
-            opt = ProcessingOption.objects.get(pk=pk)
+            opt = ProcessingOption.objects.select_related("vendor").get(pk=pk)
         except ProcessingOption.DoesNotExist:
+            return None
+        if not request.user.is_staff and hasattr(request.user, "vendor_profile"):
+            if opt.vendor_id != request.user.vendor_profile.id:
+                return None
+        return opt
+
+    def patch(self, request, pk):
+        from apps.orders.serializers import ProcessingOptionSerializer
+        opt = self._get_option(request, pk)
+        if not opt:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         ser = ProcessingOptionSerializer(opt, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
@@ -1319,11 +1470,10 @@ class AdminProcessingOptionDetailView(APIView):
         return Response(ProcessingOptionSerializer(opt).data)
 
     def delete(self, request, pk):
-        from apps.orders.models import ProcessingOption
-        try:
-            ProcessingOption.objects.get(pk=pk).delete()
-        except ProcessingOption.DoesNotExist:
-            pass
+        opt = self._get_option(request, pk)
+        if not opt:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        opt.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1600,7 +1750,11 @@ class AdminProductImportView(APIView):
                 for n in range(1, 4):
                     url = cell(row, f"image_url_{n}")
                     if url:
-                        ProductImage.objects.create(product=product, url=str(url), order=n - 1)
+                        # Security fix #6: validate image URL scheme before storing
+                        url_str = str(url).strip()
+                        parsed = urlparse(url_str)
+                        if parsed.scheme in ("http", "https") and parsed.netloc:
+                            ProductImage.objects.create(product=product, url=url_str, order=n - 1)
 
                 for n in range(1, 6):
                     lbl = cell(row, f"size_{n}_label")
@@ -1950,3 +2104,396 @@ class AdminAuctionSubscriberListView(APIView):
             for s in qs
         ]
         return Response(data)
+
+# ── Content creators ──────────────────────────────────────────────────────────
+
+class AdminCreatorApplicationListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.creators.models import CreatorApplication
+        from apps.creators.serializers import CreatorApplicationSerializer
+        status_filter = request.query_params.get("status")
+        qs = CreatorApplication.objects.select_related("user", "reviewed_by").all()
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return Response(CreatorApplicationSerializer(qs[:200], many=True).data)
+
+
+class AdminCreatorApplicationDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        from django.utils import timezone
+        from apps.creators.models import CreatorApplication, ContentCreator
+        from apps.creators.serializers import CreatorApplicationSerializer
+
+        try:
+            app = CreatorApplication.objects.select_related("user").get(pk=pk)
+        except CreatorApplication.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get("status")
+        if new_status not in (
+            CreatorApplication.STATUS_APPROVED,
+            CreatorApplication.STATUS_REJECTED,
+            CreatorApplication.STATUS_PENDING,
+        ):
+            return Response({"detail": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+        app.status = new_status
+        app.admin_note = request.data.get("admin_note", app.admin_note)
+        app.reviewed_by = request.user
+        app.reviewed_at = timezone.now()
+        app.save()
+
+        if new_status == CreatorApplication.STATUS_APPROVED:
+            # Propagate country from application to ContentCreator
+            creator_obj, _ = ContentCreator.objects.update_or_create(
+                user=app.user,
+                defaults={"is_active": True},
+            )
+            if app.country and not creator_obj.country:
+                creator_obj.country = app.country
+                creator_obj.save(update_fields=["country"])
+
+        log_action(request.user, "creator_application_review", "CreatorApplication", app.pk, {
+            "status": new_status,
+            "user": app.user.email,
+        })
+        return Response(CreatorApplicationSerializer(app).data)
+
+
+class AdminContentCreatorListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.creators.models import ContentCreator
+        from apps.creators.serializers import ContentCreatorSerializer
+        qs = ContentCreator.objects.select_related("user", "promo").all()
+        return Response(ContentCreatorSerializer(qs, many=True).data)
+
+    def post(self, request):
+        """Assign / update creator voucher: user_id, code, discount_percent."""
+        from decimal import Decimal
+        from apps.users.models import User
+        from apps.promo.models import PromoCode
+        from apps.creators.models import ContentCreator
+        from apps.creators.serializers import ContentCreatorSerializer, AdminAssignVoucherSerializer
+
+        ser = AdminAssignVoucherSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        try:
+            user = User.objects.get(pk=data["user_id"])
+        except User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        code = data["code"].strip().upper()
+        # Security fix #8: correct voucher collision check with Q objects
+        if PromoCode.objects.filter(code=code).exclude(Q(owner=user) | Q(owner__isnull=True)).exists():
+            return Response({"detail": "Code already owned by another user."}, status=400)
+
+        promo, _ = PromoCode.objects.update_or_create(
+            code=code,
+            defaults={
+                "owner": user,
+                "discount_type": "percent",
+                "discount_value": data["discount_percent"],
+                "is_active": data.get("is_active", True),
+                "max_uses": None,
+                "max_uses_per_user": None,
+            },
+        )
+        # Ensure owner set if code existed without owner
+        if promo.owner_id != user.id:
+            promo.owner = user
+            promo.discount_type = "percent"
+            promo.discount_value = data["discount_percent"]
+            promo.is_active = data.get("is_active", True)
+            promo.save()
+
+        creator, _ = ContentCreator.objects.update_or_create(
+            user=user,
+            defaults={"is_active": True, "promo": promo},
+        )
+        if creator.promo_id != promo.id:
+            creator.promo = promo
+            creator.is_active = True
+            creator.save()
+
+        log_action(request.user, "creator_voucher_assign", "ContentCreator", creator.pk, {
+            "user": user.email,
+            "code": code,
+            "percent": str(data["discount_percent"]),
+        })
+        return Response(ContentCreatorSerializer(creator).data, status=status.HTTP_201_CREATED)
+
+
+class AdminContentCreatorDetailView(APIView):
+    """Edit commission % or soft-deactivate a creator. Ledger history is never touched."""
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        from apps.creators.models import ContentCreator
+        from apps.creators.serializers import ContentCreatorSerializer
+        try:
+            creator = ContentCreator.objects.select_related("promo", "user").get(pk=pk)
+        except ContentCreator.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+
+        new_percent = request.data.get("discount_percent")
+        new_active = request.data.get("is_active")
+        new_country = request.data.get("country")
+
+        if new_percent is not None and creator.promo:
+            from decimal import Decimal as D
+            creator.promo.discount_value = D(str(new_percent))
+            creator.promo.save(update_fields=["discount_value"])
+            log_action(request.user, "creator_percent_update", "ContentCreator", creator.pk, {
+                "user": creator.user.email, "new_percent": str(new_percent)
+            })
+
+        if new_active is not None:
+            creator.is_active = bool(new_active)
+            if creator.promo:
+                creator.promo.is_active = bool(new_active)
+                creator.promo.save(update_fields=["is_active"])
+            creator.save(update_fields=["is_active"])
+
+        if new_country is not None:
+            # Security fix #19: validate country code against ISO 3166-1 alpha-2
+            country_upper = str(new_country).upper().strip()
+            if country_upper and country_upper not in VALID_COUNTRY_CODES:
+                return Response({"detail": f"Invalid country code: {country_upper}"}, status=status.HTTP_400_BAD_REQUEST)
+            creator.country = country_upper
+            creator.save(update_fields=["country"])
+
+        creator.refresh_from_db()
+        return Response(ContentCreatorSerializer(creator).data)
+
+    def delete(self, request, pk):
+        """Soft-deactivate: sets is_active=False on creator+promo+user account. Ledger entries preserved."""
+        from apps.creators.models import ContentCreator
+        from apps.creators.serializers import ContentCreatorSerializer
+        try:
+            creator = ContentCreator.objects.select_related("promo", "user").get(pk=pk)
+        except ContentCreator.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+
+        # Deactivate creator record
+        creator.is_active = False
+        creator.save(update_fields=["is_active"])
+
+        # Deactivate associated promo/voucher
+        if creator.promo:
+            creator.promo.is_active = False
+            creator.promo.save(update_fields=["is_active"])
+
+        # Also deactivate the user account so they can no longer log in
+        deactivate_user = request.data.get("deactivate_user", True)
+        user_deactivated = False
+        if deactivate_user and creator.user.is_active:
+            creator.user.is_active = False
+            creator.user.save(update_fields=["is_active"])
+            user_deactivated = True
+
+        log_action(request.user, "creator_deactivated", "ContentCreator", creator.pk, {
+            "user": creator.user.email,
+            "user_account_deactivated": user_deactivated,
+        })
+        detail = "Creator deactivated. Ledger history preserved."
+        if user_deactivated:
+            detail += " User account has also been deactivated."
+        return Response({"detail": detail})
+
+
+class AdminCreatorAcceptedWithoutVoucherView(APIView):
+    """Returns approved creator applications whose user does not yet have an active ContentCreator with a promo."""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.creators.models import CreatorApplication, ContentCreator
+        # Users who have a ContentCreator with a promo already assigned
+        assigned_user_ids = set(
+            ContentCreator.objects.filter(is_active=True, promo__isnull=False)
+            .values_list("user_id", flat=True)
+        )
+        apps = (
+            CreatorApplication.objects.filter(status=CreatorApplication.STATUS_APPROVED)
+            .select_related("user")
+            .exclude(user_id__in=assigned_user_ids)
+            .order_by("-created_at")
+        )
+        return Response([
+            {
+                "user_id": str(app.user_id),
+                "user_email": app.user.email,
+                "user_name": app.user.name or app.user.email,
+                "country": app.country,
+            }
+            for app in apps
+        ])
+
+
+class AdminCreatorLedgerListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.creators.models import CreatorLedgerEntry
+        from apps.creators.serializers import CreatorLedgerEntrySerializer
+        qs = CreatorLedgerEntry.objects.select_related("creator__user", "order").all()
+        creator_id = request.query_params.get("creator_id")
+        order_number = request.query_params.get("order_number")
+        entry_type = request.query_params.get("entry_type")
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        if creator_id:
+            qs = qs.filter(creator_id=creator_id)
+        if order_number:
+            qs = qs.filter(order_number__icontains=order_number)
+        if entry_type:
+            qs = qs.filter(entry_type=entry_type)
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+        data = []
+        for entry in qs[:500]:
+            row = CreatorLedgerEntrySerializer(entry).data
+            row["creator_email"] = entry.creator.user.email
+            row["creator_id"] = entry.creator_id
+            data.append(row)
+        return Response(data)
+
+
+class AdminCreatorVoucherUsesView(APIView):
+    """All orders that used a creator-owned voucher (even before paid credit)."""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.creators.models import ContentCreator
+        from apps.creators.services import list_voucher_redemptions
+
+        creators = ContentCreator.objects.filter(
+            is_active=True, promo__isnull=False
+        ).select_related("user", "promo")
+        creator_id = request.query_params.get("creator_id")
+        credited_filter = request.query_params.get("credited")
+        order_status_filter = request.query_params.get("order_status")
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        search = request.query_params.get("search", "").strip()
+
+        if creator_id:
+            creators = creators.filter(pk=creator_id)
+
+        rows = []
+        for creator in creators:
+            for item in list_voucher_redemptions(creator.promo, limit=200):
+                item["creator_id"] = creator.id
+                item["creator_email"] = creator.user.email
+                item["voucher_code"] = creator.promo.code if creator.promo_id else None
+                item["voucher_percent"] = (
+                    str(creator.promo.discount_value) if creator.promo_id else None
+                )
+                rows.append(item)
+
+        # Apply filters
+        if credited_filter is not None:
+            want_credited = credited_filter.lower() in ("true", "1", "yes")
+            rows = [r for r in rows if r.get("credited") == want_credited]
+        if order_status_filter:
+            rows = [r for r in rows if r.get("order_status") == order_status_filter]
+        if date_from:
+            rows = [r for r in rows if (r.get("used_at") or "") >= date_from]
+        if date_to:
+            rows = [r for r in rows if (r.get("used_at") or "") <= date_to + "T23:59:59"]
+        if search:
+            sl = search.lower()
+            rows = [r for r in rows if sl in (r.get("buyer_email") or "").lower()
+                    or sl in (r.get("order_number") or "").lower()]
+
+        rows.sort(key=lambda r: r.get("used_at") or "", reverse=True)
+        return Response(rows[:500])
+
+
+class AdminCreatorPayoutListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.creators.models import CreatorPayoutRequest
+        from apps.creators.serializers import CreatorPayoutRequestSerializer
+        qs = CreatorPayoutRequest.objects.select_related("creator__user", "processed_by").all()
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return Response(CreatorPayoutRequestSerializer(qs[:200], many=True).data)
+
+
+class AdminCreatorPayoutDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        from django.utils import timezone
+        from django.db import transaction
+        from apps.creators.models import CreatorPayoutRequest, CreatorLedgerEntry
+        from apps.creators.serializers import CreatorPayoutRequestSerializer
+
+        try:
+            payout = CreatorPayoutRequest.objects.select_related("creator").get(pk=pk)
+        except CreatorPayoutRequest.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+
+        new_status = request.data.get("status")
+        if new_status not in (CreatorPayoutRequest.STATUS_PAID, CreatorPayoutRequest.STATUS_REJECTED):
+            return Response({"detail": "status must be paid or rejected."}, status=400)
+        if payout.status != CreatorPayoutRequest.STATUS_PENDING:
+            return Response({"detail": "Payout already processed."}, status=400)
+
+        with transaction.atomic():
+            payout.status = new_status
+            payout.admin_note = request.data.get("admin_note", payout.admin_note)
+            payout.processed_by = request.user
+            payout.processed_at = timezone.now()
+            payout.save()
+
+            hold = CreatorLedgerEntry.objects.filter(
+                payout_request=payout,
+                entry_type=CreatorLedgerEntry.TYPE_PAYOUT_HOLD,
+            ).first()
+
+            if new_status == CreatorPayoutRequest.STATUS_PAID:
+                if hold:
+                    hold.entry_type = CreatorLedgerEntry.TYPE_PAYOUT_PAID
+                    hold.note = f"Payout #{payout.id} marked paid"
+                    hold.save(update_fields=["entry_type", "note"])
+            else:
+                # Reject: remove hold so balance returns
+                if hold:
+                    hold.delete()
+
+        log_action(request.user, "creator_payout_" + new_status, "CreatorPayoutRequest", payout.pk, {
+            "amount": str(payout.amount),
+            "creator": payout.creator.user.email,
+        })
+        return Response(CreatorPayoutRequestSerializer(payout).data)
+
+
+class AdminCreatorPayoutMinimumView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.creators.services import get_payout_minimum_gel
+        return Response({"creator_payout_minimum_gel": str(get_payout_minimum_gel())})
+
+    def patch(self, request):
+        from apps.creators.services import set_payout_minimum_gel, get_payout_minimum_gel
+        value = request.data.get("creator_payout_minimum_gel")
+        if value is None:
+            return Response({"detail": "creator_payout_minimum_gel required."}, status=400)
+        amount = set_payout_minimum_gel(value)
+        log_action(request.user, "creator_payout_minimum_update", "SiteSettings", "global", {
+            "creator_payout_minimum_gel": str(amount),
+        })
+        return Response({"creator_payout_minimum_gel": str(get_payout_minimum_gel())})

@@ -10,6 +10,7 @@ import { authFetch, apiFetch } from "@/lib/api"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
 import { useLocale } from "@/contexts/locale-context"
 import { CartItemExtras } from "@/components/cart/CartItemExtras"
+import { PromoCodeBox } from "@/components/cart/PromoCodeBox"
 
 type DeliveryOpt = { id: number; slug: string; label: string; price_gel: string; price_usd: string; est_days_min: number; est_days_max: number }
 
@@ -84,7 +85,17 @@ function Field({
 }
 
 // ─── Geo-pricing modal ────────────────────────────────────
-function GeoPricingModal({ country, currency, onContinue }: { country: string; currency: string; onContinue: () => void }) {
+function GeoPricingModal({
+  country,
+  currency,
+  loading,
+  onContinue,
+}: {
+  country: string
+  currency: string
+  loading?: boolean
+  onContinue: () => void
+}) {
   const isGE = country === "GE"
   const countryLabel = isGE ? "Georgia 🇬🇪" : country
   const currencyLabel = isGE ? "Georgian Lari (₾ GEL)" : `USD ($)`
@@ -98,13 +109,17 @@ function GeoPricingModal({ country, currency, onContinue }: { country: string; c
           <div>
             <p className="text-[15px] font-bold text-dp-text-primary">Prices updated for {countryLabel}</p>
             <p className="text-[13px] text-dp-text-secondary mt-1 leading-relaxed">
-              Your delivery address is in <strong className="text-dp-text-primary">{countryLabel}</strong>. All prices have been automatically updated to <strong className="text-dp-text-primary">{currencyLabel}</strong> to reflect the correct pricing for your region.
+              Your delivery address is in <strong className="text-dp-text-primary">{countryLabel}</strong>. Cart totals will switch to the admin <strong className="text-dp-text-primary">{currencyLabel}</strong> market prices for that region (no currency conversion).
             </p>
           </div>
         </div>
         <div className="px-6 pb-5">
-          <button onClick={onContinue} className="w-full py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-            Continue with {currency} prices
+          <button
+            onClick={onContinue}
+            disabled={loading}
+            className="w-full py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors"
+          >
+            {loading ? "Updating prices…" : `Continue with ${currency} prices`}
           </button>
         </div>
       </div>
@@ -369,36 +384,40 @@ function PaymentForm({
 // ─── Review step ──────────────────────────────────────────
 function ReviewStep({
   onConfirm, onBack, shippingData, checkoutCurrency, isGE, paymentData,
+  deliveryType, onDeliveryTypeChange, deliveryOptions,
 }: {
-  onConfirm: (orderNum: string) => void
+  onConfirm: (orderNum: string, orderId: string) => void
   onBack: () => void
   shippingData: Record<string, string>
   checkoutCurrency: string
   isGE: boolean
   paymentData: CheckoutPaymentData | null
+  deliveryType: string
+  onDeliveryTypeChange: (slug: string) => void
+  deliveryOptions: DeliveryOpt[]
 }) {
   const { cart, refresh } = useCart()
   const { formatPrice } = useLocale()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [deliveryType, setDeliveryType] = useState("standard")
-  const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOpt[]>([])
-
-  useEffect(() => {
-    if (!isGE) return
-    apiFetch<DeliveryOpt[]>("/orders/delivery-options/")
-      .then((d) => { if (Array.isArray(d)) setDeliveryOptions(d) })
-      .catch(() => {})
-  }, [isGE])
 
   const items = cart?.items ?? []
-  const subtotal = cart ? parseFloat(cart.subtotal) : 0
   const giftWrapTotal = items.reduce((sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0), 0)
+  const processingTotal = items.reduce((sum, item) => sum + (item.processing_option ? parseFloat(item.processing_fee || "0") : 0), 0)
+  const productsTotal = items.reduce((sum, item) => {
+    const unit = parseFloat(item.unit_price || "0")
+    if (unit > 0) return sum + unit * item.quantity
+    const line = parseFloat(item.line_total || "0")
+    const wrap = item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0
+    const proc = item.processing_option ? parseFloat(item.processing_fee || "0") : 0
+    return sum + Math.max(0, line - wrap - proc)
+  }, 0)
   const selectedDelivery = deliveryOptions.find((o) => o.slug === deliveryType)
   const deliveryPrice = selectedDelivery
     ? parseFloat(checkoutCurrency === "GEL" ? selectedDelivery.price_gel : selectedDelivery.price_usd)
     : 0
-  const total = subtotal + giftWrapTotal + deliveryPrice
+  const discount = parseFloat(cart?.discount || "0")
+  const total = Math.max(0, productsTotal + giftWrapTotal + processingTotal - discount + deliveryPrice)
 
   async function handlePlaceOrder() {
     setLoading(true)
@@ -427,7 +446,7 @@ function ReviewStep({
       })
       await authFetch("/orders/cart/", { method: "DELETE" }).catch(() => {})
       await refresh()
-      onConfirm(order.order_number)
+      onConfirm(order.order_number, order.id)
     } catch (err: unknown) {
       const apiErr = err as { data?: { detail?: string } }
       setError(apiErr?.data?.detail ?? "Checkout failed. Please try again.")
@@ -460,13 +479,28 @@ function ReviewStep({
 
         <div className="px-4 py-3 flex flex-col gap-1.5 bg-dp-bg-elevated border-t border-dp-border">
           <div className="flex justify-between text-[13px]">
-            <span className="text-dp-text-secondary">Subtotal</span>
-            <span className="text-dp-text-primary font-semibold">{formatPrice(subtotal)}</span>
+            <span className="text-dp-text-secondary">Products</span>
+            <span className="text-dp-text-primary font-semibold">{formatPrice(productsTotal)}</span>
           </div>
+          {processingTotal > 0 && (
+            <div className="flex justify-between text-[13px]">
+              <span className="text-dp-text-secondary">Processing</span>
+              <span className="text-dp-text-primary font-semibold">{formatPrice(processingTotal)}</span>
+            </div>
+          )}
           {giftWrapTotal > 0 && (
             <div className="flex justify-between text-[13px]">
-              <span className="text-dp-text-secondary">Gift wrapping</span>
-              <span className="text-dp-text-primary font-semibold">+{formatPrice(giftWrapTotal)}</span>
+              <span className="text-dp-text-secondary">Gift wrap</span>
+              <span className="text-dp-text-primary font-semibold">{formatPrice(giftWrapTotal)}</span>
+            </div>
+          )}
+          {discount > 0 && (
+            <div className="flex justify-between text-[13px] text-dp-success">
+              <span>
+                Discount{cart?.promo_code_str ? ` (${cart.promo_code_str})` : ""}
+                {cart?.promo_products_only ? " · products" : ""}
+              </span>
+              <span className="font-semibold">−{formatPrice(discount)}</span>
             </div>
           )}
           <div className="flex justify-between text-[13px]">
@@ -510,7 +544,7 @@ function ReviewStep({
                       name="delivery"
                       value={opt.slug}
                       checked={deliveryType === opt.slug}
-                      onChange={() => setDeliveryType(opt.slug)}
+                      onChange={() => onDeliveryTypeChange(opt.slug)}
                       className="accent-dp-accent-cta"
                     />
                     <div>
@@ -546,7 +580,8 @@ function ReviewStep({
 }
 
 // ─── Confirmation ─────────────────────────────────────────
-function Confirmed({ orderNumber }: { orderNumber: string }) {
+function Confirmed({ orderNumber, orderId }: { orderNumber: string; orderId?: string }) {
+  const detailHref = orderId ? `/account/orders/${orderId}` : "/account/orders"
   return (
     <div className="flex flex-col items-center text-center gap-6 py-12">
       <div className="w-20 h-20 rounded-full bg-dp-success/15 flex items-center justify-center">
@@ -559,8 +594,8 @@ function Confirmed({ orderNumber }: { orderNumber: string }) {
         </p>
       </div>
       <div className="flex flex-col sm:flex-row gap-3 mt-2">
-        <LocalizedLink href="/account/orders" className="px-6 py-3 border border-dp-border rounded-sm text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
-          View Orders
+        <LocalizedLink href={detailHref} className="px-6 py-3 border border-dp-border rounded-sm text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
+          View Order
         </LocalizedLink>
         <LocalizedLink href="/catalog" className="flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
           Keep Shopping <ChevronRight size={13} aria-hidden />
@@ -578,13 +613,29 @@ function Confirmed({ orderNumber }: { orderNumber: string }) {
 }
 
 // ─── Order aside ──────────────────────────────────────────
-function OrderAside() {
+function OrderAside({
+  deliveryPrice = 0,
+  showShipping = false,
+}: {
+  deliveryPrice?: number
+  showShipping?: boolean
+}) {
   const { cart } = useCart()
   const { formatPrice } = useLocale()
   const items = cart?.items ?? []
-  const subtotal = cart ? parseFloat(cart.subtotal) : 0
   const giftWrapTotal = items.reduce((sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0), 0)
-  const total = subtotal + giftWrapTotal
+  const processingTotal = items.reduce((sum, item) => sum + (item.processing_option ? parseFloat(item.processing_fee || "0") : 0), 0)
+  const productsTotal = items.reduce((sum, item) => {
+    const unit = parseFloat(item.unit_price || "0")
+    if (unit > 0) return sum + unit * item.quantity
+    const line = parseFloat(item.line_total || "0")
+    const wrap = item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0
+    const proc = item.processing_option ? parseFloat(item.processing_fee || "0") : 0
+    return sum + Math.max(0, line - wrap - proc)
+  }, 0)
+  const discount = parseFloat(cart?.discount || "0")
+  const shipping = showShipping ? deliveryPrice : 0
+  const total = Math.max(0, productsTotal + giftWrapTotal + processingTotal - discount + shipping)
 
   return (
     <aside className="lg:w-80 xl:w-96 shrink-0 sticky top-24 self-start" aria-label="Order summary">
@@ -608,14 +659,42 @@ function OrderAside() {
               <span className="text-[13px] font-bold text-dp-text-primary shrink-0">{formatPrice(parseFloat(item.line_total))}</span>
             </div>
           ))}
-          <div className="border-t border-dp-border pt-3 flex flex-col gap-1.5">
-            {giftWrapTotal > 0 && (
+          <div className="border-t border-dp-border pt-3 flex flex-col gap-2">
+            <PromoCodeBox compact />
+            <div className="flex justify-between text-[12px]">
+              <span className="text-dp-text-tertiary">Products</span>
+              <span className="text-dp-text-secondary">{formatPrice(productsTotal)}</span>
+            </div>
+            {processingTotal > 0 && (
               <div className="flex justify-between text-[12px]">
-                <span className="text-dp-text-tertiary">Gift wrapping</span>
-                <span className="text-dp-text-primary">+{formatPrice(giftWrapTotal)}</span>
+                <span className="text-dp-text-tertiary">Processing</span>
+                <span className="text-dp-text-secondary">{formatPrice(processingTotal)}</span>
               </div>
             )}
-            <div className="flex justify-between">
+            {giftWrapTotal > 0 && (
+              <div className="flex justify-between text-[12px]">
+                <span className="text-dp-text-tertiary">Gift wrap</span>
+                <span className="text-dp-text-secondary">{formatPrice(giftWrapTotal)}</span>
+              </div>
+            )}
+            {discount > 0 && (
+              <div className="flex justify-between text-[12px] text-dp-success">
+                <span>
+                  Discount{cart?.promo_code_str ? ` (${cart.promo_code_str})` : ""}
+                  {cart?.promo_products_only ? " · products" : ""}
+                </span>
+                <span>−{formatPrice(discount)}</span>
+              </div>
+            )}
+            {showShipping && (
+              <div className="flex justify-between text-[12px]">
+                <span className="text-dp-text-tertiary">Shipping</span>
+                <span className="text-dp-text-secondary">
+                  {shipping === 0 ? "Free" : `+${formatPrice(shipping)}`}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between pt-1 border-t border-dp-border">
               <span className="text-[13px] font-bold text-dp-text-primary">Total</span>
               <span className="font-display text-xl text-dp-text-primary">{formatPrice(total)}</span>
             </div>
@@ -629,25 +708,48 @@ function OrderAside() {
 // ─── Page ─────────────────────────────────────────────────
 export default function CheckoutPage(): React.ReactElement {
   useRequireAuth()
-  const { cart } = useCart()
+  const { repriceCart } = useCart()
   const { setCurrency, currency } = useLocale()
   const [step, setStep] = useState<Step>("shipping")
   const [shippingData, setShippingData] = useState<Record<string, string>>({})
   const [confirmedOrder, setConfirmedOrder] = useState("")
+  const [confirmedOrderId, setConfirmedOrderId] = useState("")
   const [showGeoModal, setShowGeoModal] = useState(false)
+  const [geoLoading, setGeoLoading] = useState(false)
   const [pendingShippingData, setPendingShippingData] = useState<Record<string, string>>({})
   const [pendingCountry, setPendingCountry] = useState("")
   const [checkoutCurrency, setCheckoutCurrency] = useState("USD")
   const [isGE, setIsGE] = useState(false)
   const [paymentData, setPaymentData] = useState<CheckoutPaymentData | null>(null)
+  const [deliveryType, setDeliveryType] = useState("standard")
+  const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOpt[]>([])
+
+  useEffect(() => {
+    if (!isGE) {
+      setDeliveryOptions([])
+      setDeliveryType("standard")
+      return
+    }
+    apiFetch<DeliveryOpt[]>("/orders/delivery-options/")
+      .then((d) => {
+        if (Array.isArray(d) && d.length > 0) {
+          setDeliveryOptions(d)
+          setDeliveryType((prev) => (d.some((o) => o.slug === prev) ? prev : d[0].slug))
+        }
+      })
+      .catch(() => {})
+  }, [isGE])
+
+  const selectedDelivery = deliveryOptions.find((o) => o.slug === deliveryType)
+  const deliveryPrice = selectedDelivery
+    ? parseFloat(checkoutCurrency === "GEL" ? selectedDelivery.price_gel : selectedDelivery.price_usd)
+    : 0
 
   function handleShippingNext(data: Record<string, string>, country: string) {
-    // Determine the correct currency for the chosen shipping country
     const correctCurrency = country === "GE" ? "GEL" : "USD"
     const isGEAddress = country === "GE"
 
     if (correctCurrency !== currency) {
-      // Currency mismatch — show modal and auto-apply correct currency
       setPendingShippingData(data)
       setPendingCountry(country)
       setShowGeoModal(true)
@@ -659,15 +761,30 @@ export default function CheckoutPage(): React.ReactElement {
     }
   }
 
-  function handleGeoContinue() {
+  async function handleGeoContinue() {
     const correctCurrency = pendingCountry === "GE" ? "GEL" : "USD"
     const isGEAddress = pendingCountry === "GE"
-    setCurrency(correctCurrency as "GEL" | "USD")
-    setCheckoutCurrency(correctCurrency)
-    setIsGE(isGEAddress)
-    setShippingData(pendingShippingData)
-    setShowGeoModal(false)
-    setStep("payment")
+    setGeoLoading(true)
+    try {
+      // Re-resolve cart from admin market prices for the new currency (no FX)
+      await repriceCart(correctCurrency)
+      setCurrency(correctCurrency as "GEL" | "USD")
+      setCheckoutCurrency(correctCurrency)
+      setIsGE(isGEAddress)
+      setShippingData(pendingShippingData)
+      setShowGeoModal(false)
+      setStep("payment")
+    } catch {
+      // Still continue — checkout endpoint also re-resolves; warn via modal stay if needed
+      setCurrency(correctCurrency as "GEL" | "USD")
+      setCheckoutCurrency(correctCurrency)
+      setIsGE(isGEAddress)
+      setShippingData(pendingShippingData)
+      setShowGeoModal(false)
+      setStep("payment")
+    } finally {
+      setGeoLoading(false)
+    }
   }
 
   return (
@@ -676,7 +793,8 @@ export default function CheckoutPage(): React.ReactElement {
         <GeoPricingModal
           country={pendingCountry}
           currency={pendingCountry === "GE" ? "GEL" : "USD"}
-          onContinue={handleGeoContinue}
+          loading={geoLoading}
+          onContinue={() => { void handleGeoContinue() }}
         />
       )}
       <div className="border-b border-dp-border bg-dp-bg-surface">
@@ -687,7 +805,7 @@ export default function CheckoutPage(): React.ReactElement {
 
       <div className="dp-container py-8">
         {step === "confirmed" ? (
-          <Confirmed orderNumber={confirmedOrder} />
+          <Confirmed orderNumber={confirmedOrder} orderId={confirmedOrderId} />
         ) : (
           <div className="flex flex-col lg:flex-row gap-10 items-start">
             <div className="flex-1 min-w-0">
@@ -700,12 +818,18 @@ export default function CheckoutPage(): React.ReactElement {
                   checkoutCurrency={checkoutCurrency}
                   isGE={isGE}
                   paymentData={paymentData}
-                  onConfirm={(num) => { setConfirmedOrder(num); setStep("confirmed") }}
+                  deliveryType={deliveryType}
+                  onDeliveryTypeChange={setDeliveryType}
+                  deliveryOptions={deliveryOptions}
+                  onConfirm={(num, id) => { setConfirmedOrder(num); setConfirmedOrderId(id); setStep("confirmed") }}
                   onBack={() => setStep("payment")}
                 />
               )}
             </div>
-            <OrderAside />
+            <OrderAside
+              showShipping={step === "review" && isGE}
+              deliveryPrice={deliveryPrice}
+            />
           </div>
         )}
       </div>

@@ -182,10 +182,13 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
         if vendor:
             auction.vendor = vendor
         auction.save()
+        if auction.status == Auction.STATUS_ACTIVE:
+            _notify_auction_subscribers(auction)
         return auction
 
     def update(self, instance, validated_data):
         product_id = validated_data.pop("product_id", None)
+        was_inactive = instance.status == Auction.STATUS_INACTIVE
         if product_id is not None:
             from apps.products.models import Product
             if product_id:
@@ -202,7 +205,18 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
             instance.paid_at = timezone.now()
             instance.status = Auction.STATUS_BOUGHT
         instance.save()
+        if was_inactive and instance.status == Auction.STATUS_ACTIVE:
+            _notify_auction_subscribers(instance)
         return instance
+
+
+def _notify_auction_subscribers(auction) -> None:
+    try:
+        from apps.emails.service import send_to_auction_subscribers
+
+        send_to_auction_subscribers(auction)
+    except Exception:
+        pass
 
 
 class PlaceBidSerializer(serializers.Serializer):

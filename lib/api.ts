@@ -1,4 +1,4 @@
-import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from "./auth-storage"
+import { getAccessToken, storeTokens, clearTokens } from "./auth-storage"
 import { DEFAULT_LOCALE, isValidLocale, type Locale } from "./i18n"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
@@ -37,48 +37,24 @@ export async function refreshAccessToken(): Promise<string | null> {
 
   refreshPromise = (async () => {
     try {
-      // Prefer httpOnly cookie via Next.js proxy; fall back to storage refresh.
-      try {
-        const cookieRes = await fetch("/api/auth/refresh", {
-          method: "POST",
-          credentials: "include",
-        })
-        if (cookieRes.ok) {
-          const data = await cookieRes.json() as { access: string; refresh?: string }
-          const rememberMe = !!localStorage.getItem("kol_access")
-          const nextRefresh = data.refresh ?? getRefreshToken()
-          if (nextRefresh) {
-            storeTokens(data.access, nextRefresh, rememberMe)
-          } else if (typeof window !== "undefined") {
-            const storage = rememberMe ? localStorage : sessionStorage
-            storage.setItem("kol_access", data.access)
-          }
-          return data.access
-        }
-      } catch {
-        // fall through to storage-based refresh
-      }
-
-      const refresh = getRefreshToken()
-      if (!refresh) {
-        clearTokens()
-        return null
-      }
-
-      const res = await fetch(`${API_BASE}/auth/refresh/`, {
+      // Security fix #1: refresh token lives only in httpOnly cookie
+      const cookieRes = await fetch("/api/auth/refresh", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh }),
+        credentials: "include",
       })
-
-      if (!res.ok) {
-        clearTokens()
-        return null
+      if (cookieRes.ok) {
+        const data = await cookieRes.json() as { access: string; refresh?: string }
+        const rememberMe = !!localStorage.getItem("kol_access")
+        if (data.refresh) {
+          storeTokens(data.access, data.refresh, rememberMe)
+        } else if (typeof window !== "undefined") {
+          const storage = rememberMe ? localStorage : sessionStorage
+          storage.setItem("kol_access", data.access)
+        }
+        return data.access
       }
-
-      const data = await res.json() as { access: string; refresh?: string }
-      storeTokens(data.access, data.refresh ?? refresh, !!localStorage.getItem("kol_access"))
-      return data.access
+      clearTokens()
+      return null
     } catch {
       clearTokens()
       return null

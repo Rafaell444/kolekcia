@@ -153,6 +153,22 @@ def order_shipped_html() -> str:
     )
 
 
+def review_request_html() -> str:
+    body = (
+        '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Hi {{customer_name}},</p>'
+        '<p style="margin:0 0 14px;">We hope you are enjoying your Koleqcia order <strong style="color:' + INK + ';">#{{order_number}}</strong>.</p>'
+        '<p style="margin:0;">Would you take a moment to share your experience? Your review helps independent artists and helps other collectors find us.</p>'
+    )
+    return _shell(
+        preheader="How was your Koleqcia order?",
+        eyebrow="A quick favor",
+        title="Would you review us?",
+        body_html=body,
+        cta_label="Review us on Google",
+        cta_url="{{google_review_url}}",
+    )
+
+
 def custom_order_shipped_html() -> str:
     body = (
         '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Hi {{customer_name}},</p>'
@@ -243,6 +259,7 @@ def password_reset_html() -> str:
 _HTML_BUILDERS = {
     "order_confirmed": order_confirmed_html,
     "order_shipped": order_shipped_html,
+    "review_request": review_request_html,
     "custom_order_shipped": custom_order_shipped_html,
     "auction_new": auction_new_html,
     "auction_won": auction_won_html,
@@ -254,6 +271,8 @@ _META = [
      ["customer_name", "order_number", "total", "currency", "items", "items_html", "totals_html", "shipping_address_html"]),
     ("order_shipped", "Order Shipped", "Your order #{{order_number}} has shipped!",
      ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "items_html", "totals_html", "shipping_address_html"]),
+    ("review_request", "Review Request", "How was your Koleqcia order?",
+     ["customer_name", "order_number", "google_review_url"]),
     ("custom_order_shipped", "Custom Order Shipped", "Your custom order is on the way",
      ["customer_name", "tracking_code", "payment_link", "product_image", "total"]),
     ("auction_new", "New Auction Notification", "New auction: {{auction_title}}",

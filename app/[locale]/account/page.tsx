@@ -9,6 +9,7 @@ import {
   Truck, CheckCircle2, Clock, XCircle, RotateCcw,
   Award, Zap, ShoppingBag, User, MapPin, BellRing, MessageSquare,
   Lock, Plus, Pencil, Trash2, Home, Building2, FileText, ExternalLink, CreditCard, Check,
+  Megaphone,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useGamification } from "@/contexts/gamification-context"
@@ -22,6 +23,7 @@ import { useLocalePrefix } from "@/lib/use-localized-href"
 import InboxPanel from "@/components/messaging/InboxPanel"
 import { UnreadBadge } from "@/components/messaging/UnreadBadge"
 import { useInboxUnreadCount } from "@/hooks/use-inbox-unread"
+import CreatorPanel from "@/components/account/CreatorPanel"
 
 type CustomOrder = {
   id: string; vendor_name: string | null; product_type: string; status: string
@@ -34,7 +36,7 @@ const CUSTOM_STATUS_LABELS: Record<string, string> = {
   pending: "Pending review", review: "In review", approved: "Approved — pay now",
   paid: "Paid", printing: "Printing", shipped: "Shipped", cancelled: "Cancelled",
 }
-type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count: number; tracking_code: string; currency?: string }
+type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count?: number; items?: { id: number }[]; tracking_code: string; currency?: string }
 type Badge = {
   id: string
   name: string
@@ -71,6 +73,7 @@ const ACCOUNT_TABS = [
   { id: "overview",      label: "Overview",       Icon: User },
   { id: "inbox",         label: "Inbox",          Icon: MessageSquare },
   { id: "orders",        label: "Orders",         Icon: Package },
+  { id: "creator",       label: "Creator",        Icon: Megaphone },
   { id: "custom",        label: "Custom Orders",  Icon: FileText },
   { id: "wishlist",      label: "Wishlist",       Icon: Heart },
   { id: "badges",        label: "Badges & XP",    Icon: Award },
@@ -80,11 +83,10 @@ const ACCOUNT_TABS = [
 ]
 
 const ORDER_STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  delivered:  { label: "Delivered",  icon: <CheckCircle2 size={13} />, color: "text-dp-success" },
-  shipped:    { label: "Shipped",    icon: <Truck size={13} />,        color: "text-dp-accent-gold" },
-  processing: { label: "Processing", icon: <Clock size={13} />,        color: "text-dp-text-secondary" },
-  pending:    { label: "Pending",    icon: <Clock size={13} />,        color: "text-dp-text-tertiary" },
-  cancelled:  { label: "Cancelled",  icon: <XCircle size={13} />,      color: "text-dp-accent-cta" },
+  delivered:  { label: "Delivered",   icon: <CheckCircle2 size={13} />, color: "text-dp-success" },
+  shipped:    { label: "Shipped",     icon: <Truck size={13} />,        color: "text-dp-accent-gold" },
+  processing: { label: "Processing",  icon: <Clock size={13} />,        color: "text-dp-text-secondary" },
+  cancelled:  { label: "Cancelled",   icon: <XCircle size={13} />,      color: "text-dp-accent-cta" },
 }
 
 // ── Level XP roadmap data ──────────────────────────────────
@@ -126,7 +128,7 @@ function badgeRewardLabel(
   return unlocked ? "Badge collected" : "Complete the challenge to unlock"
 }
 
-function OverviewTab() {
+function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
   const { profile } = useGamification()
   const { formatPrice } = useLocale()
   const lp = useLocalePrefix()
@@ -138,7 +140,7 @@ function OverviewTab() {
 
   useEffect(() => {
     let cancelled = false
-    authFetch<{ results: Order[] }>("/orders/").then((d) => { if (!cancelled) setOrders(d.results.slice(0, 3)) }).catch(() => {})
+    authFetch<Order[] | PaginatedResponse<Order>>("/orders/").then((d) => { if (!cancelled) setOrders(parseList(d).slice(0, 3)) }).catch(() => {})
     authFetch<EarnedBadge[]>("/gamification/my-badges/").then((d) => { if (!cancelled) setEarnedBadges(d.slice(0, 6)) }).catch(() => {})
     authFetch<ReferralStats>("/referrals/me/").then((d) => { if (!cancelled) setReferral(d) }).catch(() => {})
     authFetch<XPLog[] | PaginatedResponse<XPLog>>("/gamification/xp-log/")
@@ -156,6 +158,23 @@ function OverviewTab() {
 
   return (
     <div className="flex flex-col gap-8">
+      <button
+        type="button"
+        onClick={onOpenCreator}
+        className="w-full text-left border border-dp-accent-cta/40 bg-dp-accent-cta/5 hover:bg-dp-accent-cta/10 rounded-sm p-5 transition-colors"
+      >
+        <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta mb-1 flex items-center gap-1.5">
+          <Megaphone size={12} /> Content creators
+        </p>
+        <p className="font-display text-2xl text-dp-text-primary">Get your own voucher</p>
+        <p className="text-[13px] text-dp-text-secondary mt-1">
+          Apply here — share your code, fans get a product discount, you earn GEL when orders are paid.
+        </p>
+        <span className="inline-flex mt-3 text-[11px] font-black uppercase tracking-widest text-dp-accent-cta">
+          Open Creator tab →
+        </span>
+      </button>
+
       <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -223,7 +242,7 @@ function OverviewTab() {
         ) : (
           <div className="flex flex-col gap-3">
             {orders.map((order) => {
-              const cfg = ORDER_STATUS_CONFIG[order.status] ?? ORDER_STATUS_CONFIG.pending
+              const cfg = ORDER_STATUS_CONFIG[order.status] ?? ORDER_STATUS_CONFIG.processing
               return (
                 <div key={order.id} className="bg-dp-bg-surface border border-dp-border rounded-sm p-4 flex items-center justify-between gap-4">
                   <div className="flex flex-col gap-0.5">
@@ -281,7 +300,10 @@ function OrdersTab() {
 
   useEffect(() => {
     let cancelled = false
-    authFetch<{ results: Order[] }>("/orders/").then((d) => { if (!cancelled) setOrders(d.results) }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
+    authFetch<Order[] | PaginatedResponse<Order>>("/orders/")
+      .then((d) => { if (!cancelled) setOrders(parseList(d)) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
 
@@ -302,13 +324,13 @@ function OrdersTab() {
           </Link>
         </div>
       ) : orders.map((order) => {
-        const cfg = ORDER_STATUS_CONFIG[order.status] ?? ORDER_STATUS_CONFIG.pending
+        const cfg = ORDER_STATUS_CONFIG[order.status] ?? ORDER_STATUS_CONFIG.processing
         return (
           <div key={order.id} className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
               <div>
                 <p className="text-[13px] font-bold text-dp-text-primary">{order.order_number}</p>
-                <p className="text-[11px] text-dp-text-tertiary mt-0.5">{new Date(order.created_at).toLocaleDateString()} · {order.items_count} item{order.items_count !== 1 ? "s" : ""}</p>
+                <p className="text-[11px] text-dp-text-tertiary mt-0.5">{new Date(order.created_at).toLocaleDateString()} · {(order.items_count ?? order.items?.length ?? 0)} item{(order.items_count ?? order.items?.length ?? 0) !== 1 ? "s" : ""}</p>
               </div>
               <div className="flex items-center gap-4">
                 <div className={`flex items-center gap-1.5 text-[12px] font-semibold ${cfg.color}`}>{cfg.icon} {cfg.label}</div>
@@ -1118,18 +1140,25 @@ export default function AccountPage(): React.ReactElement {
   const inboxUnread = useInboxUnreadCount()
   const unseenBadges = profile?.unseen_badge_count ?? 0
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const tab = new URLSearchParams(window.location.search).get("tab")
+    if (tab && ACCOUNT_TABS.some((t) => t.id === tab)) setActiveTab(tab)
+  }, [])
+
   async function handleLogout() {
     await logout()
     router.push(`${lp}/login`)
   }
 
   const tabContent: Record<string, React.ReactNode> = {
-    overview:      <OverviewTab />,
+    overview:      <OverviewTab onOpenCreator={() => setActiveTab("creator")} />,
     inbox:         <InboxTab />,
     orders:        <OrdersTab />,
     custom:        <CustomOrdersTab />,
     wishlist:      <WishlistTab />,
     badges:        <BadgesTab onSeen={() => { void refresh() }} />,
+    creator:       <CreatorPanel />,
     settings:      <SettingsTab />,
     addresses:     <AddressesTab />,
     payments:      <PaymentsTab />,

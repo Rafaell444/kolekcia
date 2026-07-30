@@ -82,7 +82,17 @@ def render_order_items_html(order) -> str:
 
         extras = []
         if item.processing_option:
-            extras.append(f"Processing: {_processing_label(item.processing_option)}")
+            label = getattr(item, "processing_label", "") or _processing_label(item.processing_option)
+            days = getattr(item, "processing_days", "") or ""
+            fee = Decimal(getattr(item, "processing_fee", 0) or 0)
+            bits = [label]
+            if days:
+                bits.append(days)
+            if fee > 0:
+                bits.append(f"+{_money(fee, currency)}")
+            elif label:
+                bits.append("Included")
+            extras.append("Processing: " + " · ".join(bits))
         if item.gift_wrap:
             note = f" — {item.gift_wrap_note}" if item.gift_wrap_note else ""
             extras.append(f"Gift wrap{note}")
@@ -95,7 +105,8 @@ def render_order_items_html(order) -> str:
             )
 
         unit = _money(item.price, currency)
-        line = _money(item.line_total, currency)
+        # Line shows product only; processing/gift wrap are in order totals
+        line = _money(Decimal(item.price) * item.quantity, currency)
 
         rows.append(
             f"""
@@ -130,16 +141,20 @@ def render_order_items_html(order) -> str:
 
 def render_order_totals_html(order) -> str:
     currency = order.currency or "USD"
+    # subtotal = products only; extras + shipping are separate line items
     lines = [
-        ("Subtotal", _money(order.subtotal, currency)),
+        ("Products", _money(order.subtotal, currency)),
     ]
-    if order.discount and Decimal(order.discount) > 0:
-        lines.append(("Discount", f"-{_money(order.discount, currency)}"))
+    if order.gift_wrap_total and Decimal(order.gift_wrap_total) > 0:
+        lines.append(("Gift wrap", _money(order.gift_wrap_total, currency)))
+    processing_total = getattr(order, "processing_fee_total", None)
+    if processing_total and Decimal(processing_total) > 0:
+        lines.append(("Processing", _money(processing_total, currency)))
     if order.delivery_price and Decimal(order.delivery_price) > 0:
         dtype = (order.delivery_type or "shipping").replace("_", " ").title()
         lines.append((dtype, _money(order.delivery_price, currency)))
-    if order.gift_wrap_total and Decimal(order.gift_wrap_total) > 0:
-        lines.append(("Gift wrap", _money(order.gift_wrap_total, currency)))
+    if order.discount and Decimal(order.discount) > 0:
+        lines.append(("Discount", f"-{_money(order.discount, currency)}"))
     lines.append(("Total", _money(order.total, currency)))
 
     rows = []
@@ -187,7 +202,15 @@ def build_order_email_context(order) -> dict:
     for item in order.items.all():
         line = f"{item.product_title} × {item.quantity} — {_money(item.line_total, currency)}"
         if item.processing_option:
-            line += f" | Processing: {_processing_label(item.processing_option)}"
+            label = getattr(item, "processing_label", "") or _processing_label(item.processing_option)
+            days = getattr(item, "processing_days", "") or ""
+            fee = Decimal(getattr(item, "processing_fee", 0) or 0)
+            detail = label
+            if days:
+                detail += f" ({days})"
+            if fee > 0:
+                detail += f" +{_money(fee, currency)}"
+            line += f" | Processing: {detail}"
         if item.gift_wrap:
             line += " | Gift wrap"
         items_plain.append(line)

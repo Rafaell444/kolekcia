@@ -10,7 +10,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ("id", "name", "slug", "image_url", "count", "seo")
+        fields = ("id", "name", "name_ka", "name_ru", "slug", "image_url", "count", "seo")
 
     def get_seo(self, obj):
         return build_seo_dict(obj, og_image=obj.image_url or "")
@@ -33,7 +33,7 @@ class ArtistSerializer(serializers.ModelSerializer):
     class Meta:
         model = Artist
         fields = (
-            "id", "name", "handle", "avatar_url", "cover_url", "bio",
+            "id", "name", "name_ka", "name_ru", "handle", "avatar_url", "cover_url", "bio", "bio_ka", "bio_ru",
             "designs", "followers", "level", "badge", "verified",
             "vendor_id", "vendor_slug", "vendor_name",
         )
@@ -42,19 +42,19 @@ class ArtistSerializer(serializers.ModelSerializer):
 class PosterSizeSerializer(serializers.ModelSerializer):
     class Meta:
         model = PosterSize
-        fields = ("id", "label", "surcharge")
+        fields = ("id", "label", "label_ka", "label_ru", "surcharge")
 
 
 class PosterFinishSerializer(serializers.ModelSerializer):
     class Meta:
         model = PosterFinish
-        fields = ("id", "label", "surcharge")
+        fields = ("id", "label", "label_ka", "label_ru", "surcharge")
 
 
 class PosterFrameSerializer(serializers.ModelSerializer):
     class Meta:
         model = PosterFrame
-        fields = ("id", "label", "surcharge")
+        fields = ("id", "label", "label_ka", "label_ru", "surcharge")
 
 
 class ProductImageSerializer(serializers.ModelSerializer):

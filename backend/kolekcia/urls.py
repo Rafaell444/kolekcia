@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/cms/", include("apps.cms.urls")),
     path("api/blog/", include("apps.blog.urls")),
     path("api/referrals/", include("apps.referrals.urls")),
+    path("api/creators/", include("apps.creators.urls")),
     path("api/messaging/", include("apps.messaging.urls")),
     path("api/newsletter/", include("apps.newsletter.urls")),
     path("api/contact/", include("apps.contact.urls")),

@@ -26,12 +26,18 @@ class CartItem(models.Model):
     variant = models.ForeignKey(ProductVariant, null=True, blank=True, on_delete=models.CASCADE)
     size_variant = models.ForeignKey(SizeVariant, null=True, blank=True, on_delete=models.SET_NULL, related_name="cart_items")
     quantity = models.PositiveIntegerField(default=1)
+    # Snapshot of market unit price at add-to-cart (no FX). currency is USD|GEL|EUR|GBP.
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    currency = models.CharField(max_length=10, default="USD")
     gift_wrap = models.BooleanField(default=False)
     gift_wrap_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     gift_wrap_note = models.CharField(max_length=500, blank=True, default="")
     gift_wrap_image_url = models.URLField(blank=True, default="")
     delivery_type = models.CharField(max_length=20, default="standard")
     processing_option = models.CharField(max_length=50, blank=True, default="")
+    processing_fee = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    processing_label = models.CharField(max_length=100, blank=True, default="")
+    processing_days = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:
         db_table = "cart_items"
@@ -39,14 +45,16 @@ class CartItem(models.Model):
     @property
     def line_total(self):
         from decimal import Decimal
-        if self.size_variant_id:
-            base = Decimal(self.size_variant.price_usd) * self.quantity
-        elif self.variant_id:
-            base = self.variant.price * self.quantity
-        else:
-            base = Decimal("0")
+        from apps.orders.pricing import resolve_unit_price
+
+        unit = Decimal(self.unit_price or 0)
+        if unit == 0:
+            # Legacy rows before unit_price snapshot
+            unit = resolve_unit_price(self.variant, self.size_variant, self.currency)
+        base = unit * self.quantity
         wrap = Decimal(self.gift_wrap_price) if self.gift_wrap else Decimal("0")
-        return base + wrap
+        processing = Decimal(self.processing_fee) if self.processing_option else Decimal("0")
+        return base + wrap + processing
 
     def __str__(self):
         label = self.size_variant.label if self.size_variant_id else str(self.variant)
@@ -55,7 +63,8 @@ class CartItem(models.Model):
 
 class Order(models.Model):
     STATUS_CHOICES = [
-        ("pending", "Pending"),
+        # Note: "pending" is intentionally excluded — shop orders created after
+        # successful payment start as "processing". Custom orders use their own model.
         ("processing", "Processing"),
         ("shipped", "Shipped"),
         ("delivered", "Delivered"),
@@ -65,7 +74,8 @@ class Order(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order_number = models.CharField(max_length=30, unique=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="orders")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    # Shop orders always start as "processing" (payment already confirmed at checkout).
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="processing")
     promo_code = models.ForeignKey("promo.PromoCode", null=True, blank=True, on_delete=models.SET_NULL)
 
     shipping_name = models.CharField(max_length=255)
@@ -83,9 +93,14 @@ class Order(models.Model):
     delivery_type = models.CharField(max_length=20, default="standard")
     delivery_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     gift_wrap_total = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    processing_fee_total = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     currency = models.CharField(max_length=10, default="USD")
     total = models.DecimalField(max_digits=10, decimal_places=2)
     tracking_code = models.CharField(max_length=100, blank=True)
+    shipped_at = models.DateTimeField(null=True, blank=True)
+    review_requested_at = models.DateTimeField(null=True, blank=True)
+    shipped_at = models.DateTimeField(null=True, blank=True)
+    review_requested_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -186,6 +201,9 @@ class OrderItem(models.Model):
     gift_wrap_note = models.CharField(max_length=500, blank=True, default="")
     gift_wrap_image_url = models.URLField(blank=True, default="")
     processing_option = models.CharField(max_length=50, blank=True, default="")
+    processing_fee = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    processing_label = models.CharField(max_length=100, blank=True, default="")
+    processing_days = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:
         db_table = "order_items"

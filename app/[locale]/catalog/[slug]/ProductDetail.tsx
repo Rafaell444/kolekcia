@@ -410,7 +410,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const processingPrice = selectedProcessing
     ? parseFloat(currency === "GEL" ? selectedProcessing.price_gel : selectedProcessing.price_usd)
     : 0
-  const price = basePrice + (giftWrap ? giftWrapPrice : 0) + processingPrice
+  // Hero price = variant only. Combined total (variant + extras) is for Add to Cart.
+  const cartTotal = basePrice + (giftWrap ? giftWrapPrice : 0) + processingPrice
   const discount = originalPrice != null && originalPrice > basePrice
     ? Math.round(((originalPrice - basePrice) / originalPrice) * 100)
     : null
@@ -639,11 +640,11 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
             <div className="flex items-baseline gap-3">
               <span className={`font-display text-4xl ${originalPrice != null && originalPrice > basePrice ? "text-dp-accent-cta" : "text-dp-text-primary"}`}>
-                {formatLocalized(price)}
+                {formatLocalized(basePrice)}
               </span>
               {originalPrice != null && originalPrice > basePrice && (
                 <span className="text-lg text-dp-text-tertiary line-through">
-                  {formatLocalized(originalPrice + (giftWrap ? giftWrapPrice : 0) + processingPrice)}
+                  {formatLocalized(originalPrice)}
                 </span>
               )}
               {discount != null && discount > 0 && <span className="text-sm font-bold text-dp-accent-cta">Save {discount}%</span>}
@@ -816,7 +817,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-bold text-dp-text-primary">+{formatPrice(giftWrapPrice)}</span>
+                    <span className="text-[13px] font-bold text-dp-text-primary">+{formatLocalized(giftWrapPrice)}</span>
                     <input
                       type="checkbox"
                       checked={giftWrap}
@@ -910,7 +911,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                     ? <><Loader2 size={16} className="animate-spin shrink-0" /> <span className="truncate">Adding…</span></>
                     : added
                         ? <><Check size={16} className="shrink-0" /> <span className="truncate">Added to Cart</span></>
-                        : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(price * qty)}</span></>}
+                        : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(cartTotal * qty)}</span></>}
               </button>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
@@ -1288,7 +1289,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
           >
             {added
               ? <><Check size={16} className="shrink-0" /> Added!</>
-              : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(price * qty)}</span></>}
+              : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(cartTotal * qty)}</span></>}
           </button>
         </div>
       </section>

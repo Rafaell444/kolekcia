@@ -10,6 +10,45 @@ logger = logging.getLogger(__name__)
 
 _VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
+# Maps each event to a Workspace From alias category.
+_EVENT_FROM_CATEGORY = {
+    "password_reset": "accounts",
+    "order_confirmed": "orders",
+    "order_shipped": "orders",
+    "review_request": "orders",
+    "custom_order_shipped": "orders",
+    "auction_new": "auctions",
+    "auction_won": "auctions",
+}
+
+_FROM_DISPLAY_NAMES = {
+    "accounts": "Koleqcia Accounts",
+    "orders": "Koleqcia Orders",
+    "auctions": "Koleqcia Auctions",
+}
+
+
+def from_email_address_for_event(event_key: str) -> str:
+    """Bare address only (no display name)."""
+    category = _EVENT_FROM_CATEGORY.get(event_key)
+    if category == "accounts":
+        return settings.EMAIL_FROM_ACCOUNTS or settings.DEFAULT_FROM_EMAIL
+    if category == "orders":
+        return settings.EMAIL_FROM_ORDERS or settings.DEFAULT_FROM_EMAIL
+    if category == "auctions":
+        return settings.EMAIL_FROM_AUCTIONS or settings.DEFAULT_FROM_EMAIL
+    return settings.DEFAULT_FROM_EMAIL
+
+
+def from_email_for_event(event_key: str) -> str:
+    """Branded From header: 'Display Name <alias@domain>'."""
+    address = from_email_address_for_event(event_key)
+    category = _EVENT_FROM_CATEGORY.get(event_key)
+    display = _FROM_DISPLAY_NAMES.get(category or "", "")
+    if display:
+        return f"{display} <{address}>"
+    return address
+
 
 def _render(template_str: str, context: dict) -> str:
     """Replace {{variable}} placeholders with values from context."""
@@ -60,16 +99,15 @@ def send_template_email(
 
     subject = _render(template.subject, context)
     html_body = _render(template.html_body, context)
-
-    from_email = settings.DEFAULT_FROM_EMAIL
-    if vendor and hasattr(vendor, "payment_email") and vendor.payment_email:
-        from_email = vendor.payment_email
+    from_email = from_email_for_event(event_key)
+    from_address = from_email_address_for_event(event_key)
 
     msg = EmailMessage(
         subject=subject,
         body=html_body,
         from_email=from_email,
         to=[recipient_email],
+        reply_to=[from_address],
     )
     msg.content_subtype = "html"
 
@@ -82,7 +120,7 @@ def send_template_email(
             event_key=event_key,
             status=EmailLog.STATUS_SENT,
         )
-        logger.info("Email sent: event=%s to=%s", event_key, recipient_email)
+        logger.info("Email sent: event=%s to=%s from=%s", event_key, recipient_email, from_email)
         return True
     except Exception as exc:
         EmailLog.objects.create(

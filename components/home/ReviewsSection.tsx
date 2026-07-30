@@ -26,7 +26,6 @@ type SocialLink = {
 const FALLBACK_REVIEWS: HomepageReview[] = [
   { id: 1, author_name: "James P.", author_initials: "JP", rating: 5, review_date: "June 2024", text: "Absolutely stunning. The metallic finish makes colors pop so much more than any paper print I've owned.", source: "google" },
   { id: 2, author_name: "Mia H.", author_initials: "MH", rating: 5, review_date: "May 2024", text: "My partner couldn't believe this was a metal poster — it looks like a painting. Fast shipping, gorgeous packaging.", source: "google" },
-  { id: 3, author_name: "Tom F.", author_initials: "TF", rating: 5, review_date: "June 2024", text: "Perfect gift. The limited edition piece sold out right after I ordered — glad I didn't wait!", source: "admin" },
 ]
 
 const FALLBACK_SOCIALS: SocialLink[] = [
@@ -59,7 +58,6 @@ function initialsFor(name: string, stored?: string) {
 }
 
 export default function ReviewsSection() {
-  const [tab, setTab] = useState<"all" | "google" | "admin">("all")
   const [reviews, setReviews] = useState<HomepageReview[]>(FALLBACK_REVIEWS)
   const [socials, setSocials] = useState<SocialLink[]>(FALLBACK_SOCIALS)
 
@@ -76,7 +74,8 @@ export default function ReviewsSection() {
     return () => { cancelled = true }
   }, [])
 
-  const shown = reviews.filter((r) => tab === "all" || r.source === tab)
+  const shown = reviews.filter((r) => r.source === "google")
+  const average = shown.length ? (shown.reduce((sum, review) => sum + review.rating, 0) / shown.length).toFixed(1) : "0.0"
 
   return (
     <section className="py-16 bg-dp-bg-elevated border-y border-dp-border" aria-labelledby="reviews-heading">
@@ -90,7 +89,7 @@ export default function ReviewsSection() {
 
         <div className="flex flex-col items-center gap-2 mb-10">
           <div className="flex items-center gap-3">
-            <span className="text-[13px] font-semibold text-dp-text-primary">Trustpilot reviews</span>
+            <span className="text-[13px] font-semibold text-dp-text-primary">Google reviews</span>
             <div className="flex items-center gap-0.5">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="w-6 h-6 bg-[#00b67a] rounded-sm flex items-center justify-center">
@@ -104,25 +103,11 @@ export default function ReviewsSection() {
             </div>
           </div>
           <p className="text-[12px] text-dp-text-secondary">
-            Excellent&nbsp;|&nbsp;Based on {reviews.length > 0 ? `${reviews.length * 3000}+` : "18,120"} reviewers
+            {average} / 5&nbsp;|&nbsp;Based on {shown.length} published reviews
           </p>
         </div>
 
-        <div className="flex justify-center gap-2 mb-8">
-          {(["all", "google", "admin"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-1.5 rounded-full text-[12px] font-bold uppercase tracking-widest border transition-colors ${
-                tab === t
-                  ? "bg-dp-accent-cta text-white border-dp-accent-cta"
-                  : "border-dp-border text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover"
-              }`}
-            >
-              {t === "all" ? "All Reviews" : t === "google" ? "Google" : "Staff Picks"}
-            </button>
-          ))}
-        </div>
+        <div className="flex justify-center mb-8"><span className="px-4 py-1.5 rounded-full text-[12px] font-bold uppercase tracking-widest bg-blue-100 text-blue-700">Google</span></div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
           {shown.map((r) => (

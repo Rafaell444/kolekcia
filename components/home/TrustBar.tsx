@@ -1,3 +1,8 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { apiFetch } from "@/lib/api"
+
 // Info bar: fast delivery, secure payments, 100-day returns
 const TRUST_ITEMS = [
   {
@@ -48,17 +53,25 @@ const TRUST_ITEMS = [
   },
 ]
 
+type TrustItem = { id: number; key: string; title: string; description: string; logos: typeof TRUST_ITEMS[number]["logos"] }
+
 export default function TrustBar() {
+  const [items, setItems] = useState(TRUST_ITEMS)
+  useEffect(() => {
+    apiFetch<TrustItem[]>("/cms/trust-bar/").then((data) => {
+      if (Array.isArray(data) && data.length) setItems(data as unknown as typeof TRUST_ITEMS)
+    }).catch(() => {})
+  }, [])
   return (
     <section className="py-6" aria-label="Trust and payment information">
       <div className="dp-container">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {TRUST_ITEMS.map((item) => (
+          {items.map((item) => (
             <div
               key={item.id}
               className="flex flex-col items-center text-center gap-3 p-6 bg-dp-bg-surface border border-dp-border rounded-xl"
             >
-              <div className="mb-1">{item.icon}</div>
+              <div className="mb-1">{"icon" in item ? item.icon : null}</div>
               <div>
                 <p className="text-[15px] font-bold text-dp-text-primary mb-0.5">{item.title}</p>
                 <p className="text-[12px] text-dp-text-secondary leading-relaxed">{item.desc}</p>

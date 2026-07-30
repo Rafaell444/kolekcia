@@ -81,15 +81,40 @@ class Auction(SEOModelMixin):
     def finalize_if_ended(self):
         if not self.is_ended() or self.status != self.STATUS_ACTIVE:
             return False
+        newly_won = False
         top_bid = self.bids.order_by("-amount").first()
         if top_bid:
+            newly_won = not self.winner_id
             self.winner = top_bid.user
             self.winning_amount = top_bid.amount
             if not self.winner_payment_status:
                 self.winner_payment_status = self.PAYMENT_PENDING
         self.refresh_live_flag()
         self.save(update_fields=["winner", "winning_amount", "winner_payment_status", "is_live"])
+        if newly_won and self.winner_id:
+            self._send_auction_won_email()
         return True
+
+    def _send_auction_won_email(self):
+        try:
+            from django.conf import settings
+            from apps.emails.service import send_template_email, get_template
+
+            if not get_template("auction_won", vendor=self.vendor):
+                return
+            send_template_email(
+                "auction_won",
+                self.winner.email,
+                {
+                    "winner_name": self.winner.name or self.winner.email.split("@")[0],
+                    "auction_title": self.title,
+                    "winning_amount": str(self.winning_amount or ""),
+                    "payment_link": f"{settings.FRONTEND_URL}/auctions/{self.slug}",
+                },
+                vendor=self.vendor,
+            )
+        except Exception:
+            pass
 
     SEO_TEMPLATES = {
         "en": {

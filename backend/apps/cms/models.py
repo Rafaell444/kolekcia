@@ -82,6 +82,10 @@ class HomepageReview(models.Model):
     rating = models.PositiveSmallIntegerField(default=5)
     review_date = models.CharField(max_length=50, blank=True)
     text = models.TextField()
+    google_review_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
+    google_review_url = models.URLField(blank=True, default="")
+    google_review_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
+    google_review_url = models.URLField(blank=True, default="")
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="admin")
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
@@ -109,6 +113,32 @@ class CommunitySocialLink(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class TrustBarItem(models.Model):
+    key = models.SlugField(unique=True)
+    title = models.CharField(max_length=120)
+    description = models.CharField(max_length=255, blank=True)
+    icon = models.CharField(max_length=30, blank=True)
+    logos = models.JSONField(default=list, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+
+class FandomBrand(models.Model):
+    name = models.CharField(max_length=120)
+    abbreviation = models.CharField(max_length=120)
+    background = models.CharField(max_length=20, default="#111111")
+    text_color = models.CharField(max_length=20, default="#ffffff")
+    link = models.CharField(max_length=255, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
 
 
 class PageSection(models.Model):

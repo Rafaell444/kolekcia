@@ -7,10 +7,10 @@ class BlogPostSerializer(serializers.ModelSerializer):
         model = BlogPost
         fields = (
             "id",
-            "title",
+            "title", "title_ka", "title_ru",
             "slug",
-            "excerpt",
-            "content",
+            "excerpt", "excerpt_ka", "excerpt_ru",
+            "content", "content_ka", "content_ru",
             "content_blocks",
             "cover_image_url",
             "is_published",

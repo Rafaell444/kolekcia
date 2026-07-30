@@ -15,10 +15,10 @@ class CartItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = CartItem
         fields = (
-            "id", "variant", "size_variant", "quantity", "line_total",
+            "id", "variant", "size_variant", "quantity", "unit_price", "currency", "line_total",
             "product_title", "product_image", "size_label",
             "gift_wrap", "gift_wrap_price", "gift_wrap_note", "gift_wrap_image_url",
-            "delivery_type", "processing_option",
+            "delivery_type", "processing_option", "processing_fee", "processing_label", "processing_days",
         )
 
     def get_product_title(self, obj):
@@ -83,10 +83,39 @@ class CartSerializer(serializers.ModelSerializer):
     items = CartItemSerializer(many=True, read_only=True)
     subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     promo_code_str = serializers.CharField(source="promo_code.code", read_only=True, allow_null=True)
+    discount = serializers.SerializerMethodField()
+    promo_percent = serializers.SerializerMethodField()
+    promo_products_only = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
-        fields = ("id", "items", "subtotal", "promo_code_str")
+        fields = (
+            "id", "items", "subtotal", "promo_code_str",
+            "discount", "promo_percent", "promo_products_only",
+        )
+
+    def get_discount(self, obj):
+        from decimal import Decimal
+        from apps.creators.services import product_subtotal_from_cart
+
+        promo = obj.promo_code
+        if not promo:
+            return "0.00"
+        if promo.owner_id:
+            amount = promo.calculate_product_discount(product_subtotal_from_cart(obj))
+        else:
+            amount = promo.calculate_discount(Decimal(obj.subtotal))
+        return str(amount.quantize(Decimal("0.01")))
+
+    def get_promo_percent(self, obj):
+        promo = obj.promo_code
+        if not promo or promo.discount_type != "percent":
+            return None
+        return str(promo.discount_value)
+
+    def get_promo_products_only(self, obj):
+        promo = obj.promo_code
+        return bool(promo and promo.owner_id)
 
 
 class AddToCartSerializer(serializers.Serializer):
@@ -111,7 +140,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderItem
-        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "gift_wrap_note", "gift_wrap_image_url", "processing_option")
+        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "gift_wrap_note", "gift_wrap_image_url", "processing_option", "processing_fee", "processing_label", "processing_days")
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
@@ -134,7 +163,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "shipping_name", "shipping_line1", "shipping_line2",
             "shipping_city", "shipping_state", "shipping_zip", "shipping_country",
             "shipping_email", "shipping_phone",
-            "subtotal", "discount", "delivery_type", "delivery_price", "gift_wrap_total", "currency", "total",
+            "subtotal", "discount", "delivery_type", "delivery_price", "gift_wrap_total", "processing_fee_total", "currency", "total",
             "promo_code_str", "tracking_code", "created_at",
         )
         read_only_fields = ("id", "order_number", "status", "subtotal", "discount", "total", "created_at")

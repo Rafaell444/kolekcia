@@ -122,8 +122,8 @@ type LocaleContextValue = {
   rates: Record<Currency, number>
   setLanguage: (lang: Language) => void
   setCurrency: (cur: Currency) => void
-  /** Format a USD amount in the currently selected currency */
-  formatPrice: (usdAmount: number | string | null | undefined) => string
+  /** Format an amount already in the selected market currency (no FX conversion). */
+  formatPrice: (amount: number | string | null | undefined) => string
   currentLang: LanguageMeta
   currentCur: CurrencyMeta
 }
@@ -227,21 +227,21 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
     setCurState(cur)
   }, [])
 
+  // Format market amounts as-is — never multiply by exchange rates.
+  // Georgian market uses admin GEL prices; other markets use admin USD (etc.) prices.
   const formatPrice = useCallback(
-    (usdAmount: number | string | null | undefined): string => {
-      const num = typeof usdAmount === "string" ? parseFloat(usdAmount) : (usdAmount ?? 0)
+    (amount: number | string | null | undefined): string => {
+      const num = typeof amount === "string" ? parseFloat(amount) : (amount ?? 0)
       if (isNaN(num)) return ""
-      const converted = num * (rates[currency] ?? 1)
       const cur = CURRENCIES.find((c) => c.code === currency)!
-      const formatted = converted.toLocaleString("en-US", {
+      const formatted = num.toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })
-      // GEL uses suffix symbol (₾), others use prefix
       if (currency === "GEL") return `${formatted} ${cur.symbol}`
       return `${cur.symbol}${formatted}`
     },
-    [currency, rates]
+    [currency]
   )
 
   const currentLang = LANGUAGES.find((l) => l.code === language) ?? LANGUAGES[0]

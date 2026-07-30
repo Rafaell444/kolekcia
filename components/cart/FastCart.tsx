@@ -36,7 +36,19 @@ export default function FastCart() {
   }, [isOpen])
 
   const items = cart?.items ?? []
-  const subtotal = parseFloat(cart?.subtotal ?? "0")
+  const giftWrapTotal = items.reduce((sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0), 0)
+  const processingTotal = items.reduce((sum, item) => sum + (item.processing_option ? parseFloat(item.processing_fee || "0") : 0), 0)
+  const productsTotal = items.reduce((sum, item) => {
+    const unit = parseFloat(item.unit_price || "0")
+    if (unit > 0) return sum + unit * item.quantity
+    // Fallback: line_total minus extras
+    const line = parseFloat(item.line_total || "0")
+    const wrap = item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0
+    const proc = item.processing_option ? parseFloat(item.processing_fee || "0") : 0
+    return sum + Math.max(0, line - wrap - proc)
+  }, 0)
+  const discount = parseFloat(cart?.discount || "0")
+  const subtotal = Math.max(0, productsTotal + giftWrapTotal + processingTotal - discount)
 
   return (
     <>
@@ -219,14 +231,40 @@ export default function FastCart() {
               </div>
             )}
 
-            {/* Subtotal */}
-            <div className="flex items-center justify-between">
-              <p className="text-[13px] text-dp-text-secondary">
-                {t("cart.subtotal")} ({items.reduce((s, i) => s + i.quantity, 0)} {t("cart.items")})
-              </p>
-              <p className="text-[18px] font-black text-dp-text-primary font-display">
-                {formatPrice(subtotal)}
-              </p>
+            {/* Totals breakdown */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="text-dp-text-tertiary">Products</span>
+                <span className="text-dp-text-secondary">{formatPrice(productsTotal)}</span>
+              </div>
+              {processingTotal > 0 && (
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-dp-text-tertiary">Processing</span>
+                  <span className="text-dp-text-secondary">{formatPrice(processingTotal)}</span>
+                </div>
+              )}
+              {giftWrapTotal > 0 && (
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-dp-text-tertiary">Gift wrap</span>
+                  <span className="text-dp-text-secondary">{formatPrice(giftWrapTotal)}</span>
+                </div>
+              )}
+              {discount > 0 && (
+                <div className="flex items-center justify-between text-[12px] text-dp-success">
+                  <span>
+                    Discount{cart?.promo_code_str ? ` (${cart.promo_code_str})` : ""}
+                  </span>
+                  <span>−{formatPrice(discount)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-1 border-t border-dp-border mt-1">
+                <p className="text-[13px] text-dp-text-secondary">
+                  {t("cart.subtotal")} ({items.reduce((s, i) => s + i.quantity, 0)} {t("cart.items")})
+                </p>
+                <p className="text-[18px] font-black text-dp-text-primary font-display">
+                  {formatPrice(subtotal)}
+                </p>
+              </div>
             </div>
             <p className="text-[11px] text-dp-text-tertiary -mt-1">
               {t("cart.shippingNote")}

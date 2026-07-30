@@ -306,6 +306,28 @@ class VendorPublicByCategoryView(APIView):
 
 # -- Vendor-scoped custom orders -------------------------------------------------
 
+def _send_custom_order_shipped_email(order) -> None:
+    try:
+        from apps.emails.service import send_template_email, get_template
+
+        if not get_template("custom_order_shipped", vendor=order.vendor):
+            return
+        send_template_email(
+            "custom_order_shipped",
+            order.email,
+            {
+                "customer_name": order.name,
+                "tracking_code": order.tracking_code or "",
+                "payment_link": order.payment_url or "",
+                "product_image": order.image_url or "",
+                "total": str(order.price or ""),
+            },
+            vendor=order.vendor,
+        )
+    except Exception:
+        pass
+
+
 class VendorCustomOrderListView(APIView):
     permission_classes = [IsVendorOrAdmin]
 
@@ -335,6 +357,7 @@ class VendorCustomOrderListView(APIView):
 
         allowed = ("status", "cancel_reason", "price", "currency", "payment_url", "tracking_code")
         data = {k: v for k, v in request.data.items() if k in allowed}
+        prev_status = order.status
         new_status = data.get("status", order.status)
 
         if new_status == "paid":
@@ -348,7 +371,11 @@ class VendorCustomOrderListView(APIView):
 
         ser = CustomOrderSerializer(order, data=data, partial=True)
         ser.is_valid(raise_exception=True)
-        ser.save()
+        order = ser.save()
+
+        if new_status == "shipped" and prev_status != "shipped":
+            _send_custom_order_shipped_email(order)
+
         return Response(ser.data)
 
 

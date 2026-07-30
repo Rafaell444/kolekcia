@@ -11,6 +11,8 @@ type HomepageReview = {
   rating: number
   review_date: string
   text: string
+  google_review_id?: string | null
+  google_review_url?: string
   source: "google" | "admin"
   sort_order: number
   is_active: boolean
@@ -93,6 +95,14 @@ export default function AdminReviewsPage(): React.ReactElement {
     await load()
   }
 
+  async function toggleReview(id: number, active: boolean) {
+    const updated = await adminFetch<HomepageReview>(`/reviews/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: active }),
+    })
+    setReviews((prev) => prev.map((r) => r.id === id ? updated : r))
+  }
+
   async function saveSocial(e: React.FormEvent) {
     e.preventDefault()
     if (!socialForm) return
@@ -156,8 +166,10 @@ export default function AdminReviewsPage(): React.ReactElement {
                   </div>
                   <p className="text-[12px] text-dp-text-tertiary mb-1">{r.review_date} · {r.source}</p>
                   <p className="text-[13px] text-dp-text-secondary line-clamp-2">{r.text}</p>
+                  {r.google_review_id && <p className="text-[10px] text-dp-accent-gold mt-1">Google review awaiting approval</p>}
                 </div>
                 <div className="flex gap-2 shrink-0">
+                  <button onClick={() => { void toggleReview(r.id, !r.is_active) }} className="px-2 py-1 border border-dp-accent-cta/40 text-dp-accent-cta rounded-sm text-[10px] font-bold uppercase">{r.is_active ? "Hide" : "Approve"}</button>
                   <button onClick={() => { setReviewForm({ ...r }); setEditingReviewId(r.id) }} className="p-2 border border-dp-border rounded-sm"><Pencil size={13} /></button>
                   <button onClick={() => deleteReview(r.id)} className="p-2 border border-dp-border rounded-sm text-red-400"><Trash2 size={13} /></button>
                 </div>

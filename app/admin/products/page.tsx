@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef, useCallback } from "react"
 import Image from "next/image"
 import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus, GripVertical, Check, Crop, Tag } from "lucide-react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
+import TranslationFields from "@/components/admin/TranslationFields"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
   type DragEndEvent,
@@ -26,7 +27,7 @@ type SizeVariantItem = {
 }
 
 type AdminProduct = {
-  id: number; title: string; artist_name: string; base_price: string
+  id: number; title: string; title_ka?: string; title_ru?: string; artist_name: string; base_price: string
   regional_prices?: Record<string, { price?: string; original?: string | null }>
   image_url?: string
   images: { id?: number; url: string; src?: string; media_type?: string }[]; is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean; is_featured?: boolean
@@ -37,7 +38,7 @@ type AdminProduct = {
   status?: "active" | "paused" | "sold"
   vendor_slug?: string | null
   vendor_name?: string | null
-  description?: string
+  description?: string; description_ka?: string; description_ru?: string
   material?: string
   size_variants?: SizeVariantItem[]
   variants?: Array<{
@@ -62,6 +63,7 @@ type PendingVariant = {
 
 type ProductDraft = {
   title: string
+  title_ka: string; title_ru: string
   categories: string
   tags: string
   vendorSlug: string
@@ -69,6 +71,7 @@ type ProductDraft = {
   isLimited: boolean; isSale: boolean; isNew: boolean; isExclusive: boolean; isFeatured: boolean; isReadyToShip: boolean
   allowCustomSize: boolean
   description: string
+  description_ka: string; description_ru: string
   material: string
   processingTimeLabel: string
 }
@@ -127,12 +130,13 @@ function StatusBadge({ status }: { status?: ProductStatus }) {
 
 const BLANK_DRAFT: ProductDraft = {
   title: "",
+  title_ka: "", title_ru: "",
   categories: "", tags: "", vendorSlug: "",
   status: "active",
   isLimited: false, isSale: false, isNew: true, isExclusive: false, isFeatured: false, isReadyToShip: false,
   allowCustomSize: false,
   processingTimeLabel: "",
-  description: "", material: "",
+  description: "", description_ka: "", description_ru: "", material: "",
 }
 
 const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
@@ -706,6 +710,7 @@ function ProductModal({
     editProduct
       ? {
           title: editProduct.title,
+          title_ka: editProduct.title_ka ?? "", title_ru: editProduct.title_ru ?? "",
           categories: editProduct.category_slugs?.join(",") ?? editProduct.category_slug ?? "",
           tags: Array.isArray(editProduct.tags) ? editProduct.tags.join(", ") : "",
           vendorSlug: editProduct.vendor_slug ?? "",
@@ -718,6 +723,7 @@ function ProductModal({
           isReadyToShip: (editProduct as {is_ready_to_ship?: boolean}).is_ready_to_ship ?? false,
           allowCustomSize: editProduct.allow_custom_size ?? false,
           description: editProduct.description ?? "",
+          description_ka: editProduct.description_ka ?? "", description_ru: editProduct.description_ru ?? "",
           material: editProduct.material ?? "",
           processingTimeLabel: (editProduct as {processing_time_label?: string}).processing_time_label ?? "",
         }
@@ -768,6 +774,7 @@ function ProductModal({
         setDraft((prev) => ({
           ...prev,
           title: p.title ?? prev.title,
+          title_ka: p.title_ka ?? prev.title_ka, title_ru: p.title_ru ?? prev.title_ru,
           categories: p.category_slugs?.join(",") ?? prev.categories,
           tags: Array.isArray(p.tags) ? p.tags.join(", ") : prev.tags,
           vendorSlug: p.vendor_slug ?? prev.vendorSlug,
@@ -780,6 +787,7 @@ function ProductModal({
           isReadyToShip: (p as {is_ready_to_ship?: boolean}).is_ready_to_ship ?? prev.isReadyToShip,
           allowCustomSize: p.allow_custom_size ?? prev.allowCustomSize,
           description: p.description ?? prev.description,
+          description_ka: p.description_ka ?? prev.description_ka, description_ru: p.description_ru ?? prev.description_ru,
           material: p.material ?? prev.material,
           processingTimeLabel: (p as {processing_time_label?: string}).processing_time_label ?? prev.processingTimeLabel,
         }))
@@ -968,6 +976,8 @@ function ProductModal({
 
       const body = {
         title: draft.title,
+        title_ka: draft.title_ka,
+        title_ru: draft.title_ru,
         base_price: firstVariantPrice,
         regional_prices: {},
         category_slug_input: catSlugs[0] ?? "",
@@ -983,6 +993,8 @@ function ProductModal({
         is_ready_to_ship: draft.isReadyToShip,
         allow_custom_size: draft.allowCustomSize,
         description: draft.description,
+        description_ka: draft.description_ka,
+        description_ru: draft.description_ru,
         material: draft.material,
         processing_time_label: draft.processingTimeLabel,
       }
@@ -1104,6 +1116,7 @@ function ProductModal({
                   placeholder="Product description shown on the product page…"
                   className={`${INPUT_CLS} resize-y`} />
               </div>
+              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "title_ka", label: "Title · Georgian" }, { key: "title_ru", label: "Title · Russian" }, { key: "description_ka", label: "Description · Georgian", multiline: true }, { key: "description_ru", label: "Description · Russian", multiline: true }]} />
 
               <div>
                 <label className={LABEL_CLS}>Material</label>

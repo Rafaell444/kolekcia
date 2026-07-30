@@ -27,59 +27,47 @@ function regionalPriceForCurrency(sv: SizeVariantPrice, currency: Currency): num
   return toNum(sv.price_usd)
 }
 
-function resolveVariantExplicitSale(
-  sv: SizeVariantPrice,
-  currency: Currency,
-  rates: Record<Currency, number>,
-): number | null {
-  const saleGel = toNum(sv.sale_price_gel)
-  const saleUsd = toNum(sv.sale_price_usd)
-  const gelRate = rates.GEL || 1
-
-  // GEL market: use the GEL sale as entered — never convert USD→GEL
-  if (currency === "GEL") {
-    return saleGel
-  }
-
-  // USD (and other): prefer USD sale; only convert GEL→USD when USD sale is missing
-  if (saleUsd != null) {
-    return currency === "USD" ? saleUsd : saleUsd * (rates[currency] ?? 1)
-  }
-  if (saleGel != null && gelRate > 0) {
-    const asUsd = saleGel / gelRate
-    return currency === "USD" ? asUsd : asUsd * (rates[currency] ?? 1)
-  }
+/**
+ * Explicit sale for the active market only — never cross-convert currencies.
+ */
+function resolveVariantExplicitSale(sv: SizeVariantPrice, currency: Currency): number | null {
+  if (currency === "GEL") return toNum(sv.sale_price_gel)
+  if (currency === "USD") return toNum(sv.sale_price_usd)
   return null
 }
 
+/**
+ * Resolve size-variant price for a market.
+ * Uses admin-written regional prices only — NO FX conversion.
+ * If a regional price is missing, falls back to price_usd as-is (admin should set GEL/EUR/GBP).
+ */
 export function resolveSizeVariantPrice(
   sv: SizeVariantPrice,
   currency: Currency,
-  rates: Record<Currency, number>,
+  _rates?: Record<Currency, number>,
 ): { price: number; original: number | null } {
-  // Get the direct regional price (GEL, EUR, GBP) if set
   const regional = regionalPriceForCurrency(sv, currency)
-  // Only fall back to USD conversion if no regional price exists
-  const regularPrice = regional ?? (toNum(sv.price_usd) ?? 0) * (rates[currency] ?? 1)
+  const usd = toNum(sv.price_usd) ?? 0
+  const regularPrice = regional ?? usd
 
-  // Check for explicit sale price on this variant
-  const salePrice = resolveVariantExplicitSale(sv, currency, rates)
-  
-  // Only show sale if variant has explicit sale price AND it's lower than regular
+  const salePrice = resolveVariantExplicitSale(sv, currency)
+
   if (salePrice != null && salePrice < regularPrice) {
     return { price: salePrice, original: regularPrice }
   }
 
-  // No sale - just return regular price
   return { price: regularPrice, original: null }
 }
 
+/**
+ * Product-level regional prices — no FX.
+ */
 export function resolveProductPrices(
   basePrice: string | number,
   originalPrice: string | number | null | undefined,
   regionalPrices: RegionalPrices | null | undefined,
   currency: Currency,
-  rates: Record<Currency, number>,
+  _rates?: Record<Currency, number>,
 ): { price: number; original: number | null } {
   const regional = regionalPrices?.[currency]
   const regionalPrice = toNum(regional?.price)
@@ -90,12 +78,12 @@ export function resolveProductPrices(
     }
   }
 
+  // No regional override — use base as-is (base is USD in admin)
   const base = toNum(basePrice) ?? 0
-  const rate = rates[currency] ?? 1
   const orig = toNum(originalPrice)
   return {
-    price: base * rate,
-    original: orig != null ? orig * rate : null,
+    price: base,
+    original: orig,
   }
 }
 
@@ -108,17 +96,14 @@ export function resolveListProductPrice(
     size_variants?: SizeVariantPrice[]
   },
   currency: Currency,
-  rates: Record<Currency, number>,
+  rates?: Record<Currency, number>,
 ): { price: number; original: number | null } {
   const activeVariants = (product.size_variants ?? []).filter((sv) => sv.is_active !== false)
   if (activeVariants.length > 0) {
-    // Resolve each variant's price using its own regional/sale prices
     const resolved = activeVariants.map((sv) => resolveSizeVariantPrice(sv, currency, rates))
-    // Return the cheapest variant (for "from X" display)
     const cheapest = resolved.reduce((best, current) => (current.price < best.price ? current : best))
     return cheapest
   }
-  // No size variants - use product-level pricing
   return resolveProductPrices(
     product.base_price,
     product.original_price ?? null,
@@ -128,6 +113,7 @@ export function resolveListProductPrice(
   )
 }
 
+/** Format an amount already in the given market currency — never converts. */
 export function formatAmount(amount: number | string | null | undefined, currency: Currency): string {
   const num = typeof amount === "string" ? parseFloat(amount) : (amount ?? 0)
   if (!Number.isFinite(num)) return ""

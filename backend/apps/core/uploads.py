@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import struct
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -16,10 +17,39 @@ BLOCKED_EXTENSIONS = frozenset({
 })
 DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
+# Magic byte signatures for image formats
+_IMAGE_MAGIC = {
+    b"\xff\xd8\xff": "jpeg",
+    b"\x89PNG\r\n\x1a\n": "png",
+    b"GIF87a": "gif",
+    b"GIF89a": "gif",
+    b"RIFF": "webp",  # WebP starts with RIFF....WEBP
+}
+
+
+def _detect_image_type(file_obj) -> str | None:
+    """Read first 12 bytes and detect image type by magic bytes. Returns None if unknown."""
+    pos = file_obj.tell() if hasattr(file_obj, "tell") else 0
+    header = file_obj.read(12)
+    file_obj.seek(pos)  # Reset position
+
+    if not header:
+        return None
+
+    for magic, img_type in _IMAGE_MAGIC.items():
+        if header.startswith(magic):
+            if img_type == "webp":
+                # WebP: RIFF....WEBP
+                if len(header) >= 12 and header[8:12] == b"WEBP":
+                    return "webp"
+                return None
+            return img_type
+    return None
+
 
 def validate_image_upload(uploaded_file, *, max_bytes: int = DEFAULT_MAX_UPLOAD_BYTES) -> Response | None:
     """
-    Validate an uploaded image file.
+    Validate an uploaded image file using extension, content-type, AND magic bytes.
 
     Returns a DRF Response on failure, or None if the file is acceptable.
     """
@@ -63,6 +93,14 @@ def validate_image_upload(uploaded_file, *, max_bytes: int = DEFAULT_MAX_UPLOAD_
         mb = max_bytes // (1024 * 1024)
         return Response(
             {"detail": f"File too large. Maximum size is {mb} MB."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Magic byte validation — ensure file content actually matches an image format
+    detected = _detect_image_type(uploaded_file)
+    if detected is None:
+        return Response(
+            {"detail": "File content does not match any supported image format. Upload rejected."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

@@ -11,6 +11,14 @@ class PromoCode(models.Model):
     ]
 
     code = models.CharField(max_length=50, unique=True)
+    owner = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="owned_promo_codes",
+        help_text="Content creator who earns commission when this code is used.",
+    )
     discount_type = models.CharField(max_length=10, choices=DISCOUNT_TYPE_CHOICES, default="percent")
     discount_value = models.DecimalField(max_digits=8, decimal_places=2)
     max_uses = models.PositiveIntegerField(null=True, blank=True)
@@ -50,6 +58,10 @@ class PromoCode(models.Model):
         if self.discount_type == "percent":
             return (subtotal * self.discount_value / Decimal("100")).quantize(Decimal("0.01"))
         return min(self.discount_value, subtotal)
+
+    def calculate_product_discount(self, product_subtotal):
+        """Creator vouchers discount products only; same formula as percent/fixed."""
+        return self.calculate_discount(product_subtotal)
 
     def __str__(self):
         return self.code
