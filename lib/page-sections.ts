@@ -36,6 +36,7 @@ export function sectionContent<T extends Record<string, unknown>>(
   if (!s) return null
   if (locale === "ka" && s.content_ka && Object.keys(s.content_ka).length > 0) return s.content_ka as T
   if (locale === "ru" && s.content_ru && Object.keys(s.content_ru).length > 0) return s.content_ru as T
+  if (locale === "ka" || locale === "ru") return null
   return (s.content as T) ?? null
 }
 

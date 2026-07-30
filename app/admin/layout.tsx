@@ -107,6 +107,7 @@ const VENDOR_ALLOWED_PATHS = [
   "/admin/shipping",
   "/admin/filters",
   "/admin/users",
+  "/admin/customers",
   "/admin/analytics",
   "/admin/inbox",
   "/admin/email-templates",
@@ -114,7 +115,10 @@ const VENDOR_ALLOWED_PATHS = [
 ]
 
 function isVendorAllowedPath(pathname: string) {
-  return VENDOR_ALLOWED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+  return VENDOR_ALLOWED_PATHS.some((path) => {
+    if (path === "/admin") return pathname === "/admin"
+    return pathname === path || pathname.startsWith(`${path}/`)
+  })
 }
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
@@ -158,10 +162,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return <div className="min-h-screen bg-dp-bg-base" />
   }
 
-  if (isLoginPage) return <>{children}</>
-  if (!adminUser) return null
+  const isVendor = !!adminUser && !adminUser.is_staff && !!adminUser.vendor
+  const vendorBlocked = isVendor && !isVendorAllowedPath(pathname)
 
-  const isVendor = !adminUser.is_staff && !!adminUser.vendor
+  if (isLoginPage) return <>{children}</>
+  if (!adminUser || vendorBlocked) return <div className="min-h-screen bg-dp-bg-base" />
+
   const navSections = isVendor ? VENDOR_NAV : SUPERADMIN_NAV
   const displayName = adminUser.vendor?.name ?? adminUser.name ?? "Admin"
   const displayEmail = adminUser.email

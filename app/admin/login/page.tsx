@@ -6,6 +6,11 @@ import { Eye, EyeOff, Zap, LogIn } from "lucide-react"
 import { setAdminTokens, setAdminUser, type AdminUser } from "@/lib/admin-auth"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+const DEMO_ACCOUNTS = [
+  { label: "Superadmin", email: "admin@kolekcia.com", password: "admin12345" },
+  { label: "Vendor 1", email: "vendor1@kolekcia.com", password: "vendor12345" },
+  { label: "Vendor 2", email: "vendor2@kolekcia.com", password: "vendor12345" },
+]
 
 export default function AdminLoginPage(): React.ReactElement {
   const router = useRouter()
@@ -125,6 +130,28 @@ export default function AdminLoginPage(): React.ReactElement {
           </form>
 
           <div className="mt-6 pt-5 border-t border-dp-border">
+            <div className="mb-5 rounded-sm border border-dp-border bg-dp-bg-elevated p-4">
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-dp-text-tertiary">
+                Temporary login credentials
+              </p>
+              <div className="space-y-2">
+                {DEMO_ACCOUNTS.map((account) => (
+                  <button
+                    key={account.email}
+                    type="button"
+                    onClick={() => {
+                      setEmail(account.email)
+                      setPassword(account.password)
+                      setError("")
+                    }}
+                    className="w-full rounded-sm border border-dp-border bg-dp-bg-surface px-3 py-2 text-left text-[11px] text-dp-text-secondary transition-colors hover:border-dp-border-hover hover:text-dp-text-primary"
+                  >
+                    <span className="block font-bold uppercase tracking-wider text-dp-text-primary">{account.label}</span>
+                    <span className="block">{account.email} / {account.password}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <p className="text-[11px] text-dp-text-tertiary text-center">
               Customer? <a href="/" className="text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors">Go to the store →</a>
             </p>

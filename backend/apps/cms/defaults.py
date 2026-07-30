@@ -71,7 +71,15 @@ def ensure_global_homepage_defaults():
     from .models import CommunitySocialLink, FandomBrand, TrustBarItem
 
     for item in DEFAULT_TRUST_BAR_ITEMS:
-        TrustBarItem.objects.get_or_create(key=item["key"], defaults=item)
+        obj, created = TrustBarItem.objects.get_or_create(key=item["key"], defaults=item)
+        if not created:
+            changed = []
+            for field in ("title", "description", "icon", "logos"):
+                if not getattr(obj, field):
+                    setattr(obj, field, item[field])
+                    changed.append(field)
+            if changed:
+                obj.save(update_fields=changed)
 
     if not FandomBrand.objects.exists():
         for idx, (name, abbr, bg, text) in enumerate(DEFAULT_FANDOM_BRANDS):
@@ -101,7 +109,7 @@ def ensure_page_section_defaults():
     from .management.commands.seed_page_sections import SECTIONS
 
     for section in SECTIONS:
-        PageSection.objects.get_or_create(
+        obj, created = PageSection.objects.get_or_create(
             page=section["page"],
             section_key=section["section_key"],
             defaults={
@@ -111,3 +119,13 @@ def ensure_page_section_defaults():
                 "is_active": True,
             },
         )
+        if not created:
+            changed = []
+            if not obj.title:
+                obj.title = section["title"]
+                changed.append("title")
+            if not obj.content:
+                obj.content = section["content"]
+                changed.append("content")
+            if changed:
+                obj.save(update_fields=changed)

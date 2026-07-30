@@ -20,7 +20,7 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
     setLoading(true)
     try {
       const qs = defaultCategory ? `?category=${encodeURIComponent(defaultCategory)}` : ""
-      const data = await adminFetch<Faq[]>(`/faqs/${qs}`)
+      const data = await adminFetch<Faq[]>(`/admin/faqs/${qs}`)
       setFaqs(Array.isArray(data) ? data : [])
     } catch {
       setFaqs([])
@@ -38,9 +38,9 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
     const payload = { ...form, category: defaultCategory || form.category }
     try {
       if (editingId) {
-        await adminFetch(`/faqs/${editingId}/`, { method: "PATCH", body: JSON.stringify(payload) })
+        await adminFetch(`/admin/faqs/${editingId}/`, { method: "PATCH", body: JSON.stringify(payload) })
       } else {
-        await adminFetch("/faqs/", { method: "POST", body: JSON.stringify(payload) })
+        await adminFetch("/admin/faqs/", { method: "POST", body: JSON.stringify(payload) })
       }
       setForm(null)
       setEditingId(null)
@@ -53,7 +53,7 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
   }
 
   async function remove(id: number) {
-    await adminFetch(`/faqs/${id}/`, { method: "DELETE" })
+    await adminFetch(`/admin/faqs/${id}/`, { method: "DELETE" })
     await load()
   }
 

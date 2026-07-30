@@ -55,8 +55,8 @@ export default function GlobalHomepageSettings() {
 
   const load = useCallback(async () => {
     const [t, b] = await Promise.all([
-      adminFetch<Trust[]>("/trust-bar/"),
-      adminFetch<Brand[]>("/fandoms/"),
+      adminFetch<Trust[]>("/admin/trust-bar/"),
+      adminFetch<Brand[]>("/admin/fandoms/"),
     ])
     setTrust(Array.isArray(t) ? t : [])
     setBrands(Array.isArray(b) ? b : [])
@@ -65,40 +65,40 @@ export default function GlobalHomepageSettings() {
   useEffect(() => { void load().catch(() => {}) }, [load])
 
   async function saveTrust(item: Trust) {
-    const updated = await adminFetch<Trust>(`/trust-bar/${item.id}/`, { method: "PATCH", body: JSON.stringify(item) })
+    const updated = await adminFetch<Trust>(`/admin/trust-bar/${item.id}/`, { method: "PATCH", body: JSON.stringify(item) })
     setTrust((all) => all.map((x) => x.id === item.id ? updated : x))
     setMessage("Trust bar saved.")
   }
 
   async function addTrust(e: React.FormEvent) {
     e.preventDefault()
-    const created = await adminFetch<Trust>("/trust-bar/", { method: "POST", body: JSON.stringify(newTrust) })
+    const created = await adminFetch<Trust>("/admin/trust-bar/", { method: "POST", body: JSON.stringify(newTrust) })
     setTrust((all) => [...all, created])
     setNewTrust(EMPTY_TRUST)
     setMessage("Trust item added.")
   }
 
   async function removeTrust(id: number) {
-    await adminFetch(`/trust-bar/${id}/`, { method: "DELETE" })
+    await adminFetch(`/admin/trust-bar/${id}/`, { method: "DELETE" })
     setTrust((all) => all.filter((x) => x.id !== id))
   }
 
   async function saveBrand(item: Brand) {
-    const updated = await adminFetch<Brand>(`/fandoms/${item.id}/`, { method: "PATCH", body: JSON.stringify(item) })
+    const updated = await adminFetch<Brand>(`/admin/fandoms/${item.id}/`, { method: "PATCH", body: JSON.stringify(item) })
     setBrands((all) => all.map((x) => x.id === item.id ? updated : x))
     setMessage("Fandom card saved.")
   }
 
   async function addBrand(e: React.FormEvent) {
     e.preventDefault()
-    const created = await adminFetch<Brand>("/fandoms/", { method: "POST", body: JSON.stringify(newBrand) })
+    const created = await adminFetch<Brand>("/admin/fandoms/", { method: "POST", body: JSON.stringify(newBrand) })
     setBrands((all) => [...all, created])
     setNewBrand(EMPTY_BRAND)
     setMessage("Fandom card added.")
   }
 
   async function removeBrand(id: number) {
-    await adminFetch(`/fandoms/${id}/`, { method: "DELETE" })
+    await adminFetch(`/admin/fandoms/${id}/`, { method: "DELETE" })
     setBrands((all) => all.filter((x) => x.id !== id))
   }
 
