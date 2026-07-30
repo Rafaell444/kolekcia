@@ -130,14 +130,6 @@ export default function AdminLoginPage(): React.ReactElement {
             </p>
           </div>
         </div>
-
-        {/* Dev hints */}
-        <div className="mt-4 p-3 bg-dp-bg-surface/50 border border-dp-border rounded-sm text-[11px] text-dp-text-tertiary space-y-1">
-          <p className="font-bold text-dp-text-secondary">Dev accounts:</p>
-          <p>Superadmin: <code className="text-dp-accent-cta">admin@kolekcia.com</code> / <code>admin12345</code></p>
-          <p>Vendor 1: <code className="text-dp-accent-cta">vendor1@kolekcia.com</code> / <code>vendor12345</code></p>
-          <p>Vendor 2: <code className="text-dp-accent-cta">vendor2@kolekcia.com</code> / <code>vendor12345</code></p>
-        </div>
       </div>
     </div>
   )

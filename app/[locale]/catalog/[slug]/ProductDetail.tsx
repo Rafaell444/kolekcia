@@ -415,6 +415,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const discount = originalPrice != null && originalPrice > basePrice
     ? Math.round(((originalPrice - basePrice) / originalPrice) * 100)
     : null
+  const creatorName = (product.artist_name || product.vendor_name || "").trim()
+  const creatorSearch = creatorName || product.title
 
   async function handleGiftWrapImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -523,7 +525,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
 
   async function handleShare() {
     const url = typeof window !== "undefined" ? window.location.href : ""
-    const shareData = { title: product.title, text: `Check out ${product.title} by ${product.artist_name}`, url }
+    const shareData = { title: product.title, text: `Check out ${product.title}${creatorName ? ` by ${creatorName}` : ""}`, url }
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
         await navigator.share(shareData)
@@ -621,18 +623,20 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               <ChevronLeft size={13} /> Back to catalog
             </LocalizedLink>
 
-            <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">
-              by{" "}
-              {artistHandle ? (
-                <LocalizedLink href={`/artists/${artistHandle}`} className="hover:text-dp-accent-cta transition-colors">
-                  {product.artist_name}
-                </LocalizedLink>
-              ) : (
-                <LocalizedLink href={`/catalog?q=${encodeURIComponent(product.artist_name)}`} className="hover:text-dp-accent-cta transition-colors">
-                  {product.artist_name}
-                </LocalizedLink>
-              )}
-            </p>
+            {creatorName && (
+              <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">
+                by{" "}
+                {artistHandle ? (
+                  <LocalizedLink href={`/artists/${artistHandle}`} className="hover:text-dp-accent-cta transition-colors">
+                    {creatorName}
+                  </LocalizedLink>
+                ) : (
+                  <LocalizedLink href={`/catalog?q=${encodeURIComponent(creatorSearch)}`} className="hover:text-dp-accent-cta transition-colors">
+                    {creatorName}
+                  </LocalizedLink>
+                )}
+              </p>
+            )}
 
             <h1 className="font-display text-4xl lg:text-5xl text-dp-text-primary leading-tight">
               {product.title}
@@ -653,7 +657,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             <p className="text-[14px] text-dp-text-secondary leading-relaxed whitespace-pre-wrap">
               {product.description
                 ? product.description
-                : `A high-quality metal print featuring ${product.title} by ${product.artist_name}. Printed on durable, damage-resistant aluminium with vibrant, UV-stable inks. Comes with our tool-free magnetic mounting system — hang it in seconds, rearrange anytime.`}
+                : `A high-quality metal print featuring ${product.title}${creatorName ? ` by ${creatorName}` : ""}. Printed on durable, damage-resistant aluminium with vibrant, UV-stable inks. Comes with our tool-free magnetic mounting system — hang it in seconds, rearrange anytime.`}
             </p>
 
             {product.material && (

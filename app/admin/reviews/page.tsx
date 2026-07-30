@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useCallback, useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, X, Star } from "lucide-react"
+import { Pencil, Save, Star, X } from "lucide-react"
 import { adminFetch } from "@/lib/admin-auth"
 
 type HomepageReview = {
@@ -29,35 +29,15 @@ type SocialLink = {
   is_active: boolean
 }
 
-const EMPTY_REVIEW: Omit<HomepageReview, "id"> = {
-  author_name: "",
-  author_initials: "",
-  rating: 5,
-  review_date: "",
-  text: "",
-  source: "admin",
-  sort_order: 0,
-  is_active: true,
-}
-
-const EMPTY_SOCIAL: Omit<SocialLink, "id"> = {
-  name: "",
-  url: "",
-  abbr: "",
-  bg_color: "#000000",
-  text_color: "#ffffff",
-  sort_order: 0,
-  is_active: true,
-}
+const inputCls = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary"
+const labelCls = "block text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1"
 
 export default function AdminReviewsPage(): React.ReactElement {
   const [reviews, setReviews] = useState<HomepageReview[]>([])
   const [socials, setSocials] = useState<SocialLink[]>([])
   const [loading, setLoading] = useState(true)
-  const [reviewForm, setReviewForm] = useState<Omit<HomepageReview, "id"> | null>(null)
-  const [editingReviewId, setEditingReviewId] = useState<number | null>(null)
-  const [socialForm, setSocialForm] = useState<Omit<SocialLink, "id"> | null>(null)
-  const [editingSocialId, setEditingSocialId] = useState<number | null>(null)
+  const [socialForm, setSocialForm] = useState<SocialLink | null>(null)
+  const [message, setMessage] = useState("")
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -68,32 +48,12 @@ export default function AdminReviewsPage(): React.ReactElement {
       ])
       setReviews(Array.isArray(r) ? r : [])
       setSocials(Array.isArray(s) ? s : [])
-    } catch {
-      // keep empty
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { void load() }, [load])
-
-  async function saveReview(e: React.FormEvent) {
-    e.preventDefault()
-    if (!reviewForm) return
-    if (editingReviewId) {
-      await adminFetch(`/reviews/${editingReviewId}/`, { method: "PATCH", body: JSON.stringify(reviewForm) })
-    } else {
-      await adminFetch("/reviews/", { method: "POST", body: JSON.stringify(reviewForm) })
-    }
-    setReviewForm(null)
-    setEditingReviewId(null)
-    await load()
-  }
-
-  async function deleteReview(id: number) {
-    await adminFetch(`/reviews/${id}/`, { method: "DELETE" })
-    await load()
-  }
+  useEffect(() => { void load().catch(() => setLoading(false)) }, [load])
 
   async function toggleReview(id: number, active: boolean) {
     const updated = await adminFetch<HomepageReview>(`/reviews/${id}/`, {
@@ -106,57 +66,29 @@ export default function AdminReviewsPage(): React.ReactElement {
   async function saveSocial(e: React.FormEvent) {
     e.preventDefault()
     if (!socialForm) return
-    if (editingSocialId) {
-      await adminFetch(`/community-links/${editingSocialId}/`, { method: "PATCH", body: JSON.stringify(socialForm) })
-    } else {
-      await adminFetch("/community-links/", { method: "POST", body: JSON.stringify(socialForm) })
-    }
+    const updated = await adminFetch<SocialLink>(`/community-links/${socialForm.id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(socialForm),
+    })
+    setSocials((prev) => prev.map((s) => s.id === updated.id ? updated : s))
     setSocialForm(null)
-    setEditingSocialId(null)
-    await load()
+    setMessage("Social link saved.")
   }
 
-  async function deleteSocial(id: number) {
-    await adminFetch(`/community-links/${id}/`, { method: "DELETE" })
-    await load()
-  }
-
-  const inputCls = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary"
-  const labelCls = "block text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1"
+  const googleReviews = reviews.filter((r) => r.source === "google")
 
   return (
     <div className="p-6 md:p-8 max-w-5xl">
-      <h1 className="font-display text-3xl text-dp-text-primary mb-2">Homepage Reviews</h1>
-      <p className="text-[13px] text-dp-text-tertiary mb-8">Manage customer testimonials and community social links shown on the homepage.</p>
+      <h1 className="font-display text-3xl text-dp-text-primary mb-2">Google Review Approvals</h1>
+      <p className="text-[13px] text-dp-text-tertiary mb-8">Scraped Google reviews appear here for approval before they become visible on the homepage.</p>
+
+      {message && <p className="mb-4 text-[12px] text-dp-accent-cta">{message}</p>}
 
       <section className="mb-12">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-xl text-dp-text-primary">Reviews</h2>
-          <button onClick={() => { setReviewForm(EMPTY_REVIEW); setEditingReviewId(null) }} className="flex items-center gap-1 px-3 py-1.5 bg-dp-accent-cta text-white text-[11px] font-bold uppercase tracking-widest rounded-sm">
-            <Plus size={12} /> Add Review
-          </button>
-        </div>
-
-        {reviewForm && (
-          <form onSubmit={saveReview} className="mb-6 p-5 border border-dp-border rounded-sm bg-dp-bg-surface grid grid-cols-2 gap-4">
-            <div><label className={labelCls}>Author name</label><input required className={inputCls} value={reviewForm.author_name} onChange={(e) => setReviewForm((f) => f ? { ...f, author_name: e.target.value } : f)} /></div>
-            <div><label className={labelCls}>Initials</label><input className={inputCls} value={reviewForm.author_initials} onChange={(e) => setReviewForm((f) => f ? { ...f, author_initials: e.target.value } : f)} /></div>
-            <div><label className={labelCls}>Date label</label><input className={inputCls} placeholder="June 2024" value={reviewForm.review_date} onChange={(e) => setReviewForm((f) => f ? { ...f, review_date: e.target.value } : f)} /></div>
-            <div><label className={labelCls}>Rating</label><input type="number" min={1} max={5} className={inputCls} value={reviewForm.rating} onChange={(e) => setReviewForm((f) => f ? { ...f, rating: parseInt(e.target.value, 10) } : f)} /></div>
-            <div><label className={labelCls}>Source</label><select className={inputCls} value={reviewForm.source} onChange={(e) => setReviewForm((f) => f ? { ...f, source: e.target.value as "google" | "admin" } : f)}><option value="google">Google</option><option value="admin">Staff Pick</option></select></div>
-            <div><label className={labelCls}>Sort order</label><input type="number" className={inputCls} value={reviewForm.sort_order} onChange={(e) => setReviewForm((f) => f ? { ...f, sort_order: parseInt(e.target.value, 10) } : f)} /></div>
-            <div className="col-span-2"><label className={labelCls}>Review text</label><textarea required rows={3} className={inputCls} value={reviewForm.text} onChange={(e) => setReviewForm((f) => f ? { ...f, text: e.target.value } : f)} /></div>
-            <label className="col-span-2 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={reviewForm.is_active} onChange={(e) => setReviewForm((f) => f ? { ...f, is_active: e.target.checked } : f)} /> Active on homepage</label>
-            <div className="col-span-2 flex gap-2">
-              <button type="submit" className="px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase rounded-sm">Save</button>
-              <button type="button" onClick={() => { setReviewForm(null); setEditingReviewId(null) }} className="px-4 py-2 border border-dp-border text-[11px] font-bold uppercase rounded-sm"><X size={12} className="inline" /> Cancel</button>
-            </div>
-          </form>
-        )}
-
-        {loading ? <p className="text-dp-text-tertiary text-[13px]">Loading…</p> : (
+        <h2 className="font-display text-xl text-dp-text-primary mb-4">Incoming Google reviews</h2>
+        {loading ? <p className="text-dp-text-tertiary text-[13px]">Loading...</p> : (
           <div className="space-y-3">
-            {reviews.map((r) => (
+            {googleReviews.map((r) => (
               <div key={r.id} className="flex items-start justify-between gap-4 p-4 border border-dp-border rounded-sm bg-dp-bg-surface">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-1">
@@ -164,41 +96,33 @@ export default function AdminReviewsPage(): React.ReactElement {
                     <span className="flex items-center gap-0.5 text-dp-accent-gold"><Star size={11} fill="currentColor" />{r.rating}</span>
                     {!r.is_active && <span className="text-[10px] uppercase text-dp-text-tertiary">Hidden</span>}
                   </div>
-                  <p className="text-[12px] text-dp-text-tertiary mb-1">{r.review_date} · {r.source}</p>
-                  <p className="text-[13px] text-dp-text-secondary line-clamp-2">{r.text}</p>
-                  {r.google_review_id && <p className="text-[10px] text-dp-accent-gold mt-1">Google review awaiting approval</p>}
+                  <p className="text-[12px] text-dp-text-tertiary mb-1">{r.review_date || "Google"} {r.google_review_id ? `· ${r.google_review_id}` : ""}</p>
+                  <p className="text-[13px] text-dp-text-secondary line-clamp-3">{r.text}</p>
+                  {r.google_review_url && <a href={r.google_review_url} target="_blank" rel="noreferrer" className="text-[11px] text-dp-accent-cta hover:underline">Open Google review</a>}
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <button onClick={() => { void toggleReview(r.id, !r.is_active) }} className="px-2 py-1 border border-dp-accent-cta/40 text-dp-accent-cta rounded-sm text-[10px] font-bold uppercase">{r.is_active ? "Hide" : "Approve"}</button>
-                  <button onClick={() => { setReviewForm({ ...r }); setEditingReviewId(r.id) }} className="p-2 border border-dp-border rounded-sm"><Pencil size={13} /></button>
-                  <button onClick={() => deleteReview(r.id)} className="p-2 border border-dp-border rounded-sm text-red-400"><Trash2 size={13} /></button>
-                </div>
+                <button onClick={() => { void toggleReview(r.id, !r.is_active) }} className="px-3 py-1.5 border border-dp-accent-cta/40 text-dp-accent-cta rounded-sm text-[10px] font-bold uppercase shrink-0">{r.is_active ? "Hide" : "Approve"}</button>
               </div>
             ))}
+            {googleReviews.length === 0 && (
+              <p className="text-[13px] text-dp-text-tertiary">No scraped Google reviews yet. Run the Google review sync job to import requests.</p>
+            )}
           </div>
         )}
       </section>
 
       <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-xl text-dp-text-primary">Join our Community links</h2>
-          <button onClick={() => { setSocialForm(EMPTY_SOCIAL); setEditingSocialId(null) }} className="flex items-center gap-1 px-3 py-1.5 bg-dp-accent-cta text-white text-[11px] font-bold uppercase tracking-widest rounded-sm">
-            <Plus size={12} /> Add Link
-          </button>
-        </div>
+        <h2 className="font-display text-xl text-dp-text-primary mb-4">Community social links</h2>
+        <p className="text-[12px] text-dp-text-tertiary mb-4">Edit only the destination links for the fixed homepage platforms.</p>
 
         {socialForm && (
           <form onSubmit={saveSocial} className="mb-6 p-5 border border-dp-border rounded-sm bg-dp-bg-surface grid grid-cols-2 gap-4">
-            <div><label className={labelCls}>Platform name</label><input required className={inputCls} value={socialForm.name} onChange={(e) => setSocialForm((f) => f ? { ...f, name: e.target.value } : f)} /></div>
-            <div><label className={labelCls}>URL</label><input required type="url" className={inputCls} placeholder="https://" value={socialForm.url} onChange={(e) => setSocialForm((f) => f ? { ...f, url: e.target.value } : f)} /></div>
-            <div><label className={labelCls}>Abbreviation</label><input required className={inputCls} value={socialForm.abbr} onChange={(e) => setSocialForm((f) => f ? { ...f, abbr: e.target.value } : f)} /></div>
-            <div><label className={labelCls}>Sort order</label><input type="number" className={inputCls} value={socialForm.sort_order} onChange={(e) => setSocialForm((f) => f ? { ...f, sort_order: parseInt(e.target.value, 10) } : f)} /></div>
-            <div><label className={labelCls}>Background color</label><input className={inputCls} value={socialForm.bg_color} onChange={(e) => setSocialForm((f) => f ? { ...f, bg_color: e.target.value } : f)} /></div>
-            <div><label className={labelCls}>Text color</label><input className={inputCls} value={socialForm.text_color} onChange={(e) => setSocialForm((f) => f ? { ...f, text_color: e.target.value } : f)} /></div>
-            <label className="col-span-2 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={socialForm.is_active} onChange={(e) => setSocialForm((f) => f ? { ...f, is_active: e.target.checked } : f)} /> Active</label>
+            <div><label className={labelCls}>Platform</label><input disabled className={inputCls} value={socialForm.name} /></div>
+            <div><label className={labelCls}>Badge</label><input disabled className={inputCls} value={socialForm.abbr} /></div>
+            <div className="col-span-2"><label className={labelCls}>URL</label><input required type="url" className={inputCls} placeholder="https://" value={socialForm.url} onChange={(e) => setSocialForm((f) => f ? { ...f, url: e.target.value } : f)} /></div>
+            <label className="col-span-2 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={socialForm.is_active} onChange={(e) => setSocialForm((f) => f ? { ...f, is_active: e.target.checked } : f)} /> Active on homepage</label>
             <div className="col-span-2 flex gap-2">
-              <button type="submit" className="px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase rounded-sm">Save</button>
-              <button type="button" onClick={() => { setSocialForm(null); setEditingSocialId(null) }} className="px-4 py-2 border border-dp-border text-[11px] font-bold uppercase rounded-sm">Cancel</button>
+              <button type="submit" className="inline-flex items-center gap-1 px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase rounded-sm"><Save size={12} /> Save link</button>
+              <button type="button" onClick={() => setSocialForm(null)} className="px-4 py-2 border border-dp-border text-[11px] font-bold uppercase rounded-sm"><X size={12} className="inline" /> Cancel</button>
             </div>
           </form>
         )}
@@ -210,13 +134,10 @@ export default function AdminReviewsPage(): React.ReactElement {
                 <span className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-black" style={{ background: s.bg_color, color: s.text_color }}>{s.abbr}</span>
                 <div className="min-w-0">
                   <p className="font-semibold text-dp-text-primary">{s.name}</p>
-                  <p className="text-[12px] text-dp-text-tertiary truncate">{s.url}</p>
+                  <p className="text-[12px] text-dp-text-tertiary truncate">{s.url || "No link set"}</p>
                 </div>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <button onClick={() => { setSocialForm({ ...s }); setEditingSocialId(s.id) }} className="p-2 border border-dp-border rounded-sm"><Pencil size={13} /></button>
-                <button onClick={() => deleteSocial(s.id)} className="p-2 border border-dp-border rounded-sm text-red-400"><Trash2 size={13} /></button>
-              </div>
+              <button onClick={() => setSocialForm({ ...s })} className="p-2 border border-dp-border rounded-sm"><Pencil size={13} /></button>
             </div>
           ))}
         </div>

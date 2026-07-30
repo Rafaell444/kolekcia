@@ -14,12 +14,13 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<Omit<Faq, "id"> | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [error, setError] = useState("")
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const qs = defaultCategory ? `?category=${encodeURIComponent(defaultCategory)}` : ""
-      const data = await adminFetch<Faq[]>(`/faqs${qs}`)
+      const data = await adminFetch<Faq[]>(`/faqs/${qs}`)
       setFaqs(Array.isArray(data) ? data : [])
     } catch {
       setFaqs([])
@@ -33,15 +34,22 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!form) return
+    setError("")
     const payload = { ...form, category: defaultCategory || form.category }
-    if (editingId) {
-      await adminFetch(`/faqs/${editingId}/`, { method: "PATCH", body: JSON.stringify(payload) })
-    } else {
-      await adminFetch("/faqs/", { method: "POST", body: JSON.stringify(payload) })
+    try {
+      if (editingId) {
+        await adminFetch(`/faqs/${editingId}/`, { method: "PATCH", body: JSON.stringify(payload) })
+      } else {
+        await adminFetch("/faqs/", { method: "POST", body: JSON.stringify(payload) })
+      }
+      setForm(null)
+      setEditingId(null)
+      await load()
+    } catch (err) {
+      const data = (err as { data?: Record<string, unknown> })?.data
+      const first = data ? Object.values(data)[0] : null
+      setError(typeof first === "string" ? first : Array.isArray(first) ? String(first[0]) : "FAQ could not be saved. Check the fields and try again.")
     }
-    setForm(null)
-    setEditingId(null)
-    await load()
   }
 
   async function remove(id: number) {
@@ -74,6 +82,7 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
 
       {form && (
         <form onSubmit={save} className="mb-6 p-5 border border-dp-border rounded-sm bg-dp-bg-surface flex flex-col gap-4">
+          {error && <p className="px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-sm text-[12px] text-red-400">{error}</p>}
           <div><label className={labelCls}>Question</label><input required className={inputCls} value={form.question} onChange={(e) => setForm((f) => f ? { ...f, question: e.target.value } : f)} /></div>
           <div><label className={labelCls}>Answer</label><textarea required rows={4} className={inputCls} value={form.answer} onChange={(e) => setForm((f) => f ? { ...f, answer: e.target.value } : f)} /></div>
           <TranslationFields value={form} onChange={setForm} inputClassName={inputCls} fields={[{ key: "question_ka", label: "Question · Georgian" }, { key: "question_ru", label: "Question · Russian" }, { key: "answer_ka", label: "Answer · Georgian", multiline: true }, { key: "answer_ru", label: "Answer · Russian", multiline: true }, { key: "category_ka", label: "Category · Georgian" }, { key: "category_ru", label: "Category · Russian" }]} />

@@ -10,6 +10,7 @@ from .serializers import (
     CommunitySocialLinkSerializer,
     TrustBarItemSerializer, FandomBrandSerializer,
 )
+from .defaults import ensure_global_homepage_defaults, ensure_page_section_defaults
 
 
 class HeroSlidesView(generics.ListAPIView):
@@ -47,24 +48,33 @@ class HomepageReviewListView(generics.ListAPIView):
 
 
 class CommunitySocialLinkListView(generics.ListAPIView):
-    queryset = CommunitySocialLink.objects.filter(is_active=True)
     serializer_class = CommunitySocialLinkSerializer
     permission_classes = [AllowAny]
     pagination_class = None
 
+    def get_queryset(self):
+        ensure_global_homepage_defaults()
+        return CommunitySocialLink.objects.filter(is_active=True)
+
 
 class TrustBarItemListView(generics.ListAPIView):
-    queryset = TrustBarItem.objects.filter(is_active=True)
     serializer_class = TrustBarItemSerializer
     permission_classes = [AllowAny]
     pagination_class = None
 
+    def get_queryset(self):
+        ensure_global_homepage_defaults()
+        return TrustBarItem.objects.filter(is_active=True)
+
 
 class FandomBrandListView(generics.ListAPIView):
-    queryset = FandomBrand.objects.filter(is_active=True)
     serializer_class = FandomBrandSerializer
     permission_classes = [AllowAny]
     pagination_class = None
+
+    def get_queryset(self):
+        ensure_global_homepage_defaults()
+        return FandomBrand.objects.filter(is_active=True)
 
 
 class SiteSettingsView(APIView):
@@ -81,6 +91,7 @@ class PageSectionsView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, page):
+        ensure_page_section_defaults()
         sections = PageSection.objects.filter(page=page, is_active=True).order_by("sort_order")
         return Response(PageSectionSerializer(sections, many=True).data)
 

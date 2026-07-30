@@ -609,6 +609,9 @@ class AdminProductStockView(APIView):
 
 
 ALLOWED_MEDIA_FOLDERS = frozenset({"blog", "hero", "categories", "auctions", "artists", "cms"})
+ALLOWED_VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".ogg"})
+ALLOWED_VIDEO_CONTENT_TYPES = frozenset({"video/mp4", "video/webm", "video/quicktime", "video/ogg"})
+MAX_VIDEO_UPLOAD_BYTES = 80 * 1024 * 1024
 
 
 class AdminMediaUploadView(APIView):
@@ -623,10 +626,6 @@ class AdminMediaUploadView(APIView):
 
         uploaded_file = request.FILES.get("file")
         folder = (request.data.get("folder") or "cms").strip().lower()
-
-        error = validate_image_upload(uploaded_file)
-        if error:
-            return error
         # Security fix #14: path traversal prevention
         if folder not in ALLOWED_MEDIA_FOLDERS or os.path.basename(folder) != folder:
             return Response(
@@ -634,7 +633,22 @@ class AdminMediaUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        ext = safe_image_extension(uploaded_file)
+        name = getattr(uploaded_file, "name", "") or ""
+        raw_ext = os.path.splitext(name)[1].lower()
+        content_type = (getattr(uploaded_file, "content_type", "") or "").lower()
+        is_video = content_type.startswith("video/") or raw_ext in ALLOWED_VIDEO_EXTENSIONS
+
+        if is_video:
+            if raw_ext not in ALLOWED_VIDEO_EXTENSIONS or content_type not in ALLOWED_VIDEO_CONTENT_TYPES:
+                return Response({"detail": "Unsupported video format. Use MP4, WebM, MOV, or OGG."}, status=status.HTTP_400_BAD_REQUEST)
+            if getattr(uploaded_file, "size", 0) > MAX_VIDEO_UPLOAD_BYTES:
+                return Response({"detail": "Video is too large. Maximum upload size is 80 MB."}, status=status.HTTP_400_BAD_REQUEST)
+            ext = raw_ext
+        else:
+            error = validate_image_upload(uploaded_file)
+            if error:
+                return error
+            ext = safe_image_extension(uploaded_file)
         filename = f"{uuid_lib.uuid4().hex}{ext}"
         save_dir = os.path.join(django_settings.MEDIA_ROOT, folder)
         os.makedirs(save_dir, exist_ok=True)
@@ -871,6 +885,8 @@ class AdminCommunitySocialLinkListView(AdminNoPaginationMixin, generics.ListCrea
 
     def get_queryset(self):
         from apps.cms.models import CommunitySocialLink
+        from apps.cms.defaults import ensure_global_homepage_defaults
+        ensure_global_homepage_defaults()
         return CommunitySocialLink.objects.all()
 
 
@@ -893,6 +909,8 @@ class AdminTrustBarItemListView(AdminNoPaginationMixin, generics.ListCreateAPIVi
         return TrustBarItemSerializer
     def get_queryset(self):
         from apps.cms.models import TrustBarItem
+        from apps.cms.defaults import ensure_global_homepage_defaults
+        ensure_global_homepage_defaults()
         return TrustBarItem.objects.all()
 
 
@@ -913,6 +931,8 @@ class AdminFandomBrandListView(AdminNoPaginationMixin, generics.ListCreateAPIVie
         return FandomBrandSerializer
     def get_queryset(self):
         from apps.cms.models import FandomBrand
+        from apps.cms.defaults import ensure_global_homepage_defaults
+        ensure_global_homepage_defaults()
         return FandomBrand.objects.all()
 
 
@@ -1924,6 +1944,8 @@ class AdminPageSectionListView(APIView):
     def get(self, request):
         from apps.cms.models import PageSection
         from apps.cms.serializers import PageSectionSerializer
+        from apps.cms.defaults import ensure_page_section_defaults
+        ensure_page_section_defaults()
         page = request.query_params.get("page")
         qs = PageSection.objects.all().order_by("page", "sort_order")
         if page:

@@ -38,11 +38,14 @@ export default function AdminMediaUpload({
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
       })
-      if (!res.ok) throw new Error("upload failed")
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { detail?: string }
+        throw new Error(data.detail ?? "Upload failed. Please try again.")
+      }
       const data = (await res.json()) as { url: string }
       onUploaded(data.url)
-    } catch {
-      alert("Upload failed. Please try again.")
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Upload failed. Please try again.")
     } finally {
       setUploading(false)
     }

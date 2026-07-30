@@ -98,6 +98,25 @@ const VENDOR_NAV = [
   },
 ]
 
+const VENDOR_ALLOWED_PATHS = [
+  "/admin",
+  "/admin/products",
+  "/admin/orders",
+  "/admin/custom-orders",
+  "/admin/auctions",
+  "/admin/shipping",
+  "/admin/filters",
+  "/admin/users",
+  "/admin/analytics",
+  "/admin/inbox",
+  "/admin/email-templates",
+  "/admin/settings",
+]
+
+function isVendorAllowedPath(pathname: string) {
+  return VENDOR_ALLOWED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+}
+
 // ── Layout ─────────────────────────────────────────────────────────────────────
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -130,7 +149,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!adminUser || isLoginPage) return
     const isVendorUser = !adminUser.is_staff && !!adminUser.vendor
-    if (isVendorUser && pathname.startsWith("/admin/logs")) {
+    if (isVendorUser && !isVendorAllowedPath(pathname)) {
       router.replace("/admin")
     }
   }, [adminUser, isLoginPage, pathname, router])

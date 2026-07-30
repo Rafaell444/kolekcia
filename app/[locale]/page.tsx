@@ -24,10 +24,13 @@ type ApiProduct = {
   size_variants?: Array<{ id: number; label: string; price_usd: string; price_gel?: string | null; price_eur?: string | null; price_gbp?: string | null; sale_price_usd?: string | null; sale_price_gel?: string | null; is_active?: boolean }>
 }
 
-async function getTrendingProducts(): Promise<ApiProduct[]> {
+async function getTrendingProducts(locale: string): Promise<ApiProduct[]> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
   try {
-    const res = await fetch(`${apiUrl}/products/?sort=featured&page_size=8`, { next: { revalidate: 300 } })
+    const res = await fetch(`${apiUrl}/products/?sort=featured&page_size=8&lang=${locale}`, {
+      headers: { "Accept-Language": locale },
+      next: { revalidate: 300 },
+    })
     if (!res.ok) return []
     const data = await res.json() as { results: ApiProduct[] }
     return data.results ?? []
@@ -60,12 +63,12 @@ export default async function HomePage({
   const { locale } = await params
   const t = getMessages(locale)
   const [trendingProducts, sections] = await Promise.all([
-    getTrendingProducts(),
-    fetchPageSections("home"),
+    getTrendingProducts(locale),
+    fetchPageSections("home", locale),
   ])
-  const video = sectionContent<{ heading?: string; cards?: Array<{ id: string; label: string; thumb: string }> }>(sections, "video")
-  const newsletter = sectionContent<{ heading?: string; subheading?: string; promoText?: string; imageUrl?: string }>(sections, "newsletter")
-  const stats = sectionContent<{ stats?: Array<{ stat: string; label: string }> }>(sections, "stats")
+  const video = sectionContent<{ heading?: string; cards?: Array<{ id: string; label: string; thumb: string }> }>(sections, "video", locale)
+  const newsletter = sectionContent<{ heading?: string; subheading?: string; promoText?: string; imageUrl?: string }>(sections, "newsletter", locale)
+  const stats = sectionContent<{ stats?: Array<{ stat: string; label: string }> }>(sections, "stats", locale)
 
   return (
     <SiteShell>
