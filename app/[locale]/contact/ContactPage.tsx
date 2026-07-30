@@ -2,13 +2,32 @@
 
 import React, { useState, useEffect } from "react"
 import SiteShell from "@/components/layout/SiteShell"
-import { apiFetch } from "@/lib/api"
+import { apiFetch, getRequestLocale } from "@/lib/api"
+import { sectionContent, type PageSection } from "@/lib/page-sections"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import {
   Mail, Phone, MapPin, Package,
   RotateCcw, Truck, Brush, ArrowRight, ChevronDown,
   ChevronUp, CheckCircle2, Clock, Zap, Upload,
 } from "lucide-react"
+
+type ContactReason = { icon?: string; label: string; desc: string }
+type InfoCard = { icon?: string; title: string; points: string[] }
+
+type ContactHeroContent = {
+  eyebrow?: string
+  headline?: string
+  subline?: string
+  responseLabel?: string
+  responseValue?: string
+}
+
+type ContactReasonsContent = { eyebrow?: string; cards?: ContactReason[] }
+type ContactFormIntroContent = { heading?: string; body?: string }
+type ContactSidebarContent = { promiseTitle?: string; promiseBody?: string; homeEyebrow?: string; address?: string }
+type ContactFaqIntroContent = { eyebrow?: string; heading?: string; body?: string }
+type ContactShippingContent = { cards?: InfoCard[] }
+type ContactBottomCtaContent = { eyebrow?: string; heading?: string; body?: string; cta?: string }
 
 // ── Contact reason cards ──────────────────────────────────
 const CONTACT_REASONS = [
@@ -41,6 +60,81 @@ const CONTACT_REASONS = [
     bg: "bg-dp-bg-elevated",
   },
 ]
+
+const DEFAULT_CONTACT_HERO = {
+  eyebrow: "Get in Touch",
+  headline: "WE'RE HERE\nTO HELP.",
+  subline: "Seriously — our support team is made up of art lovers who care about your experience. No bots, no scripts, just real help from real people.",
+  responseLabel: "Response Time",
+  responseValue: "Under 24 hours",
+}
+
+const DEFAULT_CONTACT_REASONS = {
+  eyebrow: "What do you need help with?",
+  cards: CONTACT_REASONS.map(({ label, desc }, index) => ({ icon: ["package", "truck", "returns", "brush"][index], label, desc })),
+}
+
+const DEFAULT_SHIPPING_INFO = {
+  cards: [
+    {
+      icon: "truck",
+      title: "Shipping",
+      points: [
+        "Produced in 3 business days",
+        "Standard: 5–8 business days",
+        "Express: 2–3 business days",
+        "Free on orders over $49",
+        "Carbon-offset packaging",
+      ],
+    },
+    {
+      icon: "returns",
+      title: "Returns",
+      points: [
+        "100-day no-questions return",
+        "Free return label provided",
+        "Full refund to original payment",
+        "No need to return damaged items",
+        "Exchange available",
+      ],
+    },
+    {
+      icon: "package",
+      title: "Packaging",
+      points: [
+        "Rigid cardboard protection",
+        "Corner guards on every order",
+        "Damage-proof tube for large prints",
+        "Fully recyclable materials",
+        "Mounting kit included",
+      ],
+    },
+  ],
+}
+
+function withFallback<T extends Record<string, unknown>>(sections: PageSection[], key: string, locale: string, fallback: T): T {
+  return { ...fallback, ...(sectionContent<T>(sections, key, locale) ?? {}) }
+}
+
+function cmsIcon(name?: string, size = 20): React.ReactNode {
+  switch (name) {
+    case "truck": return <Truck size={size} />
+    case "returns": return <RotateCcw size={size} />
+    case "brush": return <Brush size={size} />
+    case "clock": return <Clock size={size} />
+    case "package":
+    default: return <Package size={size} />
+  }
+}
+
+function reasonStyle(name?: string): { color: string; bg: string } {
+  switch (name) {
+    case "truck": return { color: "text-dp-accent-gold", bg: "bg-dp-accent-gold/10" }
+    case "returns": return { color: "text-dp-success", bg: "bg-dp-success/10" }
+    case "brush": return { color: "text-dp-text-secondary", bg: "bg-dp-bg-elevated" }
+    default: return { color: "text-dp-accent-cta", bg: "bg-dp-accent-cta/10" }
+  }
+}
 
 // ── FAQ data ──────────────────────────────────────────────
 const FAQS = [
@@ -280,6 +374,20 @@ function ContactForm() {
 export default function ContactPage() {
   const [supportEmail, setSupportEmail] = useState("support@kolekcia.com")
   const [supportPhone, setSupportPhone] = useState("")
+  const [sections, setSections] = useState<PageSection[]>([])
+  const locale = getRequestLocale()
+  const hero = withFallback<Required<ContactHeroContent>>(sections, "hero", locale, DEFAULT_CONTACT_HERO)
+  const reasons = withFallback<Required<ContactReasonsContent>>(sections, "reasons", locale, DEFAULT_CONTACT_REASONS)
+  const formIntro = withFallback<Required<ContactFormIntroContent>>(sections, "form_intro", locale, { heading: "Send Us a Message", body: "We read every message and reply personally." })
+  const sidebar = withFallback<Required<ContactSidebarContent>>(sections, "sidebar", locale, {
+    promiseTitle: "Fast Replies, Always",
+    promiseBody: "Our support team operates Mon–Fri 9am–6pm CET. Emails sent after hours get a reply first thing the next morning.",
+    homeEyebrow: "Our Home",
+    address: "Obchodná 12\n811 06 Bratislava\nSlovakia",
+  })
+  const faqIntro = withFallback<Required<ContactFaqIntroContent>>(sections, "faq_intro", locale, { eyebrow: "FAQ", heading: "Common Questions", body: "Answers to everything we get asked most often. Still stuck? Message us directly." })
+  const shippingInfo = withFallback<Required<ContactShippingContent>>(sections, "shipping_info", locale, DEFAULT_SHIPPING_INFO)
+  const bottomCta = withFallback<Required<ContactBottomCtaContent>>(sections, "bottom_cta", locale, { eyebrow: "Still Browsing?", heading: "Discover 2.5M+ Designs", body: "The perfect piece for your wall is waiting. Free shipping over $49.", cta: "Shop Now" })
 
   useEffect(() => {
     apiFetch<Record<string, string>>("/cms/settings/")
@@ -287,6 +395,9 @@ export default function ContactPage() {
         if (d.support_email) setSupportEmail(d.support_email)
         if (d.support_phone) setSupportPhone(d.support_phone)
       })
+      .catch(() => {})
+    apiFetch<PageSection[]>("/cms/pages/contact/")
+      .then(setSections)
       .catch(() => {})
   }, [])
 
@@ -303,21 +414,24 @@ export default function ContactPage() {
         <div className="relative dp-container py-20 md:py-28 flex flex-col md:flex-row items-start md:items-center gap-8 justify-between">
           <div className="max-w-xl">
             <p className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-5">
-              <span className="w-8 h-px bg-dp-accent-cta" aria-hidden /> Get in Touch
+              <span className="w-8 h-px bg-dp-accent-cta" aria-hidden /> {hero.eyebrow}
             </p>
             <h1 className="font-display text-[64px] md:text-[90px] leading-none text-white mb-4">
-              WE&apos;RE HERE<br />
-              TO <span className="text-dp-accent-cta">HELP.</span>
+              {hero.headline.split("\n").map((line, index) => (
+                <React.Fragment key={`${line}-${index}`}>
+                  {index === 1 ? <span className="text-dp-accent-cta">{line}</span> : line}
+                  {index < hero.headline.split("\n").length - 1 && <br />}
+                </React.Fragment>
+              ))}
             </h1>
             <p className="text-white/65 text-[14px] leading-relaxed max-w-md">
-              Seriously — our support team is made up of art lovers who care about your experience.
-              No bots, no scripts, just real help from real people.
+              {hero.subline}
             </p>
           </div>
           {/* Quick contact info */}
           <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0 w-full md:w-auto">
             {[
-              { icon: <Clock size={16} />, label: "Response Time", value: "Under 24 hours" },
+              { icon: <Clock size={16} />, label: hero.responseLabel, value: hero.responseValue },
               { icon: <Mail size={16} />, label: "Email", value: supportEmail },
               ...(supportPhone ? [{ icon: <Phone size={16} />, label: "Phone", value: supportPhone }] : []),
             ].map(({ icon, label, value }) => (
@@ -335,23 +449,26 @@ export default function ContactPage() {
 
       {/* ── CONTACT REASON CARDS ─────────────────────────────────── */}
       <section className="dp-container py-14" aria-label="Choose a contact reason">
-        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-text-tertiary mb-5">What do you need help with?</p>
+        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-text-tertiary mb-5">{reasons.eyebrow}</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {CONTACT_REASONS.map(({ icon, label, desc, color, bg }) => (
+          {reasons.cards.map(({ icon, label, desc }) => {
+            const style = reasonStyle(icon)
+            return (
             <button
               key={label}
               type="button"
               className="group flex flex-col gap-3 p-5 bg-dp-bg-surface border border-dp-border rounded-sm hover:border-dp-accent-cta/50 transition-colors text-left"
             >
-              <span className={`inline-flex items-center justify-center w-10 h-10 rounded-sm ${bg} ${color} group-hover:scale-110 transition-transform`}>
-                {icon}
+              <span className={`inline-flex items-center justify-center w-10 h-10 rounded-sm ${style.bg} ${style.color} group-hover:scale-110 transition-transform`}>
+                {cmsIcon(icon)}
               </span>
               <div>
                 <p className="text-[13px] font-bold text-dp-text-primary">{label}</p>
                 <p className="text-[12px] text-dp-text-tertiary mt-0.5 leading-snug">{desc}</p>
               </div>
             </button>
-          ))}
+            )
+          })}
         </div>
       </section>
 
@@ -361,8 +478,8 @@ export default function ContactPage() {
 
           {/* Form */}
           <div className="lg:col-span-3 bg-dp-bg-surface border border-dp-border rounded-sm p-8">
-            <h2 id="contact-form-heading" className="font-display text-4xl text-dp-text-primary mb-2">Send Us a Message</h2>
-            <p className="text-[13px] text-dp-text-tertiary mb-8">We read every message and reply personally.</p>
+            <h2 id="contact-form-heading" className="font-display text-4xl text-dp-text-primary mb-2">{formIntro.heading}</h2>
+            <p className="text-[13px] text-dp-text-tertiary mb-8">{formIntro.body}</p>
             <ContactForm />
           </div>
 
@@ -375,22 +492,24 @@ export default function ContactPage() {
                 <Zap size={20} />
               </span>
               <div>
-                <h3 className="font-display text-2xl text-white mb-1">Fast Replies, Always</h3>
+                <h3 className="font-display text-2xl text-white mb-1">{sidebar.promiseTitle}</h3>
                 <p className="text-[13px] text-white/60 leading-relaxed">
-                  Our support team operates Mon–Fri 9am–6pm CET. Emails sent after hours get a reply first thing the next morning.
+                  {sidebar.promiseBody}
                 </p>
               </div>
             </div>
 
             {/* Office info */}
             <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Our Home</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">{sidebar.homeEyebrow}</p>
               <div className="flex items-start gap-3 mb-3">
                 <MapPin size={15} className="text-dp-accent-cta shrink-0 mt-0.5" />
                 <p className="text-[13px] text-dp-text-secondary leading-relaxed">
-                  Obchodná 12<br />
-                  811 06 Bratislava<br />
-                  Slovakia
+                  {sidebar.address.split("\n").map((line) => (
+                    <React.Fragment key={line}>
+                      {line}<br />
+                    </React.Fragment>
+                  ))}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -428,9 +547,9 @@ export default function ContactPage() {
       <section id="faq" className="bg-dp-bg-elevated border-y border-dp-border py-20" aria-labelledby="faq-heading">
         <div className="dp-container">
           <div className="text-center mb-12">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">FAQ</p>
-            <h2 id="faq-heading" className="font-display text-5xl md:text-6xl text-dp-text-primary">Common Questions</h2>
-            <p className="text-[14px] text-dp-text-secondary mt-3 max-w-md mx-auto">Answers to everything we get asked most often. Still stuck? Message us directly.</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">{faqIntro.eyebrow}</p>
+            <h2 id="faq-heading" className="font-display text-5xl md:text-6xl text-dp-text-primary">{faqIntro.heading}</h2>
+            <p className="text-[14px] text-dp-text-secondary mt-3 max-w-md mx-auto">{faqIntro.body}</p>
           </div>
           <div className="max-w-3xl mx-auto bg-dp-bg-surface border border-dp-border rounded-sm px-8 divide-dp-border">
             {FAQS.map((faq) => (
@@ -443,44 +562,10 @@ export default function ContactPage() {
       {/* ── SHIPPING & RETURNS INFO STRIP ────────────────────────── */}
       <section id="shipping" className="dp-container py-16" aria-label="Shipping and returns info">
         <div className="grid md:grid-cols-3 gap-6">
-          {[
-            {
-              icon: <Truck size={22} />,
-              title: "Shipping",
-              points: [
-                "Produced in 3 business days",
-                "Standard: 5–8 business days",
-                "Express: 2–3 business days",
-                "Free on orders over $49",
-                "Carbon-offset packaging",
-              ],
-            },
-            {
-              icon: <RotateCcw size={22} />,
-              title: "Returns",
-              points: [
-                "100-day no-questions return",
-                "Free return label provided",
-                "Full refund to original payment",
-                "No need to return damaged items",
-                "Exchange available",
-              ],
-            },
-            {
-              icon: <Package size={22} />,
-              title: "Packaging",
-              points: [
-                "Rigid cardboard protection",
-                "Corner guards on every order",
-                "Damage-proof tube for large prints",
-                "Fully recyclable materials",
-                "Mounting kit included",
-              ],
-            },
-          ].map(({ icon, title, points }) => (
+          {shippingInfo.cards.map(({ icon, title, points }) => (
             <div key={title} className="bg-dp-bg-surface border border-dp-border rounded-sm p-7">
               <span className="inline-flex items-center justify-center w-11 h-11 rounded-sm bg-dp-accent-cta/10 text-dp-accent-cta mb-4">
-                {icon}
+                {cmsIcon(icon, 22)}
               </span>
               <h3 className="font-display text-2xl text-dp-text-primary mb-3">{title}</h3>
               <ul className="flex flex-col gap-2">
@@ -499,14 +584,14 @@ export default function ContactPage() {
       {/* ── BOTTOM CTA ───────────────────────────────────────────── */}
       <section className="bg-dp-text-primary py-14 text-center" aria-label="Browse shop CTA">
         <div className="dp-container">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">Still Browsing?</p>
-          <h2 className="font-display text-5xl md:text-6xl text-white mb-4">Discover 2.5M+ Designs</h2>
-          <p className="text-white/60 text-[13px] mb-8 max-w-sm mx-auto">The perfect piece for your wall is waiting. Free shipping over $49.</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">{bottomCta.eyebrow}</p>
+          <h2 className="font-display text-5xl md:text-6xl text-white mb-4">{bottomCta.heading}</h2>
+          <p className="text-white/60 text-[13px] mb-8 max-w-sm mx-auto">{bottomCta.body}</p>
           <LocalizedLink
             href="/catalog"
             className="inline-flex items-center gap-2 px-10 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
           >
-            Shop Now <ArrowRight size={14} />
+            {bottomCta.cta} <ArrowRight size={14} />
           </LocalizedLink>
         </div>
       </section>

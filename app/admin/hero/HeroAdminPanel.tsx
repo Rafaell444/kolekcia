@@ -164,17 +164,22 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
               <div key={slide.id} className="flex items-center gap-4 bg-dp-bg-surface border border-dp-border rounded-sm p-4">
                 <GripVertical size={16} className="text-dp-text-tertiary shrink-0" aria-hidden />
                 <div className="relative w-28 h-16 rounded-sm overflow-hidden bg-dp-bg-elevated shrink-0">
-                  {thumb ? <Image src={thumb} alt={slide.headline} fill className="object-cover" sizes="112px" /> : null}
-                  {slide.type === "video" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                      <Play size={16} className="text-white" />
-                    </div>
-                  )}
+                  {slide.type === "video" && slide.video_url ? (
+                    <video src={slide.video_url} poster={slide.video_poster_url || undefined} muted loop playsInline controls className="h-full w-full object-cover" />
+                  ) : thumb ? (
+                    <Image src={thumb} alt={slide.headline} fill className="object-cover" sizes="112px" />
+                  ) : null}
+                  {slide.type === "video" && !slide.video_url && <div className="absolute inset-0 flex items-center justify-center bg-black/40"><Play size={16} className="text-white" /></div>}
                   {slide.type === "image" && !thumb && <ImageIcon size={20} className="absolute inset-0 m-auto text-dp-text-tertiary" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-display text-lg text-dp-text-primary truncate">{slide.headline}</p>
                   <p className="text-[11px] text-dp-text-tertiary truncate">{slide.subline}</p>
+                  {slide.type === "video" && (
+                    <p className="mt-1 text-[10px] text-dp-text-tertiary truncate">
+                      Video: {slide.video_url || "not uploaded"}{slide.video_poster_url ? ` · Poster: ${slide.video_poster_url}` : ""}
+                    </p>
+                  )}
                 </div>
                 <button type="button" onClick={() => toggleActive(slide)} className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 border rounded-sm ${slide.is_active ? "text-dp-success bg-dp-success/10 border-dp-success/30" : "text-dp-text-tertiary bg-dp-bg-elevated border-dp-border"}`}>
                   {slide.is_active ? "Active" : "Hidden"}
@@ -212,8 +217,11 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
                 <AdminMediaUpload label="Image" previewUrl={form.image_url} folder="hero" onUploaded={(url) => setForm((f) => ({ ...f, image_url: url }))} />
               ) : (
                 <>
-                  <AdminMediaUpload label="Video" previewUrl={form.video_url} folder="hero" accept="video/*" onUploaded={(url) => setForm((f) => ({ ...f, video_url: url }))} />
-                  <AdminMediaUpload label="Video Poster" previewUrl={form.video_poster_url} folder="hero" onUploaded={(url) => setForm((f) => ({ ...f, video_poster_url: url }))} />
+                  <AdminMediaUpload label="Video file (autoplays on homepage)" previewUrl={form.video_url} folder="hero" accept="video/*" onUploaded={(url) => setForm((f) => ({ ...f, video_url: url }))} />
+                  <AdminMediaUpload label="Poster image (optional thumbnail before video loads)" previewUrl={form.video_poster_url} folder="hero" accept="image/*" onUploaded={(url) => setForm((f) => ({ ...f, video_poster_url: url }))} />
+                  <p className="text-[11px] text-dp-text-tertiary">
+                    Use the video field for the actual MP4/WebM. The poster field is only an optional still image thumbnail, not a second video.
+                  </p>
                 </>
               )}
               <input required value={form.headline} onChange={(e) => setForm((f) => ({ ...f, headline: e.target.value }))} placeholder="Headline" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />

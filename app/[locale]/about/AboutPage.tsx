@@ -9,9 +9,42 @@ import {
   ArrowRight, Zap, Shield, Award, Palette,
   Globe2, Truck, Heart, Star, CheckCircle2, ChevronRight, Users,
 } from "lucide-react"
-import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import { apiFetch, getRequestLocale, parseList, type PaginatedResponse } from "@/lib/api"
+import { sectionContent, type PageSection } from "@/lib/page-sections"
 
 type Artist = { id: number; name: string; handle: string; avatar_url: string; badge: string; verified: boolean }
+type TimelineItem = { year: string; title: string; body: string }
+type ValueCard = { icon?: string; title: string; body: string }
+type TeamMember = { name: string; role: string; bio: string; img: string }
+type PressItem = { name: string; quote: string }
+type StatItem = { num: string; label: string }
+
+type AboutHeroContent = {
+  eyebrow?: string
+  headline?: string
+  subline?: string
+  imageUrl?: string
+  primaryCta?: string
+  secondaryCta?: string
+  stats?: StatItem[]
+}
+
+type AboutMissionContent = {
+  eyebrow?: string
+  heading?: string
+  paragraphs?: string[]
+  checklist?: string[]
+  imageUrl?: string
+  stat?: string
+  statLabel?: string
+}
+
+type AboutValuesContent = { eyebrow?: string; heading?: string; cards?: ValueCard[] }
+type AboutTimelineContent = { eyebrow?: string; heading?: string; items?: TimelineItem[] }
+type AboutTeamContent = { eyebrow?: string; heading?: string; subheading?: string; members?: TeamMember[] }
+type AboutPressContent = { eyebrow?: string; items?: PressItem[] }
+type AboutCareersContent = { eyebrow?: string; heading?: string; body?: string; primaryCta?: string; secondaryCta?: string }
+type AboutFinalCtaContent = { heading?: string; body?: string; cta?: string }
 
 const TIMELINE = [
   { year: "2018", title: "The Idea", body: "Founded in a Bratislava studio apartment with a single printer, a dream, and zero budget." },
@@ -88,21 +121,82 @@ const PRESS = [
   { name: "Dezeen",      quote: "\"A marketplace with genuine taste and purpose.\"" },
 ]
 
+const DEFAULT_HERO: Required<AboutHeroContent> = {
+  eyebrow: "Our Story",
+  headline: "ART FOR\nEVERY\nWALL.",
+  subline: "We started Koleqcia because we believed the best art in the world shouldn't live behind museum glass. It should hang in your bedroom, your studio, your office — everywhere you spend your life.",
+  imageUrl: "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=1440&h=800&fit=crop",
+  primaryCta: "Explore the Shop",
+  secondaryCta: "Meet the Team",
+  stats: [
+    { num: "2.5M+",  label: "Unique Designs" },
+    { num: "150K+",  label: "Independent Artists" },
+    { num: "180K+",  label: "Happy Collectors" },
+    { num: "80+",    label: "Countries Served" },
+  ],
+}
+
+const DEFAULT_MISSION: Required<AboutMissionContent> = {
+  eyebrow: "Our Mission",
+  heading: "We Exist to Champion Independent Artists.",
+  paragraphs: [
+    "The art market has always been controlled by galleries, agents, and institutions. We believe that's wrong. An artist in Manila or Kraków deserves the same global reach as one in New York or London.",
+    "Koleqcia takes zero upfront fees from artists. We print, ship, and handle everything — they simply upload their work and earn. Our royalty rates are the highest in the industry.",
+    "And when collectors bring home a piece, they're not just decorating a room — they're directly supporting a real person's creative career.",
+  ],
+  checklist: [
+    "Highest artist royalties in the industry",
+    "Zero upfront cost to list your designs",
+    "Printed, shipped and handled — all by us",
+  ],
+  imageUrl: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&h=1000&fit=crop",
+  stat: "40%",
+  statLabel: "Average artist royalty rate",
+}
+
+function withFallback<T extends Record<string, unknown>>(sections: PageSection[], key: string, locale: string, fallback: T): T {
+  return { ...fallback, ...(sectionContent<T>(sections, key, locale) ?? {}) }
+}
+
+function valueIcon(name?: string): React.ReactNode {
+  const props = { size: 22 }
+  switch (name) {
+    case "shield": return <Shield {...props} />
+    case "globe": return <Globe2 {...props} />
+    case "zap": return <Zap {...props} />
+    case "heart": return <Heart {...props} />
+    case "truck": return <Truck {...props} />
+    case "award": return <Award {...props} />
+    case "palette":
+    default: return <Palette {...props} />
+  }
+}
+
 export default function AboutPage(): React.ReactElement {
   const [artists, setArtists] = useState<Artist[]>([])
-  const [timeline, setTimeline] = useState(TIMELINE)
+  const [sections, setSections] = useState<PageSection[]>([])
+
+  const locale = getRequestLocale()
+  const hero = withFallback(sections, "hero", locale, DEFAULT_HERO)
+  const mission = withFallback(sections, "mission", locale, DEFAULT_MISSION)
+  const values = withFallback<Required<AboutValuesContent>>(sections, "values", locale, {
+    eyebrow: "What We Stand For",
+    heading: "Our Values",
+    cards: VALUES.map(({ title, body }, index) => ({ icon: ["palette", "shield", "globe", "zap", "heart", "truck"][index], title, body })),
+  })
+  const timelineSection = withFallback(sections, "timeline", locale, { eyebrow: "Our Journey", heading: "How We Got Here", items: TIMELINE })
+  const team = withFallback(sections, "team", locale, { eyebrow: "The People", heading: "Meet the Team", subheading: "A small crew of artists, engineers and collectors — united by a belief that art should be for everyone.", members: TEAM })
+  const press = withFallback(sections, "press", locale, { eyebrow: "As Seen In", items: PRESS })
+  const careers = withFallback(sections, "careers", locale, { eyebrow: "Join Us", heading: "We're Hiring Brilliant People.", body: "Remote-first, passion-led, and growing fast. We're looking for engineers, designers, and art-lovers who want to build something that matters.", primaryCta: "See Open Roles", secondaryCta: "Send Speculative CV" })
+  const finalCta = withFallback(sections, "final_cta", locale, { heading: "Ready to Transform Your Space?", body: "Over 2.5 million designs waiting for your walls. Free shipping over $49.", cta: "Browse the Shop" })
 
   useEffect(() => {
     let cancelled = false
     apiFetch<Artist[] | PaginatedResponse<Artist>>("/products/artists/?page_size=6")
       .then((d) => { if (!cancelled) setArtists(parseList(d).slice(0, 6)) })
       .catch(() => {})
-    apiFetch<Array<{ section_key: string; content: { items?: typeof TIMELINE } }>>("/cms/pages/about/")
-      .then((sections) => {
-        if (cancelled) return
-        const t = sections.find((s) => s.section_key === "timeline")
-        if (t?.content?.items?.length) setTimeline(t.content.items)
-      })
+    apiFetch<PageSection[]>("/cms/pages/about/")
+      .then((data) => { if (!cancelled) setSections(data) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -115,7 +209,7 @@ export default function AboutPage(): React.ReactElement {
         {/* Background image */}
         <div className="absolute inset-0">
           <Image
-            src="https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=1440&h=800&fit=crop"
+            src={hero.imageUrl}
             alt=""
             fill
             className="object-cover opacity-20"
@@ -129,29 +223,31 @@ export default function AboutPage(): React.ReactElement {
         <div className="relative dp-container py-24 md:py-36">
           <div className="max-w-4xl">
             <p className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-6">
-              <span className="w-8 h-px bg-dp-accent-cta inline-block" aria-hidden /> Our Story
+              <span className="w-8 h-px bg-dp-accent-cta inline-block" aria-hidden /> {hero.eyebrow}
             </p>
             <h1 className="font-display text-[72px] md:text-[100px] lg:text-[130px] leading-none text-white mb-6">
-              ART FOR<br />
-              <span className="text-dp-accent-cta">EVERY</span><br />
-              WALL.
+              {hero.headline.split("\n").map((line, index) => (
+                <React.Fragment key={`${line}-${index}`}>
+                  {index === 1 ? <span className="text-dp-accent-cta">{line}</span> : line}
+                  {index < hero.headline.split("\n").length - 1 && <br />}
+                </React.Fragment>
+              ))}
             </h1>
             <p className="text-white/70 text-[16px] leading-relaxed max-w-lg mb-10">
-              We started Koleqcia because we believed the best art in the world shouldn&apos;t live behind museum glass.
-              It should hang in your bedroom, your studio, your office — everywhere you spend your life.
+              {hero.subline}
             </p>
             <div className="flex flex-wrap items-center gap-4">
               <LocalizedLink
                 href="/catalog"
                 className="inline-flex items-center gap-2 px-8 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
               >
-                Explore the Shop <ArrowRight size={14} />
+                {hero.primaryCta} <ArrowRight size={14} />
               </LocalizedLink>
               <Link
                 href="#team"
                 className="inline-flex items-center gap-2 px-8 py-4 border border-white/30 hover:border-white/60 text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors"
               >
-                Meet the Team <ChevronRight size={14} />
+                {hero.secondaryCta} <ChevronRight size={14} />
               </Link>
             </div>
           </div>
@@ -161,12 +257,7 @@ export default function AboutPage(): React.ReactElement {
         <div className="relative border-t border-white/10">
           <div className="dp-container">
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-white/10">
-              {[
-                { num: "2.5M+",  label: "Unique Designs" },
-                { num: "150K+",  label: "Independent Artists" },
-                { num: "180K+",  label: "Happy Collectors" },
-                { num: "80+",    label: "Countries Served" },
-              ].map(({ num, label }) => (
+              {hero.stats.map(({ num, label }) => (
                 <div key={label} className="py-8 px-6 first:pl-0 last:pr-0 text-center">
                   <p className="font-display text-5xl text-dp-accent-cta">{num}</p>
                   <p className="text-[11px] text-white/50 uppercase tracking-widest mt-1">{label}</p>
@@ -181,29 +272,15 @@ export default function AboutPage(): React.ReactElement {
       <section id="mission" className="dp-container py-20 md:py-28" aria-labelledby="mission-heading">
         <div className="grid md:grid-cols-2 gap-12 md:gap-20 items-center">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-4">Our Mission</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-4">{mission.eyebrow}</p>
             <h2 id="mission-heading" className="font-display text-5xl md:text-6xl text-dp-text-primary mb-6 leading-tight">
-              We Exist to Champion Independent Artists.
+              {mission.heading}
             </h2>
             <div className="space-y-4 text-[14px] text-dp-text-secondary leading-relaxed">
-              <p>
-                The art market has always been controlled by galleries, agents, and institutions.
-                We believe that&apos;s wrong. An artist in Manila or Kraków deserves the same global reach as one in New York or London.
-              </p>
-              <p>
-                Koleqcia takes zero upfront fees from artists. We print, ship, and handle everything — they simply upload their work and earn.
-                Our royalty rates are the highest in the industry.
-              </p>
-              <p>
-                And when collectors bring home a piece, they&apos;re not just decorating a room — they&apos;re directly supporting a real person&apos;s creative career.
-              </p>
+              {mission.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             </div>
             <div className="mt-8 flex flex-col gap-3">
-              {[
-                "Highest artist royalties in the industry",
-                "Zero upfront cost to list your designs",
-                "Printed, shipped and handled — all by us",
-              ].map((item) => (
+              {mission.checklist.map((item) => (
                 <div key={item} className="flex items-start gap-3">
                   <CheckCircle2 size={16} className="text-dp-accent-cta shrink-0 mt-0.5" />
                   <p className="text-[13px] text-dp-text-secondary">{item}</p>
@@ -214,7 +291,7 @@ export default function AboutPage(): React.ReactElement {
           <div className="relative">
             <div className="aspect-[4/5] relative rounded-sm overflow-hidden">
               <Image
-                src="https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&h=1000&fit=crop"
+                src={mission.imageUrl}
                 alt="Artist creating digital art"
                 fill
                 className="object-cover"
@@ -223,8 +300,8 @@ export default function AboutPage(): React.ReactElement {
             </div>
             {/* Floating accent card */}
             <div className="absolute -bottom-6 -left-6 bg-dp-text-primary text-white px-6 py-4 rounded-sm shadow-lg max-w-[180px]">
-              <p className="font-display text-3xl text-dp-accent-cta">40%</p>
-              <p className="text-[11px] text-white/70 uppercase tracking-widest mt-0.5 leading-tight">Average artist royalty rate</p>
+              <p className="font-display text-3xl text-dp-accent-cta">{mission.stat}</p>
+              <p className="text-[11px] text-white/70 uppercase tracking-widest mt-0.5 leading-tight">{mission.statLabel}</p>
             </div>
           </div>
         </div>
@@ -234,17 +311,17 @@ export default function AboutPage(): React.ReactElement {
       <section className="bg-dp-bg-elevated border-y border-dp-border py-20" aria-labelledby="values-heading">
         <div className="dp-container">
           <div className="text-center mb-12">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">What We Stand For</p>
-            <h2 id="values-heading" className="font-display text-5xl md:text-6xl text-dp-text-primary">Our Values</h2>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">{values.eyebrow}</p>
+            <h2 id="values-heading" className="font-display text-5xl md:text-6xl text-dp-text-primary">{values.heading}</h2>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {VALUES.map(({ icon, title, body }) => (
+            {values.cards.map(({ icon, title, body }) => (
               <div
                 key={title}
                 className="group bg-dp-bg-surface border border-dp-border rounded-sm p-7 hover:border-dp-accent-cta/50 transition-colors"
               >
                 <span className="inline-flex items-center justify-center w-11 h-11 rounded-sm bg-dp-accent-cta/10 text-dp-accent-cta mb-4 group-hover:bg-dp-accent-cta group-hover:text-white transition-colors">
-                  {icon}
+                  {valueIcon(icon)}
                 </span>
                 <h3 className="font-display text-2xl text-dp-text-primary mb-2">{title}</h3>
                 <p className="text-[13px] text-dp-text-secondary leading-relaxed">{body}</p>
@@ -257,14 +334,14 @@ export default function AboutPage(): React.ReactElement {
       {/* ── TIMELINE ─────────────────────────────────────────────── */}
       <section className="dp-container py-20 md:py-28" aria-labelledby="timeline-heading">
         <div className="text-center mb-12">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">Our Journey</p>
-          <h2 id="timeline-heading" className="font-display text-5xl md:text-6xl text-dp-text-primary">How We Got Here</h2>
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">{timelineSection.eyebrow}</p>
+          <h2 id="timeline-heading" className="font-display text-5xl md:text-6xl text-dp-text-primary">{timelineSection.heading}</h2>
         </div>
         <div className="relative max-w-3xl mx-auto">
           {/* Vertical line */}
           <div className="absolute left-[calc(50%-0.5px)] top-0 bottom-0 w-px bg-dp-border hidden md:block" aria-hidden />
           <div className="flex flex-col gap-0">
-            {timeline.map((item, i) => (
+            {timelineSection.items.map((item, i) => (
               <div
                 key={item.year}
                 className={`relative flex md:items-center gap-6 md:gap-0 ${i % 2 === 0 ? "md:flex-row" : "md:flex-row-reverse"}`}
@@ -291,12 +368,12 @@ export default function AboutPage(): React.ReactElement {
       <section id="team" className="bg-dp-text-primary py-20 md:py-28" aria-labelledby="team-heading">
         <div className="dp-container">
           <div className="text-center mb-12">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">The People</p>
-            <h2 id="team-heading" className="font-display text-5xl md:text-6xl text-white">Meet the Team</h2>
-            <p className="text-white/60 text-[14px] mt-3 max-w-md mx-auto">A small crew of artists, engineers and collectors — united by a belief that art should be for everyone.</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">{team.eyebrow}</p>
+            <h2 id="team-heading" className="font-display text-5xl md:text-6xl text-white">{team.heading}</h2>
+            <p className="text-white/60 text-[14px] mt-3 max-w-md mx-auto">{team.subheading}</p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {TEAM.map(({ name, role, bio, img }) => (
+            {team.members.map(({ name, role, bio, img }) => (
               <div key={name} className="group flex flex-col">
                 <div className="relative aspect-square rounded-sm overflow-hidden bg-white/5 mb-4">
                   <Image
@@ -354,9 +431,9 @@ export default function AboutPage(): React.ReactElement {
       {/* ── PRESS ────────────────────────────────────────────────── */}
       <section id="press" className="bg-dp-bg-elevated border-y border-dp-border py-14" aria-labelledby="press-heading">
         <div className="dp-container">
-          <p className="text-center text-[11px] font-black uppercase tracking-[0.22em] text-dp-text-tertiary mb-8">As Seen In</p>
+          <p className="text-center text-[11px] font-black uppercase tracking-[0.22em] text-dp-text-tertiary mb-8">{press.eyebrow}</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {PRESS.map(({ name, quote }) => (
+            {press.items.map(({ name, quote }) => (
               <div key={name} className="bg-dp-bg-surface border border-dp-border rounded-sm px-6 py-5">
                 <p className="font-display text-2xl text-dp-text-primary mb-3">{name}</p>
                 <p className="text-[13px] text-dp-text-secondary italic leading-relaxed">{quote}</p>
@@ -373,20 +450,20 @@ export default function AboutPage(): React.ReactElement {
           <div className="absolute inset-0 opacity-5" style={{ backgroundImage: "repeating-linear-gradient(45deg, #fff 0, #fff 1px, transparent 0, transparent 50%)", backgroundSize: "12px 12px" }} aria-hidden />
           <div className="relative flex flex-col md:flex-row items-center gap-8 px-8 md:px-16 py-14">
             <div className="flex-1 text-center md:text-left">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">Join Us</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">{careers.eyebrow}</p>
               <h2 id="careers-heading" className="font-display text-5xl md:text-6xl text-white leading-tight mb-4">
-                We&apos;re Hiring Brilliant People.
+                {careers.heading}
               </h2>
               <p className="text-white/70 text-[14px] leading-relaxed max-w-md">
-                Remote-first, passion-led, and growing fast. We&apos;re looking for engineers, designers, and art-lovers who want to build something that matters.
+                {careers.body}
               </p>
             </div>
             <div className="flex flex-col gap-3 shrink-0">
               <LocalizedLink href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
-                See Open Roles <ArrowRight size={14} />
+                {careers.primaryCta} <ArrowRight size={14} />
               </LocalizedLink>
               <LocalizedLink href="/contact" className="flex items-center justify-center gap-2 px-8 py-4 border border-white/30 hover:border-white/60 text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-                <Users size={14} /> Send Speculative CV
+                <Users size={14} /> {careers.secondaryCta}
               </LocalizedLink>
             </div>
           </div>
@@ -396,10 +473,10 @@ export default function AboutPage(): React.ReactElement {
       {/* ── FINAL CTA ────────────────────────────────────────────── */}
       <section className="bg-dp-accent-cta py-16 text-center" aria-label="Shop call to action">
         <div className="dp-container">
-          <h2 className="font-display text-5xl md:text-7xl text-white mb-4">Ready to Transform Your Space?</h2>
-          <p className="text-white/80 text-[14px] mb-8 max-w-md mx-auto">Over 2.5 million designs waiting for your walls. Free shipping over $49.</p>
+          <h2 className="font-display text-5xl md:text-7xl text-white mb-4">{finalCta.heading}</h2>
+          <p className="text-white/80 text-[14px] mb-8 max-w-md mx-auto">{finalCta.body}</p>
           <LocalizedLink href="/catalog" className="inline-flex items-center gap-2 px-10 py-4 bg-white text-dp-accent-cta text-[13px] font-black uppercase tracking-widest rounded-sm hover:bg-dp-bg-elevated transition-colors">
-            Browse the Shop <ArrowRight size={15} />
+            {finalCta.cta} <ArrowRight size={15} />
           </LocalizedLink>
         </div>
       </section>

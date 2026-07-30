@@ -108,6 +108,24 @@ def ensure_page_section_defaults():
     from .models import PageSection
     from .management.commands.seed_page_sections import SECTIONS
 
+    def merge_missing(default, current):
+        if not current:
+            return default, True
+        if isinstance(default, dict) and isinstance(current, dict):
+            merged = dict(current)
+            changed = False
+            for key, value in default.items():
+                if key not in merged or merged[key] in (None, "", [], {}):
+                    merged[key] = value
+                    changed = True
+                elif isinstance(value, dict) and isinstance(merged[key], dict):
+                    nested, nested_changed = merge_missing(value, merged[key])
+                    if nested_changed:
+                        merged[key] = nested
+                        changed = True
+            return merged, changed
+        return current, False
+
     for section in SECTIONS:
         obj, created = PageSection.objects.get_or_create(
             page=section["page"],
@@ -124,8 +142,12 @@ def ensure_page_section_defaults():
             if not obj.title:
                 obj.title = section["title"]
                 changed.append("title")
-            if not obj.content:
-                obj.content = section["content"]
+            merged_content, content_changed = merge_missing(section["content"], obj.content)
+            if content_changed:
+                obj.content = merged_content
                 changed.append("content")
+            if obj.sort_order != section["sort_order"]:
+                obj.sort_order = section["sort_order"]
+                changed.append("sort_order")
             if changed:
                 obj.save(update_fields=changed)

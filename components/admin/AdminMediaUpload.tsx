@@ -60,8 +60,8 @@ export default function AdminMediaUpload({
         {previewUrl ? (
           isVideo ? (
             <div className={`relative bg-dp-bg-elevated border border-dp-border rounded-sm overflow-hidden flex items-center justify-center ${previewClassName}`}>
-              <video src={previewUrl} className="w-full h-full object-cover" muted />
-              <Play size={16} className="absolute text-white/80" />
+              <video src={previewUrl} className="w-full h-full object-cover" muted controls playsInline />
+              <Play size={16} className="pointer-events-none absolute text-white/80" />
             </div>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
