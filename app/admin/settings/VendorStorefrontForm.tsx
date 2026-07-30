@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react"
 import { adminFetch, getAdminToken } from "@/lib/admin-auth"
-import { Save, Store, Upload, Mail } from "lucide-react"
+import { Save, Store, Upload } from "lucide-react"
 import TranslationFields from "@/components/admin/TranslationFields"
 
 type VendorProfile = {
@@ -108,38 +108,6 @@ function MediaUpload({
   )
 }
 
-function EmailTemplateSandbox({ storeName }: { storeName: string }) {
-  const [subject, setSubject] = useState(`Your order from ${storeName || "our store"} has shipped!`)
-  const [body, setBody] = useState(
-    `Hi {{customer_name}},\n\nGreat news — your order {{order_number}} is on its way.\n\nTracking: {{tracking_code}}\n\nThank you for shopping with ${storeName || "us"}!`
-  )
-
-  return (
-    <div className="border border-dp-border rounded-sm overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-dp-border bg-dp-bg-elevated">
-        <Mail size={14} className="text-dp-accent-cta" />
-        <p className="text-[12px] font-bold uppercase tracking-widest text-dp-text-tertiary">Email template preview</p>
-      </div>
-      <div className="p-4 flex flex-col gap-3">
-        <input value={subject} onChange={(e) => setSubject(e.target.value)}
-          className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6}
-          className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary resize-none font-mono" />
-        <div className="rounded-sm border border-dp-border bg-white text-gray-900 p-5 text-left">
-          <p className="text-[11px] text-gray-500 mb-2">Preview</p>
-          <p className="font-semibold text-[15px] mb-3">{subject.replace("{{customer_name}}", "Alex").replace("{{order_number}}", "KOL-2024-123456")}</p>
-          <p className="text-[13px] leading-relaxed whitespace-pre-wrap">
-            {body
-              .replace(/\{\{customer_name\}\}/g, "Alex")
-              .replace(/\{\{order_number\}\}/g, "KOL-2024-123456")
-              .replace(/\{\{tracking_code\}\}/g, "GE123456789GE")}
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function VendorStorefrontForm({
   vendorSlug,
   allowCategory = false,
@@ -191,10 +159,11 @@ export function VendorStorefrontForm({
   return (
     <div className="flex flex-col gap-5">
       <Field label="Store name" value={draft.name} onChange={(v) => set("name", v)} />
-      <TranslationFields value={draft} onChange={setDraft} inputClassName="w-full px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "name_ka", label: "Store name · Georgian" }, { key: "name_ru", label: "Store name · Russian" }, { key: "description_ka", label: "Description · Georgian", multiline: true }, { key: "description_ru", label: "Description · Russian", multiline: true }]} />
+      <TranslationFields value={draft} onChange={setDraft} inputClassName="w-full px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "name_ka", label: "Store name · Georgian" }, { key: "name_ru", label: "Store name · Russian" }]} />
       <MediaUpload label="Logo" previewUrl={draft.logo_url} kind="logo" onUploaded={(url) => set("logo_url", url)} />
       <MediaUpload label="Banner" previewUrl={draft.banner_url} kind="banner" onUploaded={(url) => set("banner_url", url)} />
       <Field label="Short description" value={draft.description} onChange={(v) => set("description", v)} multiline />
+      <TranslationFields value={draft} onChange={setDraft} inputClassName="w-full px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "description_ka", label: "Short description · Georgian", multiline: true }, { key: "description_ru", label: "Short description · Russian", multiline: true }]} />
       {allowCategory && (
         <Field label="Catalog category slug" value={draft.catalog_category_slug} onChange={(v) => set("catalog_category_slug", v)} hint="e.g. figures or wallpanels" />
       )}
@@ -204,7 +173,6 @@ export function VendorStorefrontForm({
         <Field label="TikTok" value={draft.social_tiktok} onChange={(v) => set("social_tiktok", v)} />
         <Field label="YouTube" value={draft.social_youtube} onChange={(v) => set("social_youtube", v)} />
       </div>
-      <EmailTemplateSandbox storeName={draft.name} />
       <button
         type="button"
         onClick={() => { void handleSave() }}
@@ -227,7 +195,7 @@ export function VendorStorefrontSection({ isVendor }: { isVendor: boolean }) {
       </div>
       <div className="p-5">
         <p className="text-[13px] text-dp-text-tertiary mb-4">
-          Upload your logo and banner, edit your description and social links, and preview shipping emails.
+          Upload your logo and banner, then edit your localized description and social links.
         </p>
         <VendorStorefrontForm />
       </div>

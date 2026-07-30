@@ -91,7 +91,7 @@ export default async function HomePage({
         </section>
       )}
 
-      <TrendingArtists />
+      <TrendingArtists locale={locale} />
       <VideoSection content={video ?? undefined} />
       <ReviewsSection />
       <NewsletterSection content={newsletter ?? undefined} />

@@ -39,7 +39,10 @@ def get_vendor_for_request(request):
 
 def _apply_vendor_fields(vendor, data, staff=False):
     fields = (
-        "name", "logo_url", "banner_url", "description", "payment_email", "merchant_id",
+        "name", "name_ka", "name_ru",
+        "logo_url", "banner_url",
+        "description", "description_ka", "description_ru",
+        "payment_email", "merchant_id",
         "gift_wrap_price_gel", "gift_wrap_price_usd",
         "shipping_email_subject", "shipping_email_body",
         "social_website", "social_instagram", "social_facebook", "social_twitter", "social_tiktok", "social_youtube",

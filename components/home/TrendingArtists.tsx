@@ -15,10 +15,13 @@ type VendorArtist = {
 
 const SHOWCASE_SLUGS = new Set(["figures", "wallpanels"])
 
-async function getVendorArtists(): Promise<VendorArtist[]> {
+async function getVendorArtists(locale: string): Promise<VendorArtist[]> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
   try {
-    const res = await fetch(`${apiUrl}/vendors/public/`, { next: { revalidate: 600 } })
+    const res = await fetch(`${apiUrl}/vendors/public/?lang=${locale}`, {
+      headers: { "Accept-Language": locale },
+      next: { revalidate: 600 },
+    })
     if (!res.ok) return []
     const data = await res.json() as VendorArtist[] | PaginatedResponse<VendorArtist>
     return parseList(data).filter((v) => SHOWCASE_SLUGS.has(v.catalog_category_slug))
@@ -27,8 +30,8 @@ async function getVendorArtists(): Promise<VendorArtist[]> {
   }
 }
 
-export default async function TrendingArtists(): Promise<React.ReactElement> {
-  const vendors = await getVendorArtists()
+export default async function TrendingArtists({ locale }: { locale: string }): Promise<React.ReactElement> {
+  const vendors = await getVendorArtists(locale)
 
   if (vendors.length === 0) return <></>
 
