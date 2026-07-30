@@ -67,8 +67,14 @@ export default function HeroCarousel(): React.ReactElement {
     const video = activeVideoRef.current
     if (!video) return
     video.currentTime = 0
+    video.muted = true
     void video.play().catch(() => {})
-  }, [current])
+  }, [current, slides])
+
+  const playActiveVideo = useCallback((video: HTMLVideoElement) => {
+    video.muted = true
+    void video.play().catch(() => {})
+  }, [])
 
   // ── Track position (pure math, no ref tricks) ─────────────
   //
@@ -199,14 +205,16 @@ export default function HeroCarousel(): React.ReactElement {
 
                   {isVideo && s.video_url && active ? (
                     <video
+                      key={`${s.id}-${current}`}
                       ref={activeVideoRef}
                       src={s.video_url}
-                      poster={s.video_poster_url || undefined}
                       autoPlay
                       muted
                       loop
                       playsInline
                       preload="auto"
+                      onLoadedData={(event) => playActiveVideo(event.currentTarget)}
+                      onCanPlay={(event) => playActiveVideo(event.currentTarget)}
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : isVideo && s.video_poster_url ? (

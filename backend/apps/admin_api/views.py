@@ -609,8 +609,8 @@ class AdminProductStockView(APIView):
 
 
 ALLOWED_MEDIA_FOLDERS = frozenset({"blog", "hero", "categories", "auctions", "artists", "cms"})
-ALLOWED_VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".ogg"})
-ALLOWED_VIDEO_CONTENT_TYPES = frozenset({"video/mp4", "video/webm", "video/quicktime", "video/ogg"})
+ALLOWED_VIDEO_EXTENSIONS = frozenset({".mp4", ".webm"})
+ALLOWED_VIDEO_CONTENT_TYPES = frozenset({"video/mp4", "video/webm"})
 MAX_VIDEO_UPLOAD_BYTES = 80 * 1024 * 1024
 
 
@@ -640,7 +640,10 @@ class AdminMediaUploadView(APIView):
 
         if is_video:
             if raw_ext not in ALLOWED_VIDEO_EXTENSIONS or content_type not in ALLOWED_VIDEO_CONTENT_TYPES:
-                return Response({"detail": "Unsupported video format. Use MP4, WebM, MOV, or OGG."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "Unsupported video format. Upload an H.264 MP4 or WebM file."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             if getattr(uploaded_file, "size", 0) > MAX_VIDEO_UPLOAD_BYTES:
                 return Response({"detail": "Video is too large. Maximum upload size is 80 MB."}, status=status.HTTP_400_BAD_REQUEST)
             ext = raw_ext

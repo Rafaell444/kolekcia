@@ -1,7 +1,7 @@
 "use client"
 
-import React, { useState } from "react"
-import { Upload, Play } from "lucide-react"
+import React, { useEffect, useState } from "react"
+import { AlertCircle, Upload } from "lucide-react"
 import { getAdminToken } from "@/lib/admin-auth"
 
 type MediaFolder = "blog" | "hero" | "categories" | "auctions" | "artists" | "cms"
@@ -24,6 +24,11 @@ export default function AdminMediaUpload({
   previewClassName = "w-40 h-24",
 }: Props): React.ReactElement {
   const [uploading, setUploading] = useState(false)
+  const [previewError, setPreviewError] = useState("")
+
+  useEffect(() => {
+    setPreviewError("")
+  }, [previewUrl])
 
   async function handleFile(file: File) {
     setUploading(true)
@@ -51,18 +56,35 @@ export default function AdminMediaUpload({
     }
   }
 
-  const isVideo = previewUrl && (accept.includes("video") || /\.(mp4|webm|mov|ogg)(\?|$)/i.test(previewUrl))
+  const isVideo = Boolean(previewUrl) && (accept.includes("video") || /\.(mp4|webm)(\?|$)/i.test(previewUrl))
 
   return (
     <div className="flex flex-col gap-2">
       <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">{label}</label>
-      <div className="flex items-center gap-4">
+      <div className={`flex gap-4 ${isVideo ? "flex-col items-stretch" : "items-center"}`}>
         {previewUrl ? (
           isVideo ? (
-            <div className={`relative bg-dp-bg-elevated border border-dp-border rounded-sm overflow-hidden flex items-center justify-center ${previewClassName}`}>
-              <video src={previewUrl} className="w-full h-full object-cover" muted controls playsInline />
-              <Play size={16} className="pointer-events-none absolute text-white/80" />
-            </div>
+            <>
+              <div className={`relative bg-black border border-dp-border rounded-sm overflow-hidden flex items-center justify-center ${previewClassName === "w-40 h-24" ? "w-full aspect-video" : previewClassName}`}>
+                <video
+                  key={previewUrl}
+                  src={previewUrl}
+                  className="w-full h-full object-contain"
+                  muted
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onLoadedMetadata={() => setPreviewError("")}
+                  onError={() => setPreviewError("This video cannot be played by the browser. Upload an H.264 MP4 or a WebM file.")}
+                />
+              </div>
+              {previewError && (
+                <p role="alert" className="flex items-center gap-2 text-[11px] text-dp-accent-cta">
+                  <AlertCircle size={13} className="shrink-0" />
+                  {previewError}
+                </p>
+              )}
+            </>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl} alt={label} className={`object-cover border border-dp-border rounded-sm ${previewClassName}`} />
@@ -72,7 +94,7 @@ export default function AdminMediaUpload({
             <Upload size={18} />
           </div>
         )}
-        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-dp-border rounded-sm text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
+        <label className="cursor-pointer self-start inline-flex items-center gap-2 px-4 py-2 border border-dp-border rounded-sm text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
           <Upload size={13} />
           {uploading ? "Uploading…" : "Upload"}
           <input

@@ -217,10 +217,10 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
                 <AdminMediaUpload label="Image" previewUrl={form.image_url} folder="hero" onUploaded={(url) => setForm((f) => ({ ...f, image_url: url }))} />
               ) : (
                 <>
-                  <AdminMediaUpload label="Video file (autoplays on homepage)" previewUrl={form.video_url} folder="hero" accept="video/*" onUploaded={(url) => setForm((f) => ({ ...f, video_url: url }))} />
+                  <AdminMediaUpload label="Video file (autoplays on homepage)" previewUrl={form.video_url} folder="hero" accept="video/mp4,video/webm" onUploaded={(url) => setForm((f) => ({ ...f, video_url: url }))} />
                   <AdminMediaUpload label="Poster image (optional thumbnail before video loads)" previewUrl={form.video_poster_url} folder="hero" accept="image/*" onUploaded={(url) => setForm((f) => ({ ...f, video_poster_url: url }))} />
                   <p className="text-[11px] text-dp-text-tertiary">
-                    Use the video field for the actual MP4/WebM. The poster field is only an optional still image thumbnail, not a second video.
+                    Upload an H.264 MP4 or WebM file. The poster is only an optional thumbnail shown while the slide is inactive.
                   </p>
                 </>
               )}

@@ -3,6 +3,15 @@ from .models import HeroSlide, Banner, FAQ, SiteSettings, AnnouncementBar, PageS
 
 
 class HeroSlideSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        slide_type = attrs.get("type", getattr(self.instance, "type", "image"))
+        video_url = attrs.get("video_url", getattr(self.instance, "video_url", ""))
+        if slide_type == "video" and not video_url:
+            raise serializers.ValidationError(
+                {"video_url": "Upload a video file before saving a video slide."}
+            )
+        return attrs
+
     class Meta:
         model = HeroSlide
         fields = ("id", "type", "image_url", "video_url", "video_poster_url", "headline", "headline_ka", "headline_ru", "subline", "subline_ka", "subline_ru", "cta", "cta_ka", "cta_ru", "cta_href", "accent", "order", "is_active")
