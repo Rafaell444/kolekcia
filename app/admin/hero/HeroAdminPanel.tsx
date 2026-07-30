@@ -165,7 +165,9 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
                 <GripVertical size={16} className="text-dp-text-tertiary shrink-0" aria-hidden />
                 <div className="relative w-28 h-16 rounded-sm overflow-hidden bg-dp-bg-elevated shrink-0">
                   {slide.type === "video" && slide.video_url ? (
-                    <video src={slide.video_url} poster={slide.video_poster_url || undefined} muted loop playsInline controls className="h-full w-full object-cover" />
+                    <video poster={slide.video_poster_url || undefined} muted playsInline controls preload="metadata" className="h-full w-full object-cover">
+                      <source src={slide.video_url} type={/\.webm(?:\?|$)/i.test(slide.video_url) ? "video/webm" : "video/mp4"} />
+                    </video>
                   ) : thumb ? (
                     <Image src={thumb} alt={slide.headline} fill className="object-cover" sizes="112px" />
                   ) : null}

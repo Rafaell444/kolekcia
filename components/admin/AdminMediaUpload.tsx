@@ -68,7 +68,6 @@ export default function AdminMediaUpload({
               <div className={`relative bg-black border border-dp-border rounded-sm overflow-hidden flex items-center justify-center ${previewClassName === "w-40 h-24" ? "w-full aspect-video" : previewClassName}`}>
                 <video
                   key={previewUrl}
-                  src={previewUrl}
                   className="w-full h-full object-contain"
                   muted
                   controls
@@ -76,7 +75,12 @@ export default function AdminMediaUpload({
                   preload="metadata"
                   onLoadedMetadata={() => setPreviewError("")}
                   onError={() => setPreviewError("This video cannot be played by the browser. Upload an H.264 MP4 or a WebM file.")}
-                />
+                >
+                  <source
+                    src={previewUrl}
+                    type={/\.webm(?:\?|$)/i.test(previewUrl) ? "video/webm" : "video/mp4"}
+                  />
+                </video>
               </div>
               {previewError && (
                 <p role="alert" className="flex items-center gap-2 text-[11px] text-dp-accent-cta">

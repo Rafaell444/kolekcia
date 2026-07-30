@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
-from django.conf.urls.static import static
 
 urlpatterns = [
     path("django-admin/", admin.site.urls),
@@ -21,4 +20,12 @@ urlpatterns = [
     path("api/tenants/", include("apps.tenants.urls")),
     path("api/vendors/", include("apps.vendors.urls")),
     path("api/admin/", include("apps.admin_api.urls")),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
+
+if settings.DEBUG:
+    from django.urls import re_path
+    from apps.core.media import serve_media_with_ranges
+
+    urlpatterns += [
+        re_path(r"^media/(?P<path>.*)$", serve_media_with_ranges, name="development-media"),
+    ]

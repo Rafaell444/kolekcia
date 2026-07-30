@@ -55,19 +55,20 @@ export default function HeroCarousel(): React.ReactElement {
 
   const next = useCallback(() => goTo(current + 1), [current, goTo])
   const prev = useCallback(() => goTo(current - 1), [current, goTo])
+  const activeSlide = slides[current]
 
   // ── Auto-advance ──────────────────────────────────────────
   useEffect(() => {
-    if (paused || slides.length === 0) return
+    if (paused || slides.length === 0 || (activeSlide?.type === "video" && activeSlide.video_url)) return
     const id = setInterval(next, 5000)
     return () => clearInterval(id)
-  }, [next, paused, slides.length])
+  }, [activeSlide, next, paused, slides.length])
 
   useEffect(() => {
     const video = activeVideoRef.current
     if (!video) return
-    video.currentTime = 0
     video.muted = true
+    video.load()
     void video.play().catch(() => {})
   }, [current, slides])
 
@@ -207,16 +208,21 @@ export default function HeroCarousel(): React.ReactElement {
                     <video
                       key={`${s.id}-${current}`}
                       ref={activeVideoRef}
-                      src={s.video_url}
                       autoPlay
                       muted
-                      loop
                       playsInline
                       preload="auto"
+                      onLoadedMetadata={(event) => playActiveVideo(event.currentTarget)}
                       onLoadedData={(event) => playActiveVideo(event.currentTarget)}
                       onCanPlay={(event) => playActiveVideo(event.currentTarget)}
+                      onEnded={next}
                       className="absolute inset-0 w-full h-full object-cover"
-                    />
+                    >
+                      <source
+                        src={s.video_url}
+                        type={/\.webm(?:\?|$)/i.test(s.video_url) ? "video/webm" : "video/mp4"}
+                      />
+                    </video>
                   ) : isVideo && s.video_poster_url ? (
                     <Image
                       src={s.video_poster_url}
