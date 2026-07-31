@@ -166,14 +166,9 @@ LANGUAGES = [
 
 MODELTRANSLATION_DEFAULT_LANGUAGE = "en"
 MODELTRANSLATION_LANGUAGES = ("en", "ka", "ru")
-# When ka/ru fields are empty, fall back to English so labels aren't blank in the UI.
-MODELTRANSLATION_ENABLE_FALLBACKS = True
-MODELTRANSLATION_FALLBACK_LANGUAGES = {
-    "default": ("en",),
-    "en": ("en",),
-    "ka": ("en",),
-    "ru": ("en",),
-}
+# Public locale APIs must never silently replace missing Georgian or Russian
+# content with English. Empty translations stay empty until an admin fills them.
+MODELTRANSLATION_ENABLE_FALLBACKS = False
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

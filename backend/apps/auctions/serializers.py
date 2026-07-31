@@ -56,6 +56,9 @@ class AuctionSerializer(serializers.ModelSerializer):
             "id",
             "slug",
             "title",
+            "title_en",
+            "title_ka",
+            "title_ru",
             "artist_name",
             "image_url",
             "effective_image",
@@ -146,6 +149,9 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
             "id",
             "product_id",
             "title",
+            "title_en",
+            "title_ka",
+            "title_ru",
             "artist_name",
             "image_url",
             "starting_bid",
@@ -173,11 +179,16 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
             product = Product.objects.select_related("artist").get(pk=product_id)
             auction.product = product
             auction.title = product.title
+            auction.title_en = getattr(product, "title_en", "") or product.title
+            auction.title_ka = getattr(product, "title_ka", "") or ""
+            auction.title_ru = getattr(product, "title_ru", "") or ""
             if product.artist:
                 auction.artist_name = product.artist.name
             img = product.images.first()
             if img and not auction.image_url:
                 auction.image_url = img.url or (img.video_file.url if img.video_file else "")
+        elif not getattr(auction, "title_en", ""):
+            auction.title_en = auction.title
         vendor = self.context.get("vendor")
         if vendor:
             auction.vendor = vendor
@@ -195,12 +206,23 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
                 product = Product.objects.select_related("artist").prefetch_related("images").get(pk=product_id)
                 instance.product = product
                 instance.title = product.title
+                instance.title_en = getattr(product, "title_en", "") or product.title
+                instance.title_ka = getattr(product, "title_ka", "") or ""
+                instance.title_ru = getattr(product, "title_ru", "") or ""
                 if product.artist:
                     instance.artist_name = product.artist.name
             else:
                 instance.product = None
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        if instance.product_id:
+            product = instance.product
+            instance.title = product.title
+            instance.title_en = getattr(product, "title_en", "") or product.title
+            instance.title_ka = getattr(product, "title_ka", "") or ""
+            instance.title_ru = getattr(product, "title_ru", "") or ""
+        elif not getattr(instance, "title_en", ""):
+            instance.title_en = instance.title
         if validated_data.get("winner_payment_status") == Auction.PAYMENT_PAID and not instance.paid_at:
             instance.paid_at = timezone.now()
             instance.status = Auction.STATUS_BOUGHT

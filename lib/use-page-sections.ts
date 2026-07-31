@@ -6,10 +6,11 @@ import type { PageSection } from "@/lib/page-sections"
 
 const sectionCache = new Map<string, PageSection[]>()
 
-export function usePageSections(page: string): { sections: PageSection[]; loaded: boolean } {
-  const cached = sectionCache.get(page)
-  const [sections, setSections] = useState<PageSection[]>(cached ?? [])
-  const [loaded, setLoaded] = useState(Boolean(cached))
+export function usePageSections(page: string, locale: string, initialSections: PageSection[] = []): { sections: PageSection[]; loaded: boolean } {
+  const cacheKey = `${page}:${locale}`
+  const cached = sectionCache.get(cacheKey)
+  const [sections, setSections] = useState<PageSection[]>(cached ?? initialSections)
+  const [loaded, setLoaded] = useState(Boolean(cached) || initialSections.length > 0)
 
   useEffect(() => {
     let cancelled = false
@@ -17,13 +18,13 @@ export function usePageSections(page: string): { sections: PageSection[]; loaded
       .then((data) => {
         if (cancelled) return
         const next = Array.isArray(data) ? data : []
-        sectionCache.set(page, next)
+        sectionCache.set(cacheKey, next)
         setSections(next)
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoaded(true) })
     return () => { cancelled = true }
-  }, [page])
+  }, [cacheKey, page])
 
   return { sections, loaded }
 }

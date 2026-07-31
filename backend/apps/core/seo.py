@@ -42,6 +42,8 @@ class SEOModelMixin(models.Model):
         """
         ctx: dict = {}
         for field in self._meta.get_fields():
+            if getattr(field, "many_to_many", False) is True or getattr(field, "one_to_many", False) is True:
+                continue
             if not hasattr(field, "attname"):
                 continue
             base_name = field.name

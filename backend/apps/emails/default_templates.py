@@ -256,6 +256,24 @@ def password_reset_html() -> str:
     )
 
 
+def newsletter_welcome_html() -> str:
+    body = (
+        '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Welcome to the Koleqcia newsletter.</p>'
+        "<p style=\"margin:0;\">Use the code below for 25% off your next order.</p>"
+        '<p style="margin:20px 0;padding:18px;background:' + BG + ";border:1px solid " + BORDER + ";"
+        'font-size:24px;font-weight:700;letter-spacing:0.12em;text-align:center;color:' + INK + ';">{{promo_code}}</p>'
+        "<p style=\"margin:0;font-size:13px;\">The code can be used once per customer.</p>"
+    )
+    return _shell(
+        preheader="Your 25% Koleqcia newsletter code is inside.",
+        eyebrow="Newsletter",
+        title="You're in",
+        body_html=body,
+        cta_label="Shop Koleqcia",
+        cta_url="{{shop_url}}",
+    )
+
+
 _HTML_BUILDERS = {
     "order_confirmed": order_confirmed_html,
     "order_shipped": order_shipped_html,
@@ -264,10 +282,11 @@ _HTML_BUILDERS = {
     "auction_new": auction_new_html,
     "auction_won": auction_won_html,
     "password_reset": password_reset_html,
+    "newsletter_welcome": newsletter_welcome_html,
 }
 
 _META = [
-    ("order_confirmed", "Order Confirmed", "Order #{{order_number}} confirmed — thank you!",
+    ("order_confirmed", "Order Confirmed", "Order #{{order_number}} confirmed - thank you!",
      ["customer_name", "order_number", "total", "currency", "items", "items_html", "totals_html", "shipping_address_html"]),
     ("order_shipped", "Order Shipped", "Your order #{{order_number}} has shipped!",
      ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "items_html", "totals_html", "shipping_address_html"]),
@@ -281,6 +300,8 @@ _META = [
      ["winner_name", "auction_title", "winning_amount", "payment_link"]),
     ("password_reset", "Password Reset", "Reset your Koleqcia password",
      ["reset_url", "user_name"]),
+    ("newsletter_welcome", "Newsletter Welcome", "Your 25% Koleqcia code",
+     ["promo_code", "shop_url"]),
 ]
 
 

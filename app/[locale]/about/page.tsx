@@ -3,6 +3,7 @@ import { type Locale } from "@/lib/i18n"
 import { ABOUT_SEO } from "@/lib/seo-metadata"
 import { buildPageMetadata } from "@/lib/seo"
 import AboutPage from "./AboutPage"
+import { fetchPageSections } from "@/lib/page-sections"
 
 export async function generateMetadata({
   params,
@@ -20,6 +21,8 @@ export async function generateMetadata({
   })
 }
 
-export default function Page() {
-  return <AboutPage />
+export default async function Page({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params
+  const sections = await fetchPageSections("about", locale)
+  return <AboutPage locale={locale} initialSections={sections} />
 }

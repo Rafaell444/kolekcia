@@ -60,7 +60,7 @@ class ProductListView(generics.ListAPIView):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images", "size_variants")
+        qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images", "size_variants", "processing_options")
         sort = self.request.query_params.get("sort")
         if sort == "featured":
             # Show all products, featured ones first, then by review count
@@ -83,7 +83,7 @@ class ProductListView(generics.ListAPIView):
 
 class ProductDetailView(generics.RetrieveAPIView):
     queryset = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related(
-        "images", "variants__size", "variants__finish", "variants__frame"
+        "images", "variants__size", "variants__finish", "variants__frame", "processing_options"
     )
     serializer_class = ProductDetailSerializer
     permission_classes = [AllowAny]
@@ -163,7 +163,6 @@ class ProductFilterOptionsView(generics.GenericAPIView):
     }
 
     def get(self, request):
-        from django.db.models import Min, Max
         from .models import SizeVariant
         from django.db.models import Q
         category = (request.query_params.get("category") or "").strip().lower()
@@ -218,16 +217,40 @@ class ProductFilterOptionsView(generics.GenericAPIView):
               .order_by("artist__name")
         )
 
-        # Price range — use size variant prices when available, else base_price
-        sv_agg = SizeVariant.objects.filter(
-            product_id__in=product_ids, is_active=True
-        ).aggregate(min_p=Min("price_usd"), max_p=Max("price_usd"))
-        bp_agg = qs.aggregate(min_bp=Min("base_price"), max_bp=Max("base_price"))
+        # Use the exact variant prices displayed in the selected market.
+        currency = request.query_params.get("currency", "USD").upper()
+        if currency not in {"USD", "GEL", "EUR", "GBP"}:
+            currency = "USD"
+        price_field = f"price_{currency.lower()}"
+        sale_field = f"sale_price_{currency.lower()}" if currency in {"USD", "GEL"} else None
+        selected_fields = ["product_id", "price_usd", price_field]
+        if sale_field:
+            selected_fields.append(sale_field)
 
-        candidates_min = [v for v in [sv_agg["min_p"], bp_agg["min_bp"]] if v is not None]
-        candidates_max = [v for v in [sv_agg["max_p"], bp_agg["max_bp"]] if v is not None]
-        price_min = float(min(candidates_min)) if candidates_min else 0
-        price_max = float(max(candidates_max)) if candidates_max else 250
+        prices = []
+        products_with_variants = set()
+        variants = SizeVariant.objects.filter(
+            product_id__in=product_ids, is_active=True
+        ).only(*selected_fields)
+        for variant in variants:
+            products_with_variants.add(variant.product_id)
+            regular = getattr(variant, price_field, None) or variant.price_usd
+            sale = getattr(variant, sale_field, None) if sale_field else None
+            prices.append(sale if sale is not None and sale < regular else regular)
+
+        for product in qs.exclude(id__in=products_with_variants).only("base_price", "regional_prices"):
+            regional = (product.regional_prices or {}).get(currency, {})
+            prices.append(regional.get("price") or product.base_price)
+
+        numeric_prices = [float(price) for price in prices if price is not None]
+        price_min = min(numeric_prices) if numeric_prices else 0
+        price_max = max(numeric_prices) if numeric_prices else 250
+        availability = {
+            "limited": qs.filter(is_limited=True).exists(),
+            "sale": qs.filter(is_sale=True).exists(),
+            "new": qs.filter(is_new=True).exists(),
+            "exclusive": qs.filter(is_exclusive=True).exists(),
+        }
 
         return Response({
             "materials": materials,
@@ -235,6 +258,7 @@ class ProductFilterOptionsView(generics.GenericAPIView):
             "themes": themes,
             "artists": [{"handle": a["artist__handle"], "name": a["artist__name"]} for a in artists],
             "price_range": {"min": price_min, "max": price_max},
+            "availability": availability,
         })
 
 

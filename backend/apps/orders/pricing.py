@@ -68,12 +68,17 @@ def resolve_processing(variant, size_variant, slug: str, currency="USD"):
 
     currency = normalize_currency(currency)
     vendor = None
+    product = None
     if size_variant:
-        vendor = getattr(size_variant.product, "vendor", None)
+        product = size_variant.product
+        vendor = getattr(product, "vendor", None)
     elif variant:
-        vendor = getattr(variant.product, "vendor", None)
+        product = variant.product
+        vendor = getattr(product, "vendor", None)
 
     qs = ProcessingOption.objects.filter(slug=slug, is_active=True)
+    if product is not None:
+        qs = qs.filter(products=product)
     opt = None
     if vendor is not None:
         opt = qs.filter(vendor=vendor).first()

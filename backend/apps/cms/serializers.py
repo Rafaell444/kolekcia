@@ -65,7 +65,12 @@ class CommunitySocialLinkSerializer(serializers.ModelSerializer):
 class TrustBarItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrustBarItem
-        fields = ("id", "key", "title", "description", "icon", "logos", "sort_order", "is_active")
+        fields = (
+            "id", "key",
+            "title", "title_ka", "title_ru",
+            "description", "description_ka", "description_ru",
+            "icon", "logos", "sort_order", "is_active",
+        )
 
 
 class FandomBrandSerializer(serializers.ModelSerializer):

@@ -250,7 +250,7 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
                     <p className="text-[11px] text-dp-text-tertiary">{order.items_count} item{order.items_count !== 1 ? "s" : ""} · {new Date(order.created_at).toLocaleDateString()}</p>
                   </div>
                   <div className={`flex items-center gap-1.5 text-[12px] font-semibold ${cfg.color}`}>{cfg.icon} {cfg.label}</div>
-                  <span className="font-bold text-dp-text-primary text-[14px]">{formatPrice(parseFloat(order.total))}</span>
+                  <span className="font-bold text-dp-text-primary text-[14px]">{formatAmount(parseFloat(order.total), (order.currency ?? "USD") as Currency)}</span>
                 </div>
               )
             })}

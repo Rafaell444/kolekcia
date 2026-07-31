@@ -41,6 +41,7 @@ const SUPERADMIN_NAV = [
     links: [
       { href: "/admin/users",     label: "Users",         Icon: Users },
       { href: "/admin/artists",   label: "Artists",       Icon: Paintbrush },
+      { href: "/admin/contact-messages", label: "Contact Messages", Icon: Mail },
     ],
   },
   {
@@ -87,7 +88,6 @@ const VENDOR_NAV = [
       { href: "/admin/users",            label: "Customers",      Icon: Users },
       { href: "/admin/analytics",        label: "Analytics",      Icon: BarChart2 },
       { href: "/admin/inbox",            label: "Inbox",          Icon: MessageSquare },
-      { href: "/admin/email-templates",  label: "Email Templates", Icon: Mail },
     ],
   },
   {
@@ -110,7 +110,6 @@ const VENDOR_ALLOWED_PATHS = [
   "/admin/customers",
   "/admin/analytics",
   "/admin/inbox",
-  "/admin/email-templates",
   "/admin/settings",
 ]
 

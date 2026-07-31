@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption
+from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
 from .pricing import (
     normalize_currency,
     resolve_gift_wrap_price,
@@ -78,6 +78,7 @@ class CartView(APIView):
 class CartItemView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request):
         serializer = AddToCartSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -96,14 +97,14 @@ class CartItemView(APIView):
 
         if size_variant_id:
             try:
-                size_variant = SizeVariant.objects.select_related("product").get(pk=size_variant_id, is_active=True)
+                size_variant = SizeVariant.objects.select_for_update().select_related("product").get(pk=size_variant_id, is_active=True)
             except SizeVariant.DoesNotExist:
                 return Response({"detail": "Size variant not found."}, status=status.HTTP_404_NOT_FOUND)
             if size_variant.stock is not None and size_variant.stock < quantity:
                 return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
         elif variant_id:
             try:
-                variant = ProductVariant.objects.select_related("product").get(pk=variant_id)
+                variant = ProductVariant.objects.select_for_update().select_related("product").get(pk=variant_id)
             except ProductVariant.DoesNotExist:
                 return Response({"detail": "Variant not found."}, status=status.HTTP_404_NOT_FOUND)
             if variant.stock < quantity:
@@ -112,11 +113,18 @@ class CartItemView(APIView):
         currency = _normalize_currency(currency)
         unit_price = _resolve_unit_price(variant, size_variant, currency)
         gift_wrap_price = _resolve_gift_wrap_price(variant, size_variant, currency) if gift_wrap else Decimal("0")
+        product = size_variant.product if size_variant else variant.product
+        if processing_option and not product.processing_options.filter(slug=processing_option, is_active=True).exists():
+            return Response(
+                {"detail": "The selected processing option is not available for this product."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         processing_fee, processing_label, processing_days = _resolve_processing(
             variant, size_variant, processing_option, currency
         )
 
         cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart = Cart.objects.select_for_update().get(pk=cart.pk)
 
         defaults = {
             "quantity": quantity,
@@ -140,9 +148,15 @@ class CartItemView(APIView):
         ]
 
         if size_variant:
-            item = CartItem.objects.filter(cart=cart, size_variant=size_variant).first()
+            item = CartItem.objects.select_for_update().filter(cart=cart, size_variant=size_variant).first()
             if item:
-                item.quantity = F("quantity") + quantity
+                new_quantity = item.quantity + quantity
+                if size_variant.stock is not None and new_quantity > size_variant.stock:
+                    return Response(
+                        {"detail": f"Only {size_variant.stock} item(s) available. You already have {item.quantity} in your cart."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                item.quantity = new_quantity
                 item.unit_price = unit_price
                 item.currency = currency
                 item.gift_wrap = gift_wrap
@@ -157,9 +171,15 @@ class CartItemView(APIView):
             else:
                 CartItem.objects.create(cart=cart, size_variant=size_variant, **defaults)
         else:
-            item = CartItem.objects.filter(cart=cart, variant=variant).first()
+            item = CartItem.objects.select_for_update().filter(cart=cart, variant=variant).first()
             if item:
-                item.quantity = F("quantity") + quantity
+                new_quantity = item.quantity + quantity
+                if new_quantity > variant.stock:
+                    return Response(
+                        {"detail": f"Only {variant.stock} item(s) available. You already have {item.quantity} in your cart."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                item.quantity = new_quantity
                 item.unit_price = unit_price
                 item.currency = currency
                 item.gift_wrap = gift_wrap
@@ -184,18 +204,29 @@ class CartItemView(APIView):
         ).get(pk=cart.pk)
         return Response(CartSerializer(cart, context={"request": request}).data, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def patch(self, request, item_id):
         try:
-            item = CartItem.objects.get(pk=item_id, cart__user=request.user)
+            item = CartItem.objects.select_for_update().select_related("size_variant", "variant").get(pk=item_id, cart__user=request.user)
         except CartItem.DoesNotExist:
             return Response({"detail": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
 
         quantity = request.data.get("quantity")
         if quantity is not None:
-            if int(quantity) <= 0:
+            try:
+                requested_quantity = int(quantity)
+            except (TypeError, ValueError):
+                return Response({"detail": "Quantity must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
+            if requested_quantity <= 0:
                 item.delete()
             else:
-                item.quantity = int(quantity)
+                stock = item.size_variant.stock if item.size_variant_id else item.variant.stock
+                if stock is not None and requested_quantity > stock:
+                    return Response(
+                        {"detail": f"Only {stock} item(s) available."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                item.quantity = requested_quantity
                 item.save(update_fields=["quantity"])
 
         cart = Cart.objects.prefetch_related("items__variant__product__images").get(user=request.user)
@@ -379,12 +410,34 @@ class CheckoutView(APIView):
         currency = _normalize_currency(data.get("currency", "USD"))
         req_delivery_type = data.get("delivery_type", "standard")
         delivery_price = Decimal("0")
-        try:
-            opt = DeliveryOption.objects.filter(slug=req_delivery_type, is_active=True).first()
-            if opt:
-                delivery_price = Decimal(opt.price_gel) if currency == "GEL" else Decimal(opt.price_usd)
-        except Exception:
-            pass
+        if req_delivery_type.startswith("vendor-"):
+            try:
+                shipping_option_id = int(req_delivery_type.replace("vendor-", "", 1))
+            except (TypeError, ValueError):
+                return Response({"detail": "Invalid shipping option."}, status=status.HTTP_400_BAD_REQUEST)
+
+            cart_vendor_ids = {
+                item.size_variant.product.vendor_id if item.size_variant_id else item.variant.product.vendor_id
+                for item in items_to_process
+            }
+            cart_vendor_ids.discard(None)
+            market = "GE" if currency == "GEL" else "OTHER"
+            opt = VendorShippingOption.objects.filter(
+                pk=shipping_option_id,
+                vendor_id__in=cart_vendor_ids,
+                market=market,
+                is_active=True,
+            ).first()
+            if not opt:
+                return Response({"detail": "The selected shipping option is not available for this order."}, status=status.HTTP_400_BAD_REQUEST)
+            delivery_price = Decimal(opt.price)
+        else:
+            try:
+                opt = DeliveryOption.objects.filter(slug=req_delivery_type, is_active=True).first()
+                if opt:
+                    delivery_price = Decimal(opt.price_gel) if currency == "GEL" else Decimal(opt.price_usd)
+            except Exception:
+                pass
 
         # Build priced lines (re-resolve unit / wrap / processing for checkout currency)
         priced_lines = []
@@ -596,6 +649,52 @@ class DeliveryOptionListView(APIView):
         from .serializers import DeliveryOptionSerializer
         opts = DeliveryOption.objects.filter(is_active=True)
         return Response(DeliveryOptionSerializer(opts, many=True).data)
+
+
+class CartShippingOptionListView(APIView):
+    """Shipping methods for the vendors represented in the authenticated cart."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        market = "GE" if request.query_params.get("country") == "GE" else "OTHER"
+        cart = Cart.objects.filter(user=request.user).first()
+        if not cart:
+            return Response([])
+
+        vendor_ids = set(
+            cart.items.filter(size_variant__product__vendor__isnull=False)
+            .values_list("size_variant__product__vendor_id", flat=True)
+        )
+        vendor_ids.update(
+            cart.items.filter(variant__product__vendor__isnull=False)
+            .values_list("variant__product__vendor_id", flat=True)
+        )
+        vendor_ids.discard(None)
+        if not vendor_ids:
+            return Response([])
+
+        options = VendorShippingOption.objects.filter(
+            vendor_id__in=vendor_ids,
+            market=market,
+            is_active=True,
+        ).select_related("vendor").order_by("sort_order", "price", "id")
+
+        data = [
+            {
+                "id": opt.id,
+                "slug": f"vendor-{opt.id}",
+                "label": opt.label,
+                "vendor_name": opt.vendor.name if opt.vendor_id else "",
+                "price": str(opt.price),
+                "price_gel": str(opt.price if market == "GE" else 0),
+                "price_usd": str(opt.price if market != "GE" else 0),
+                "est_days_min": opt.est_days_min,
+                "est_days_max": opt.est_days_max,
+                "market": opt.market,
+            }
+            for opt in options
+        ]
+        return Response(data)
 
 
 class ShopSettingsPublicView(APIView):

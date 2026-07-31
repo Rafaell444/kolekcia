@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useParams } from "next/navigation"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 
@@ -17,6 +18,13 @@ const SWIPE_MIN_PX = 40     // minimum drag distance to commit slide change
 const SWIPE_MIN_V  = 0.25   // px/ms — fast flick threshold
 
 export default function HeroCarousel(): React.ReactElement {
+  const params = useParams<{ locale?: string }>()
+  const locale = params?.locale === "ka" || params?.locale === "ru" ? params.locale : "en"
+  const labels = {
+    en: { featured: "Featured Collection", shop: "Shop Now" },
+    ka: { featured: "რჩეული კოლექცია", shop: "შეიძინეთ" },
+    ru: { featured: "Избранная коллекция", shop: "Купить" },
+  }[locale]
   const [slides,     setSlides]     = useState<HeroSlide[]>([])
   const [current,    setCurrent]    = useState(0)
   const [paused,     setPaused]     = useState(false)
@@ -208,6 +216,7 @@ export default function HeroCarousel(): React.ReactElement {
                     <video
                       key={`${s.id}-${current}`}
                       ref={activeVideoRef}
+                      src={s.video_url}
                       autoPlay
                       muted
                       playsInline
@@ -217,21 +226,15 @@ export default function HeroCarousel(): React.ReactElement {
                       onCanPlay={(event) => playActiveVideo(event.currentTarget)}
                       onEnded={next}
                       className="absolute inset-0 w-full h-full object-cover"
-                    >
-                      <source
-                        src={s.video_url}
-                        type={/\.webm(?:\?|$)/i.test(s.video_url) ? "video/webm" : "video/mp4"}
-                      />
-                    </video>
-                  ) : isVideo && s.video_poster_url ? (
-                    <Image
-                      src={s.video_poster_url}
-                      alt={s.headline}
-                      fill
-                      priority={i === 0}
-                      className="object-cover"
-                      draggable={false}
-                      sizes="90vw"
+                    />
+                  ) : isVideo && s.video_url ? (
+                    <video
+                      src={s.video_url}
+                      poster={s.video_poster_url || undefined}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : src ? (
                     <Image
@@ -257,7 +260,7 @@ export default function HeroCarousel(): React.ReactElement {
                       style={{ animation: "hcFadeUp 0.4s ease both" }}
                     >
                       <p className="hidden sm:block text-[10px] font-bold uppercase tracking-[0.22em] text-white/55 mb-2">
-                        Featured Collection
+                        {labels.featured}
                       </p>
                       <h1
                         className="font-display text-2xl sm:text-4xl md:text-5xl lg:text-6xl text-white leading-none mb-2 sm:mb-3"
@@ -275,7 +278,7 @@ export default function HeroCarousel(): React.ReactElement {
                           draggable={false}
                           onClick={(e) => { if (Math.abs(dragX) > 5) e.preventDefault() }}
                         >
-                          {s.cta || "Shop Now"}
+                          {s.cta || labels.shop}
                         </Link>
                       </div>
                     </div>

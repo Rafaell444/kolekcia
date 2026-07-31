@@ -150,6 +150,12 @@ class Product(SEOModelMixin):
     material = models.CharField(max_length=255, blank=True)
     tags = models.JSONField(default=list)
     processing_time_label = models.CharField(max_length=100, blank=True, default="")
+    processing_options = models.ManyToManyField(
+        "orders.ProcessingOption",
+        blank=True,
+        related_name="products",
+    )
+    product_details = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -188,6 +194,7 @@ class ProductImage(models.Model):
 class SizeVariant(models.Model):
     """Simplified size variant with its own explicit USD price and regional overrides."""
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="size_variants")
+    sku = models.CharField(max_length=80, unique=True, null=True, blank=True, db_index=True)
     label = models.CharField(max_length=50)
     price_usd = models.DecimalField(max_digits=10, decimal_places=2)
     price_gel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -203,6 +210,19 @@ class SizeVariant(models.Model):
     class Meta:
         db_table = "size_variants"
         ordering = ["sort_order", "id"]
+
+    def save(self, *args, **kwargs):
+        if not self.sku:
+            product_part = smart_slugify(self.product.title).upper()[:30] or f"PRODUCT-{self.product_id}"
+            label_part = smart_slugify(self.label).upper()[:24] or "VARIANT"
+            base = f"KOL-{product_part}-{label_part}"
+            candidate = base
+            suffix = 2
+            while SizeVariant.objects.filter(sku=candidate).exclude(pk=self.pk).exists():
+                candidate = f"{base[:75]}-{suffix}"
+                suffix += 1
+            self.sku = candidate
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.product.title} — {self.label} (${self.price_usd})"

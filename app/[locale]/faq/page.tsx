@@ -5,16 +5,34 @@ import { buildPageMetadata } from "@/lib/seo"
 import FaqJsonLd from "@/components/seo/FaqJsonLd"
 import FaqPage from "./FaqPage"
 
-type Faq = { id: number; question: string; answer: string; category: string; order: number }
+type Faq = {
+  id: number
+  question: string; question_ka?: string; question_ru?: string
+  answer: string; answer_ka?: string; answer_ru?: string
+  category: string; category_ka?: string; category_ru?: string
+  order: number
+}
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 
-async function fetchFaqs(): Promise<Faq[]> {
+async function fetchFaqs(locale: string): Promise<Faq[]> {
   try {
-    const res = await fetch(`${API_URL}/cms/faqs/`, { next: { revalidate: 300 } })
+    const res = await fetch(`${API_URL}/cms/faqs/?lang=${locale}`, {
+      headers: { "Accept-Language": locale },
+      next: { revalidate: 300 },
+    })
     if (!res.ok) return []
-    const data = await res.json()
-    return Array.isArray(data) ? data : []
+    const data = await res.json() as Faq[]
+    if (!Array.isArray(data)) return []
+    if (locale !== "ka" && locale !== "ru") return data
+    return data
+      .map((faq) => ({
+        ...faq,
+        question: faq[`question_${locale}`] ?? "",
+        answer: faq[`answer_${locale}`] ?? "",
+        category: faq[`category_${locale}`] ?? "",
+      }))
+      .filter((faq) => faq.question.trim() && faq.answer.trim())
   } catch {
     return []
   }
@@ -36,8 +54,9 @@ export async function generateMetadata({
   })
 }
 
-export default async function Page() {
-  const faqs = await fetchFaqs()
+export default async function Page({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params
+  const faqs = await fetchFaqs(locale)
 
   return (
     <>

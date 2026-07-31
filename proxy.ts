@@ -93,6 +93,11 @@ export function proxy(request: NextRequest): NextResponse {
   if (isValidLocale(firstSegment)) {
     const response = NextResponse.next()
     response.headers.set("x-locale", firstSegment)
+    response.cookies.set("NEXT_LOCALE", firstSegment, {
+      path: "/",
+      maxAge: 365 * 24 * 60 * 60,
+      sameSite: "lax",
+    })
     return response
   }
 

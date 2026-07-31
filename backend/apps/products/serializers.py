@@ -84,7 +84,7 @@ class SizeVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = SizeVariant
         fields = (
-            "id", "label", "price_usd", "price_gel", "price_eur", "price_gbp",
+            "id", "sku", "label", "label_ka", "label_ru", "price_usd", "price_gel", "price_eur", "price_gbp",
             "sale_price_usd", "sale_price_gel",
             "sort_order", "is_active", "stock", "image_ids", "images",
         )
@@ -103,7 +103,7 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 
 class ProductListSerializer(serializers.ModelSerializer):
     slug = serializers.CharField(read_only=True)
-    artist_name = serializers.CharField(source="artist.name", read_only=True, allow_null=True)
+    artist_name = serializers.SerializerMethodField()
     category_slug = serializers.CharField(source="category.slug", read_only=True, allow_null=True)
     category_slugs = serializers.SerializerMethodField()
     vendor_slug = serializers.CharField(source="vendor.slug", read_only=True, allow_null=True)
@@ -116,11 +116,12 @@ class ProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = (
-            "id", "slug", "title", "artist_name", "category_slug", "category_slugs", "image_url",
+            "id", "slug", "title", "title_ka", "title_ru", "artist_name", "category_slug", "category_slugs", "image_url",
             "vendor_slug", "vendor_name",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags",
-            "description", "material", "processing_time_label",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags", "tags_ka", "tags_ru",
+            "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
+            "processing_time_label", "processing_time_label_ka", "processing_time_label_ru",
             "default_variant_id", "default_size_variant_id", "size_variants",
         )
 
@@ -140,6 +141,15 @@ class ProductListSerializer(serializers.ModelSerializer):
             return first.video_file.url
         return ""
 
+    def get_artist_name(self, obj):
+        if obj.artist:
+            artist_name = obj.artist.name
+            if artist_name:
+                return artist_name
+        if obj.vendor:
+            return obj.vendor.name or getattr(obj.vendor, "name_en", "") or "Koleqcia"
+        return "Koleqcia"
+
     def get_default_variant_id(self, obj):
         size_variants = [sv for sv in obj.size_variants.all() if sv.is_active]
         if size_variants:
@@ -158,7 +168,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 class ProductDetailSerializer(serializers.ModelSerializer):
     slug = serializers.CharField(read_only=True)
     artist = ArtistSerializer(read_only=True, allow_null=True)
-    artist_name = serializers.CharField(source="artist.name", read_only=True, allow_null=True)
+    artist_name = serializers.SerializerMethodField()
     category = CategorySerializer(read_only=True, allow_null=True)
     category_slug = serializers.CharField(source="category.slug", read_only=True, allow_null=True)
     category_name = serializers.CharField(source="category.name", read_only=True, allow_null=True)
@@ -175,18 +185,25 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
     size_variants = SizeVariantSerializer(many=True, read_only=True)
+    processing_options = serializers.SerializerMethodField()
+    processing_option_ids = serializers.ListField(
+        child=serializers.IntegerField(), write_only=True, required=False
+    )
     seo = serializers.SerializerMethodField()
     breadcrumbs = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = (
-            "id", "slug", "title", "artist", "artist_name",
+            "id", "slug", "title", "title_ka", "title_ru", "artist", "artist_name",
             "category", "category_slug", "category_name", "categories_data", "category_slugs",
             "vendor_id", "vendor_slug", "vendor_name", "images", "variants", "size_variants",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags",
-            "description", "material", "processing_time_label", "created_at",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags", "tags_ka", "tags_ru",
+            "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
+            "processing_time_label", "processing_time_label_ka", "processing_time_label_ru",
+            "processing_options", "processing_option_ids",
+            "product_details", "product_details_ka", "product_details_ru", "created_at",
             "category_slug_input", "categories_input", "artist_handle", "image_url", "vendor_slug_input",
             "seo", "breadcrumbs",
         )
@@ -214,12 +231,39 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         })
         return crumbs
 
+    def get_processing_options(self, obj):
+        return [
+            {
+                "id": option.id,
+                "slug": option.slug,
+                "label": option.label,
+                "label_ka": getattr(option, "label_ka", "") or "",
+                "label_ru": getattr(option, "label_ru", "") or "",
+                "est_days_min": option.est_days_min,
+                "est_days_max": option.est_days_max,
+                "price_usd": str(option.price_usd),
+                "price_gel": str(option.price_gel),
+                "is_included": option.is_included,
+                "is_active": option.is_active,
+            }
+            for option in obj.processing_options.all()
+        ]
+
     def get_vendor_id(self, obj):
         if obj.vendor_id:
             return obj.vendor_id
         if obj.artist and obj.artist.vendor_id:
             return obj.artist.vendor_id
         return None
+
+    def get_artist_name(self, obj):
+        if obj.artist:
+            artist_name = obj.artist.name
+            if artist_name:
+                return artist_name
+        if obj.vendor:
+            return obj.vendor.name or getattr(obj.vendor, "name_en", "") or "Koleqcia"
+        return "Koleqcia"
 
     def get_categories_data(self, obj):
         return CategorySerializer(obj.categories.all(), many=True).data
@@ -257,6 +301,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         image_url = validated_data.pop("image_url", "").strip()
+        processing_option_ids = validated_data.pop("processing_option_ids", [])
         category = self._resolve_category(validated_data)
         categories = self._resolve_categories(validated_data)
         artist = self._resolve_artist(validated_data)
@@ -276,10 +321,17 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             product.categories.add(category)
         if image_url:
             ProductImage.objects.create(product=product, url=image_url, order=0)
+        if processing_option_ids:
+            from apps.orders.models import ProcessingOption
+            options = ProcessingOption.objects.filter(id__in=processing_option_ids)
+            if product.vendor_id:
+                options = options.filter(vendor_id=product.vendor_id)
+            product.processing_options.set(options)
         return product
 
     def update(self, instance, validated_data):
         image_url = validated_data.pop("image_url", None)
+        processing_option_ids = validated_data.pop("processing_option_ids", None)
         if "category_slug_input" in validated_data:
             instance.category = self._resolve_category(validated_data)
         if "categories_input" in validated_data:
@@ -300,6 +352,12 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         for key, value in validated_data.items():
             setattr(instance, key, value)
         instance.save()
+        if processing_option_ids is not None:
+            from apps.orders.models import ProcessingOption
+            options = ProcessingOption.objects.filter(id__in=processing_option_ids)
+            if instance.vendor_id:
+                options = options.filter(vendor_id=instance.vendor_id)
+            instance.processing_options.set(options)
         if isinstance(image_url, str):
             image_url = image_url.strip()
             ProductImage.objects.filter(product=instance).delete()

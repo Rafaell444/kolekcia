@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from "react"
 import SiteShell from "@/components/layout/SiteShell"
-import Link from "next/link"
 import Image from "next/image"
 import { Palette, ArrowRight } from "lucide-react"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 
 type VendorArtist = {
   id: number
@@ -66,9 +66,9 @@ export default function ArtistsPage() {
             {vendors.map((vendor) => {
               const category = vendor.catalog_category_slug
               const label = CATEGORY_LABELS[category] ?? category
-              const href = `/catalog?category=${category}`
+              const href = `/catalog?vendor=${encodeURIComponent(vendor.slug)}`
               return (
-                <Link
+                <LocalizedLink
                   key={vendor.id}
                   href={href}
                   className="group block bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover"
@@ -101,7 +101,7 @@ export default function ArtistsPage() {
                       Shop <ArrowRight size={12} />
                     </span>
                   </div>
-                </Link>
+                </LocalizedLink>
               )
             })}
           </div>

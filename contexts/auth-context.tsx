@@ -26,7 +26,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser<AuthUser>())
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   const refreshUser = useCallback(async () => {
@@ -45,8 +45,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   }, [])
 
   useEffect(() => {
+    const storedUser = getStoredUser<AuthUser>()
+    if (storedUser) setUser(storedUser)
     refreshUser().finally(() => setLoading(false))
   }, [refreshUser])
+
+  useEffect(() => {
+    const handleExpired = () => {
+      clearTokens()
+      setUser(null)
+      setLoading(false)
+    }
+    window.addEventListener("kol-auth-expired", handleExpired)
+    return () => window.removeEventListener("kol-auth-expired", handleExpired)
+  }, [])
 
   const login = useCallback(async (email: string, password: string, rememberMe = false) => {
     const data = await apiFetch<{ access: string; refresh: string; user: AuthUser }>("/auth/login/", {

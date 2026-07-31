@@ -5,7 +5,7 @@ import { Plus, Save, Trash2 } from "lucide-react"
 import { adminFetch } from "@/lib/admin-auth"
 
 type Logo = { name: string; label: string; bg: string; text: string }
-type Trust = { id: number; key: string; title: string; description: string; icon: string; logos: Logo[]; sort_order: number; is_active: boolean }
+type Trust = { id: number; key: string; title: string; title_ka: string; title_ru: string; description: string; description_ka: string; description_ru: string; icon: string; logos: Logo[]; sort_order: number; is_active: boolean }
 type Brand = { id: number; name: string; abbreviation: string; background: string; text_color: string; link: string; sort_order: number; is_active: boolean }
 
 const input = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary"
@@ -14,7 +14,11 @@ const label = "text-[10px] font-bold uppercase tracking-widest text-dp-text-tert
 const EMPTY_TRUST: Omit<Trust, "id"> = {
   key: "",
   title: "",
+  title_ka: "",
+  title_ru: "",
   description: "",
+  description_ka: "",
+  description_ru: "",
   icon: "",
   logos: [],
   sort_order: 0,
@@ -115,7 +119,11 @@ export default function GlobalHomepageSettings() {
           <div key={item.id} className="border border-dp-border rounded-sm p-3 grid md:grid-cols-2 gap-3">
             <div><p className={label}>Key</p><input className={input} value={item.key} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, key: e.target.value } : x))} /></div>
             <div><p className={label}>Title</p><input className={input} value={item.title} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, title: e.target.value } : x))} /></div>
+            <div><p className={label}>Title · Georgian</p><input className={input} value={item.title_ka ?? ""} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, title_ka: e.target.value } : x))} /></div>
+            <div><p className={label}>Title · Russian</p><input className={input} value={item.title_ru ?? ""} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, title_ru: e.target.value } : x))} /></div>
             <div className="md:col-span-2"><p className={label}>Description</p><input className={input} value={item.description} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, description: e.target.value } : x))} /></div>
+            <div><p className={label}>Description · Georgian</p><input className={input} value={item.description_ka ?? ""} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, description_ka: e.target.value } : x))} /></div>
+            <div><p className={label}>Description · Russian</p><input className={input} value={item.description_ru ?? ""} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, description_ru: e.target.value } : x))} /></div>
             <div className="md:col-span-2"><p className={label}>Logos: name|label|background|text color, one per line</p><textarea rows={4} className={input} value={logosToText(item.logos)} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, logos: textToLogos(e.target.value) } : x))} /></div>
             <div><p className={label}>Sort order</p><input type="number" className={input} value={item.sort_order} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, sort_order: Number(e.target.value) } : x))} /></div>
             <label className="flex items-center gap-2 text-[12px] text-dp-text-secondary"><input type="checkbox" checked={item.is_active} onChange={(e) => setTrust((all) => all.map((x) => x.id === item.id ? { ...x, is_active: e.target.checked } : x))} /> Active</label>
@@ -129,6 +137,10 @@ export default function GlobalHomepageSettings() {
           <input required className={input} value={newTrust.key} onChange={(e) => setNewTrust({ ...newTrust, key: e.target.value })} placeholder="key, e.g. delivery" />
           <input required className={input} value={newTrust.title} onChange={(e) => setNewTrust({ ...newTrust, title: e.target.value })} placeholder="Title" />
           <input className={input} value={newTrust.description} onChange={(e) => setNewTrust({ ...newTrust, description: e.target.value })} placeholder="Description" />
+          <input className={input} value={newTrust.title_ka} onChange={(e) => setNewTrust({ ...newTrust, title_ka: e.target.value })} placeholder="Georgian title" />
+          <input className={input} value={newTrust.description_ka} onChange={(e) => setNewTrust({ ...newTrust, description_ka: e.target.value })} placeholder="Georgian description" />
+          <input className={input} value={newTrust.title_ru} onChange={(e) => setNewTrust({ ...newTrust, title_ru: e.target.value })} placeholder="Russian title" />
+          <input className={input} value={newTrust.description_ru} onChange={(e) => setNewTrust({ ...newTrust, description_ru: e.target.value })} placeholder="Russian description" />
           <button className="inline-flex justify-center items-center gap-1 px-3 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase rounded-sm"><Plus size={12} /> Add trust item</button>
         </form>
       </section>

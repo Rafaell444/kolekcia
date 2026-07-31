@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
+import { usePathname } from "next/navigation"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,6 +150,7 @@ function getLocaleFromUrl(): Language | null {
 }
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
   const [language, setLangState] = useState<Language>("en")
   const [currency, setCurState] = useState<Currency>("USD")
   const [rates, setRates] = useState<Record<Currency, number>>(FALLBACK_RATES)
@@ -177,6 +179,13 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
 
     setHydrated(true)
   }, [])
+
+  useEffect(() => {
+    const segment = pathname.split("/").filter(Boolean)[0]
+    if (segment === "ka" || segment === "ru" || segment === "en") {
+      setLangState(segment)
+    }
+  }, [pathname])
 
   /** Read cookie value by name */
   function getCookie(name: string): string | null {

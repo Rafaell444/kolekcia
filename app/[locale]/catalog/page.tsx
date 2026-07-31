@@ -20,7 +20,7 @@ type CategorySeo = {
 async function fetchCategorySeo(slug: string, locale: string): Promise<CategorySeo | null> {
   try {
     const res = await fetch(`${API_URL}/products/categories/?lang=${locale}`, {
-      next: { revalidate: 300 },
+      cache: "no-store",
     })
     if (!res.ok) return null
     const data = await res.json()

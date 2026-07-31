@@ -32,7 +32,7 @@ function buildContentSecurityPolicy() {
     "img-src 'self' data: blob: https: http://127.0.0.1:8000 http://localhost:8000",
     `connect-src ${connectSrc.join(" ")}`,
     "frame-src 'self' https://accounts.google.com",
-    "media-src 'self' data: blob: https:",
+    "media-src 'self' data: blob: https: http://127.0.0.1:8000 http://localhost:8000",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

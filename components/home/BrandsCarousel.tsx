@@ -2,6 +2,7 @@
 
 // Infinite carousel — virtual offset so drag works both directions without hitting scroll edges
 import React, { useCallback, useEffect, useRef } from "react"
+import { useParams } from "next/navigation"
 import { apiFetch } from "@/lib/api"
 
 const BRANDS = [
@@ -39,6 +40,8 @@ function applyOffset(el: HTMLDivElement, offset: number) {
 }
 
 export default function BrandsCarousel() {
+  const params = useParams<{ locale?: string }>()
+  const locale = params?.locale === "ka" || params?.locale === "ru" ? params.locale : "en"
   const [brands, setBrands] = React.useState(BRANDS)
   const trackRef = useRef<HTMLDivElement>(null)
   const offsetRef = useRef(0)
@@ -108,7 +111,11 @@ export default function BrandsCarousel() {
   return (
     <section className="py-10 border-y border-dp-border overflow-hidden" aria-label="Official licensed fandoms">
       <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-dp-text-tertiary mb-6">
-        Official Metal Posters from 200+ Fandoms
+        {{
+          en: "Official Metal Posters from 200+ Fandoms",
+          ka: "ოფიციალური მეტალის პოსტერები 200-ზე მეტი ფანდომიდან",
+          ru: "Официальные металлические постеры из более чем 200 фандомов",
+        }[locale]}
       </p>
       <div className="relative">
         <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-20 z-10 bg-gradient-to-r from-background to-transparent" aria-hidden />

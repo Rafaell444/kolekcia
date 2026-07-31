@@ -1,6 +1,6 @@
 from modeltranslation.translator import TranslationOptions, translator
 
-from .models import AnnouncementBar, Banner, FAQ, HeroSlide, HomepageReview, PageSection
+from .models import AnnouncementBar, Banner, FAQ, HeroSlide, HomepageReview, PageSection, TrustBarItem
 
 
 class HeroSlideTranslationOptions(TranslationOptions):
@@ -27,9 +27,14 @@ class PageSectionTranslationOptions(TranslationOptions):
     fields = ("title", "content")
 
 
+class TrustBarItemTranslationOptions(TranslationOptions):
+    fields = ("title", "description")
+
+
 translator.register(HeroSlide, HeroSlideTranslationOptions)
 translator.register(Banner, BannerTranslationOptions)
 translator.register(FAQ, FAQTranslationOptions)
 translator.register(AnnouncementBar, AnnouncementBarTranslationOptions)
 translator.register(HomepageReview, HomepageReviewTranslationOptions)
 translator.register(PageSection, PageSectionTranslationOptions)
+translator.register(TrustBarItem, TrustBarItemTranslationOptions)

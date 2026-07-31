@@ -1,5 +1,5 @@
 from decimal import Decimal
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Q, F, DecimalField, ExpressionWrapper
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework import status
@@ -107,13 +107,24 @@ class VendorDashboardView(APIView):
         item_qs = OrderItem.objects.filter(vendor=vendor) if vendor else OrderItem.objects.all()
 
         paid_items = item_qs.filter(order__status__in=["processing", "shipped", "delivered"])
-        revenue = paid_items.aggregate(total=Sum("price"))["total"] or Decimal("0")
+        line_total_expr = ExpressionWrapper(
+            F("price") * F("quantity"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+        revenue_by_currency = {
+            row["order__currency"]: row["total"] or Decimal("0")
+            for row in paid_items.values("order__currency").annotate(total=Sum(line_total_expr))
+        }
+        revenue_usd = revenue_by_currency.get("USD", Decimal("0"))
+        revenue_gel = revenue_by_currency.get("GEL", Decimal("0"))
         total_orders = item_qs.values("order").distinct().count()
         orders_30d = item_qs.filter(order__created_at__gte=thirty_days_ago).values("order").distinct().count()
         unique_customers = item_qs.values("order__user").distinct().count()
 
         return Response({
-            "total_revenue": str(revenue),
+            "total_revenue": str(revenue_usd),
+            "total_revenue_usd": str(revenue_usd),
+            "total_revenue_gel": str(revenue_gel),
             "total_orders": total_orders,
             "total_products": product_qs.count(),
             "orders_last_30d": orders_30d,

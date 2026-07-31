@@ -19,8 +19,34 @@ const VIDEO_CARDS = [
   },
 ]
 
-export default function VideoSection({ content }: { content?: { heading?: string; cards?: typeof VIDEO_CARDS } }) {
-  const cards = content?.cards ?? VIDEO_CARDS
+type VideoCard = {
+  id?: unknown
+  label?: unknown
+  thumb?: unknown
+}
+
+function normalizeCards(cards: VideoCard[] | undefined) {
+  if (!Array.isArray(cards)) return VIDEO_CARDS
+
+  const validCards = cards.flatMap((card, index) => {
+    const thumb = typeof card?.thumb === "string" ? card.thumb.trim() : ""
+    if (!thumb) return []
+
+    const id = typeof card.id === "string" && card.id.trim()
+      ? card.id.trim()
+      : `video-card-${index}`
+    const label = typeof card.label === "string" && card.label.trim()
+      ? card.label.trim()
+      : "Metal art"
+
+    return [{ id, label, thumb }]
+  })
+
+  return validCards.length > 0 ? validCards : VIDEO_CARDS
+}
+
+export default function VideoSection({ content }: { content?: { heading?: string; cards?: VideoCard[] } }) {
+  const cards = normalizeCards(content?.cards)
   const heading = content?.heading ?? "Why You Need Metal Art From Koleqcia?"
   return (
     <section
@@ -49,8 +75,8 @@ export default function VideoSection({ content }: { content?: { heading?: string
 
           {/* Image cards */}
           <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {cards.map((v) => (
-              <article key={v.id} className="group relative rounded-xl overflow-hidden bg-black/40">
+            {cards.map((v, index) => (
+              <article key={`${v.id}-${index}`} className="group relative rounded-xl overflow-hidden bg-black/40">
                 <div className="relative aspect-[4/3] overflow-hidden">
                   <Image
                     src={v.thumb}

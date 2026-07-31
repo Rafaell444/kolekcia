@@ -7,6 +7,7 @@ import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 import AdminMediaUpload from "@/components/admin/AdminMediaUpload"
 import AdminFaqsPage from "@/app/admin/faqs/page"
+import TranslationFields from "@/components/admin/TranslationFields"
 
 type AuctionBid = {
   id: number
@@ -19,6 +20,8 @@ type AuctionBid = {
 type Auction = {
   id: string
   title: string
+  title_ka?: string
+  title_ru?: string
   artist_name: string
   image_url: string
   effective_image?: string
@@ -43,6 +46,8 @@ type Auction = {
 type ProductOption = {
   id: number
   title: string
+  title_ka?: string
+  title_ru?: string
   artist_name?: string
   image_url?: string
 }
@@ -50,6 +55,8 @@ type ProductOption = {
 type AuctionForm = {
   product_id: string
   title: string
+  title_ka: string
+  title_ru: string
   artist_name: string
   image_url: string
   starting_bid: string
@@ -61,6 +68,8 @@ type AuctionForm = {
 const EMPTY_FORM: AuctionForm = {
   product_id: "",
   title: "",
+  title_ka: "",
+  title_ru: "",
   artist_name: "",
   image_url: "",
   starting_bid: "10",
@@ -130,10 +139,12 @@ export default function AuctionManager(): React.ReactElement {
     loadAuctions()
     adminFetch<ProductOption[] | PaginatedResponse<ProductOption>>(productsUrl)
       .then((data) => {
-        const list = parseList(data) as Array<{ id: number; title?: string; artist_name?: string; image_url?: string; images?: Array<{ url?: string; src?: string }> }>
+        const list = parseList(data) as Array<{ id: number; title?: string; title_ka?: string; title_ru?: string; artist_name?: string; image_url?: string; images?: Array<{ url?: string; src?: string }> }>
         setProducts(list.map((p) => ({
           id: p.id,
           title: p.title ?? `Product #${p.id}`,
+          title_ka: p.title_ka ?? "",
+          title_ru: p.title_ru ?? "",
           artist_name: p.artist_name ?? "",
           image_url: p.image_url || p.images?.[0]?.url || p.images?.[0]?.src || "",
         })))
@@ -160,6 +171,8 @@ export default function AuctionManager(): React.ReactElement {
     setForm({
       product_id: a.product_id ? String(a.product_id) : "",
       title: linked?.title ?? a.title,
+      title_ka: linked?.title_ka ?? a.title_ka ?? "",
+      title_ru: linked?.title_ru ?? a.title_ru ?? "",
       artist_name: a.artist_name ?? "",
       image_url: a.image_url ?? "",
       starting_bid: a.starting_bid,
@@ -177,6 +190,8 @@ export default function AuctionManager(): React.ReactElement {
       ...f,
       product_id: productId,
       title: product?.title ?? (productId ? f.title : ""),
+      title_ka: product?.title_ka ?? (productId ? f.title_ka : ""),
+      title_ru: product?.title_ru ?? (productId ? f.title_ru : ""),
       artist_name: product?.artist_name ?? f.artist_name,
       image_url: product?.image_url ?? f.image_url,
     }))
@@ -192,6 +207,8 @@ export default function AuctionManager(): React.ReactElement {
     const payload = {
       product_id: form.product_id ? parseInt(form.product_id, 10) : null,
       title: selectedProduct?.title ?? form.title,
+      title_ka: selectedProduct?.title_ka ?? form.title_ka,
+      title_ru: selectedProduct?.title_ru ?? form.title_ru,
       artist_name: form.artist_name,
       image_url: form.image_url,
       starting_bid: form.starting_bid,
@@ -365,9 +382,20 @@ export default function AuctionManager(): React.ReactElement {
                   className={`px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] ${form.product_id ? "opacity-80 cursor-not-allowed" : ""}`}
                 />
                 {form.product_id && (
-                  <span className="text-[10px] text-dp-text-tertiary">Title matches the selected shop product.</span>
+                  <span className="text-[10px] text-dp-text-tertiary">Title and translations match the selected shop product.</span>
                 )}
               </label>
+              {!form.product_id && (
+                <TranslationFields
+                  value={form}
+                  onChange={setForm}
+                  inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]"
+                  fields={[
+                    { key: "title_ka", label: "Title · Georgian" },
+                    { key: "title_ru", label: "Title · Russian" },
+                  ]}
+                />
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Starts</span>

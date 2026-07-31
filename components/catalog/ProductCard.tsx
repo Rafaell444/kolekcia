@@ -54,6 +54,9 @@ export default function ProductCard({ product: p }: ProductCardProps) {
 
   const displayPrice = (amount: number | null | undefined) =>
     p.priceIsLocalized ? formatAmount(amount, currency) : formatPrice(amount)
+  const cardLocale = lp.slice(1)
+  const multipleVariantPrefix = cardLocale === "ru" ? "от " : cardLocale === "en" ? "From " : ""
+  const multipleVariantSuffix = cardLocale === "ka" ? "-დან" : ""
 
   const wishlisted = isWishlisted(Number(p.id))
 
@@ -71,12 +74,14 @@ export default function ProductCard({ product: p }: ProductCardProps) {
         savePendingCartIntent({
           sizeVariantId: p.defaultSizeVariantId,
           quantity: 1,
+          currency,
           returnTo: href,
         })
       } else if (p.defaultVariantId) {
         savePendingCartIntent({
           variantId: p.defaultVariantId,
           quantity: 1,
+          currency,
           returnTo: href,
         })
       }
@@ -93,9 +98,9 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     setCartError("")
     try {
       if (p.defaultSizeVariantId) {
-        await addItem(null, 1, { size_variant_id: p.defaultSizeVariantId })
+        await addItem(null, 1, { size_variant_id: p.defaultSizeVariantId, currency })
       } else if (p.defaultVariantId) {
-        await addItem(p.defaultVariantId, 1)
+        await addItem(p.defaultVariantId, 1, { currency })
       }
       setAddedToCart(true)
       setTimeout(() => setAddedToCart(false), 1800)
@@ -127,7 +132,7 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     <Link
       href={href}
       className="group relative flex flex-col bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-dp-accent-cta"
-      aria-label={`${p.title} by ${p.artistName} — ${displayPrice(p.price)}`}
+      aria-label={`${p.title} by ${p.artistName || "Koleqcia"} - ${displayPrice(p.price)}`}
     >
       {/* ── Image ── */}
       <div className="relative aspect-poster overflow-hidden bg-dp-bg-elevated">
@@ -202,7 +207,7 @@ export default function ProductCard({ product: p }: ProductCardProps) {
       {/* ── Info ── */}
       <div className="flex flex-col gap-1 px-3 py-2.5 flex-1">
         <p className="text-[10px] text-dp-text-tertiary uppercase tracking-widest truncate">
-          {p.artistName}
+          {p.artistName || "Koleqcia"}
         </p>
         <h3 className="text-[13px] font-semibold text-dp-text-primary leading-tight line-clamp-2 group-hover:text-dp-accent-gold transition-colors">
           {p.title}
@@ -213,7 +218,13 @@ export default function ProductCard({ product: p }: ProductCardProps) {
       <div className="flex flex-col gap-1 px-3 pb-3 mt-auto">
         <div className="flex items-center gap-2">
           <span className="text-[15px] font-bold text-dp-text-primary">
-            {displayPrice(p.price)}{p.hasMultipleVariants && <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">–დან</span>}
+            {p.hasMultipleVariants && multipleVariantPrefix && (
+              <span className="text-[11px] font-normal text-dp-text-tertiary">{multipleVariantPrefix}</span>
+            )}
+            {displayPrice(p.price)}
+            {p.hasMultipleVariants && multipleVariantSuffix && (
+              <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">{multipleVariantSuffix}</span>
+            )}
           </span>
           {p.originalPrice && p.originalPrice > p.price && (
             <span className="text-[12px] text-dp-text-tertiary line-through">

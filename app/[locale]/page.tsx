@@ -29,7 +29,7 @@ async function getTrendingProducts(locale: string): Promise<ApiProduct[]> {
   try {
     const res = await fetch(`${apiUrl}/products/?sort=featured&page_size=8&lang=${locale}`, {
       headers: { "Accept-Language": locale },
-      next: { revalidate: 300 },
+      cache: "no-store",
     })
     if (!res.ok) return []
     const data = await res.json() as { results: ApiProduct[] }

@@ -37,9 +37,9 @@ function LoginPageInner(): React.ReactElement {
     if (pending) {
       try {
         if (pending.sizeVariantId) {
-          await addItem(null, pending.quantity, { size_variant_id: pending.sizeVariantId })
+          await addItem(null, pending.quantity, { size_variant_id: pending.sizeVariantId, currency: pending.currency, processing_option: pending.processingOption })
         } else if (pending.variantId) {
-          await addItem(pending.variantId, pending.quantity)
+          await addItem(pending.variantId, pending.quantity, { currency: pending.currency, processing_option: pending.processingOption })
         }
       } catch {
         // still redirect back to product page

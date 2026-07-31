@@ -11,6 +11,7 @@ import { useLocale } from "@/contexts/locale-context"
 import { resolveListProductPrice, formatAmount } from "@/lib/product-pricing"
 import CategoryVendorBanner from "@/components/catalog/CategoryVendorBanner"
 import { useTranslations } from "@/hooks/use-translations"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 
 type ApiCategory = { id: string; name: string; slug: string; count: number }
 
@@ -59,6 +60,7 @@ type FilterOptions = {
   themes: string[]
   artists: { handle: string; name: string }[]
   price_range: { min: number; max: number }
+  availability?: { limited: boolean; sale: boolean; new: boolean; exclusive: boolean }
 }
 
 type FilterVisibilityKey = "category" | "price" | "size" | "theme" | "material" | "artist" | "availability"
@@ -268,6 +270,7 @@ function FilterSidebar({
 
   const absMin = Math.floor((filterOptions?.price_range.min ?? 0))
   const absMax = Math.ceil((filterOptions?.price_range.max ?? 250))
+  const availability = filterOptions?.availability ?? { limited: false, sale: false, new: false, exclusive: false }
 
   const activeCount =
     (hideCategoryFilter ? 0 : filters.categories.length) +
@@ -447,16 +450,16 @@ function FilterSidebar({
       )}
 
       {/* Availability */}
-      {filterVisibility.availability && (
+      {filterVisibility.availability && Object.values(availability).some(Boolean) && (
       <FilterGroup title="Availability">
         {(
           [
-            { key: "isLimited",   label: "Limited Edition" },
-            { key: "isSale",      label: "On Sale" },
-            { key: "isNew",       label: "New Arrivals" },
-            { key: "isExclusive", label: "Exclusive" },
+            { key: "isLimited",   optionKey: "limited", label: "Limited Edition" },
+            { key: "isSale",      optionKey: "sale", label: "On Sale" },
+            { key: "isNew",       optionKey: "new", label: "New Arrivals" },
+            { key: "isExclusive", optionKey: "exclusive", label: "Exclusive" },
           ] as const
-        ).map(({ key, label }) => (
+        ).filter(({ optionKey }) => availability[optionKey]).map(({ key, label }) => (
           <label key={key} className="flex items-center gap-2.5 mb-2 cursor-pointer group">
             <input
               type="checkbox"
@@ -505,10 +508,13 @@ function catalogHeading(category: string, search: string, allDesignsLabel: strin
 
 // ─── Page ──────────────────────────────────────────────────
 function CatalogPageInner(): React.ReactElement {
+  const localePrefix = useLocalePrefix()
+  const locale = localePrefix.slice(1)
   const searchParams = useSearchParams()
   const router = useRouter()
   const urlSearch = searchParams.get("search") ?? ""
   const urlCategory = searchParams.get("category") ?? ""
+  const urlVendor = searchParams.get("vendor") ?? ""
   const { currency, rates } = useLocale()
   const { t } = useTranslations()
 
@@ -523,7 +529,8 @@ function CatalogPageInner(): React.ReactElement {
       params.delete("search")
     }
     params.delete("page")
-    router.push(`/catalog?${params.toString()}`)
+    const query = params.toString()
+    router.push(`${localePrefix}/catalog${query ? `?${query}` : ""}`)
   }
 
   // Debounce: push URL 400ms after user stops typing
@@ -573,8 +580,9 @@ function CatalogPageInner(): React.ReactElement {
   const effectiveCategoryForFilters = lockedCategory || urlCategory || ""
   useEffect(() => {
     let cancelled = false
-    const qs = effectiveCategoryForFilters ? `?category=${effectiveCategoryForFilters}` : ""
-    apiFetch<FilterOptions>(`/products/filter-options/${qs}`)
+    const params = new URLSearchParams({ currency })
+    if (effectiveCategoryForFilters) params.set("category", effectiveCategoryForFilters)
+    apiFetch<FilterOptions>(`/products/filter-options/?${params.toString()}`)
       .then((d) => {
         if (!cancelled) {
           setFilterOptions(d)
@@ -583,14 +591,18 @@ function CatalogPageInner(): React.ReactElement {
           const realMax = Math.ceil(d.price_range.max)
           setFilters((prev) => ({
             ...prev,
-            priceMin: prev.priceMin === 0 ? realMin : prev.priceMin,
-            priceMax: prev.priceMax === 999 ? realMax : prev.priceMax,
+            priceMin: realMin,
+            priceMax: realMax,
+            isLimited: d.availability?.limited ? prev.isLimited : false,
+            isSale: d.availability?.sale ? prev.isSale : false,
+            isNew: d.availability?.new ? prev.isNew : false,
+            isExclusive: d.availability?.exclusive ? prev.isExclusive : false,
           }))
         }
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [effectiveCategoryForFilters])
+  }, [effectiveCategoryForFilters, currency])
 
   useEffect(() => {
     let cancelled = false
@@ -624,12 +636,14 @@ function CatalogPageInner(): React.ReactElement {
   const buildQueryString = useCallback(() => {
     const params = new URLSearchParams()
     if (urlSearch) params.set("search", urlSearch)
+    if (urlVendor) params.set("vendor", urlVendor)
     const effectiveCategory = lockedCategory || (filters.categories.length === 1 ? filters.categories[0] : "")
     if (effectiveCategory) params.set("category", effectiveCategory)
     const absMin = filterOptions ? Math.floor(filterOptions.price_range.min) : 0
     const absMax = filterOptions ? Math.ceil(filterOptions.price_range.max) : 999
     if (filters.priceMin > absMin) params.set("min_price", String(filters.priceMin))
     if (filters.priceMax < absMax) params.set("max_price", String(filters.priceMax))
+    params.set("currency", currency)
     if (filters.isLimited) params.set("limited", "true")
     if (filters.isSale) params.set("sale", "true")
     if (filters.isNew) params.set("new", "true")
@@ -641,7 +655,7 @@ function CatalogPageInner(): React.ReactElement {
     params.set("sort", SORT_MAP[sort] ?? "featured")
     params.set("page", String(page))
     return params.toString()
-  }, [filters, sort, page, urlSearch, lockedCategory, filterOptions])
+  }, [filters, sort, page, urlSearch, urlVendor, lockedCategory, filterOptions, currency])
 
   useEffect(() => {
     let cancelled = false
@@ -855,6 +869,8 @@ function CatalogPageInner(): React.ReactElement {
                   const resolved = resolveListProductPrice(p, currency, rates)
                   const activeVariants = (p.size_variants ?? []).filter((sv) => sv.is_active !== false)
                   const showFrom = activeVariants.length > 1
+                  const fromPrefix = locale === "ru" ? "от " : locale === "en" ? "From " : ""
+                  const fromSuffix = locale === "ka" ? "-დან" : ""
                   return (
                   <div key={p.id} className="flex gap-4 bg-dp-bg-surface border border-dp-border rounded-sm p-3 dp-card-hover">
                     <div className="relative w-20 h-28 shrink-0 overflow-hidden rounded-sm">
@@ -868,7 +884,9 @@ function CatalogPageInner(): React.ReactElement {
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-base font-bold text-dp-text-primary">
-                          {formatAmount(resolved.price, currency)}{showFrom && <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">–დან</span>}
+                          {showFrom && fromPrefix && <span className="text-[11px] font-normal text-dp-text-tertiary">{fromPrefix}</span>}
+                          {formatAmount(resolved.price, currency)}
+                          {showFrom && fromSuffix && <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">{fromSuffix}</span>}
                         </span>
                         {resolved.original != null && (
                           <span className="text-[12px] text-dp-text-tertiary line-through">{formatAmount(resolved.original, currency)}</span>

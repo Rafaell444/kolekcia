@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import SiteShell from "@/components/layout/SiteShell"
-import { apiFetch, getRequestLocale } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { sectionContent, type PageSection } from "@/lib/page-sections"
 import { usePageSections } from "@/lib/use-page-sections"
 import LocalizedLink from "@/components/seo/LocalizedLink"
@@ -188,7 +188,46 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 }
 
 // ── Contact form ──────────────────────────────────────────
-function ContactForm() {
+const CONTACT_UI: Record<string, Record<string, string>> = {
+  en: {
+    help: "What can we help with?", topic: "Select a topic...", first: "First Name", last: "Last Name",
+    email: "Email Address", order: "Order Number (optional)", message: "Message",
+    messagePlaceholder: "Tell us as much as you can - the more detail, the faster we can help.",
+    attach: "Attach Image (optional, max 5 MB)", choose: "Choose image...", remove: "Remove",
+    send: "Send Message", sending: "Sending...", reply: "We typically reply within 24 hours on business days.",
+    sent: "Message Sent!", sentBody: "Thanks for reaching out. Our team replies within 24 hours on business days.",
+    another: "Send another message", quick: "Quick Links", return: "Start a Return",
+    shipping: "Shipping Guide", artist: "Artist Resources",
+    topicOrder: "Order Issue", topicShipping: "Shipping & Tracking", topicReturns: "Returns & Refunds",
+    topicArtist: "Artist Support", topicGeneral: "General Enquiry", topicPress: "Press & Partnerships",
+  },
+  ka: {
+    help: "რაში შეგვიძლია დაგეხმაროთ?", topic: "აირჩიეთ თემა...", first: "სახელი", last: "გვარი",
+    email: "ელფოსტა", order: "შეკვეთის ნომერი (არასავალდებულო)", message: "შეტყობინება",
+    messagePlaceholder: "მოგვწერეთ დეტალურად, რათა უფრო სწრაფად დაგეხმაროთ.",
+    attach: "სურათის მიმაგრება (არასავალდებულო, მაქს. 5 მბ)", choose: "აირჩიეთ სურათი...", remove: "წაშლა",
+    send: "შეტყობინების გაგზავნა", sending: "იგზავნება...", reply: "სამუშაო დღეებში პასუხს ჩვეულებრივ 24 საათში მიიღებთ.",
+    sent: "შეტყობინება გაიგზავნა!", sentBody: "გმადლობთ, რომ მოგვწერეთ. ჩვენი გუნდი 24 საათში გიპასუხებთ.",
+    another: "კიდევ ერთი შეტყობინება", quick: "სწრაფი ბმულები", return: "დაბრუნების დაწყება",
+    shipping: "მიწოდების გზამკვლევი", artist: "რესურსები არტისტებისთვის",
+    topicOrder: "შეკვეთის პრობლემა", topicShipping: "მიწოდება და ტრეკინგი", topicReturns: "დაბრუნება და თანხის ანაზღაურება",
+    topicArtist: "არტისტების მხარდაჭერა", topicGeneral: "ზოგადი შეკითხვა", topicPress: "მედია და პარტნიორობა",
+  },
+  ru: {
+    help: "С чем вам помочь?", topic: "Выберите тему...", first: "Имя", last: "Фамилия",
+    email: "Электронная почта", order: "Номер заказа (необязательно)", message: "Сообщение",
+    messagePlaceholder: "Опишите вопрос подробнее, чтобы мы могли помочь быстрее.",
+    attach: "Прикрепить изображение (необязательно, до 5 МБ)", choose: "Выбрать изображение...", remove: "Удалить",
+    send: "Отправить сообщение", sending: "Отправка...", reply: "В рабочие дни мы обычно отвечаем в течение 24 часов.",
+    sent: "Сообщение отправлено!", sentBody: "Спасибо за обращение. Наша команда ответит в течение 24 часов.",
+    another: "Отправить еще одно сообщение", quick: "Быстрые ссылки", return: "Оформить возврат",
+    shipping: "Информация о доставке", artist: "Ресурсы для художников",
+    topicOrder: "Проблема с заказом", topicShipping: "Доставка и отслеживание", topicReturns: "Возврат и возмещение",
+    topicArtist: "Поддержка художников", topicGeneral: "Общий вопрос", topicPress: "Пресса и партнерство",
+  },
+}
+
+function ContactForm({ ui }: { ui: Record<string, string> }) {
   const [reason, setReason] = useState("")
   const [submitted, setSubmitted] = useState(false)
   const [sending, setSending] = useState(false)
@@ -244,15 +283,15 @@ function ContactForm() {
         <div className="w-14 h-14 rounded-full bg-dp-success/10 flex items-center justify-center">
           <CheckCircle2 size={28} className="text-dp-success" />
         </div>
-        <h3 className="font-display text-3xl text-dp-text-primary">Message Sent!</h3>
+        <h3 className="font-display text-3xl text-dp-text-primary">{ui.sent}</h3>
         <p className="text-[14px] text-dp-text-secondary max-w-sm leading-relaxed">
-          Thanks for reaching out. Our team replies within 24 hours on business days.
+          {ui.sentBody}
         </p>
         <button
           onClick={() => setSubmitted(false)}
           className="mt-2 text-[12px] font-bold uppercase tracking-widest text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors"
         >
-          Send another message
+          {ui.another}
         </button>
       </div>
     )
@@ -263,7 +302,7 @@ function ContactForm() {
       {/* Reason select */}
       <div>
         <label htmlFor="reason" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">
-          What can we help with?
+          {ui.help}
         </label>
         <select
           id="reason"
@@ -271,20 +310,20 @@ function ContactForm() {
           onChange={(e) => setReason(e.target.value)}
           className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover transition-colors appearance-none"
         >
-          <option value="">Select a topic…</option>
-          <option>Order Issue</option>
-          <option>Shipping & Tracking</option>
-          <option>Returns & Refunds</option>
-          <option>Artist Support</option>
-          <option>General Enquiry</option>
-          <option>Press & Partnerships</option>
+          <option value="">{ui.topic}</option>
+          <option value="Order Issue">{ui.topicOrder}</option>
+          <option value="Shipping & Tracking">{ui.topicShipping}</option>
+          <option value="Returns & Refunds">{ui.topicReturns}</option>
+          <option value="Artist Support">{ui.topicArtist}</option>
+          <option value="General Enquiry">{ui.topicGeneral}</option>
+          <option value="Press & Partnerships">{ui.topicPress}</option>
         </select>
       </div>
 
       {/* Name + email */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="fname" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">First Name *</label>
+          <label htmlFor="fname" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">{ui.first} *</label>
           <input
             id="fname"
             required
@@ -294,7 +333,7 @@ function ContactForm() {
           />
         </div>
         <div>
-          <label htmlFor="lname" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">Last Name *</label>
+          <label htmlFor="lname" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">{ui.last} *</label>
           <input
             id="lname"
             required
@@ -306,7 +345,7 @@ function ContactForm() {
       </div>
 
       <div>
-        <label htmlFor="email" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">Email Address *</label>
+        <label htmlFor="email" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">{ui.email} *</label>
         <input
           id="email"
           type="email"
@@ -318,7 +357,7 @@ function ContactForm() {
       </div>
 
       <div>
-        <label htmlFor="order" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">Order Number (optional)</label>
+        <label htmlFor="order" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">{ui.order}</label>
         <input
           id="order"
           ref={orderRef}
@@ -328,27 +367,27 @@ function ContactForm() {
       </div>
 
       <div>
-        <label htmlFor="message" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">Message *</label>
+        <label htmlFor="message" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">{ui.message} *</label>
         <textarea
           id="message"
           required
           ref={msgRef}
           rows={5}
-          placeholder="Tell us as much as you can — the more detail, the faster we can help."
+          placeholder={ui.messagePlaceholder}
           className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors resize-none"
         />
       </div>
 
       <div>
-        <label className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">Attach Image <span className="font-normal normal-case tracking-normal">(optional, max 5 MB)</span></label>
+        <label className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">{ui.attach}</label>
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => fileRef.current?.click()}
             className="flex items-center gap-2 px-4 py-2.5 border border-dashed border-dp-border hover:border-dp-accent-cta/50 rounded-sm text-[12px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors">
-            <Upload size={14} /> {attachment ? attachment.name : "Choose image…"}
+            <Upload size={14} /> {attachment ? attachment.name : ui.choose}
           </button>
           {attachment && (
             <button type="button" onClick={() => { setAttachment(null); if (fileRef.current) fileRef.current.value = "" }}
-              className="text-[11px] text-red-400 hover:text-red-500">Remove</button>
+              className="text-[11px] text-red-400 hover:text-red-500">{ui.remove}</button>
           )}
         </div>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
@@ -361,22 +400,23 @@ function ContactForm() {
         className="flex items-center justify-center gap-2 py-4 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
       >
         {sending ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <ArrowRight size={14} />}
-        {sending ? "Sending…" : "Send Message"}
+        {sending ? ui.sending : ui.send}
       </button>
 
       <p className="text-[11px] text-dp-text-tertiary text-center">
-        We typically reply within <strong className="text-dp-text-secondary">24 hours</strong> on business days.
+        {ui.reply}
       </p>
     </form>
   )
 }
 
 // ── Page ──────────────────────────────────────────────────
-export default function ContactPage() {
+export default function ContactPage({ locale, initialSections }: { locale: string; initialSections: PageSection[] }) {
   const [supportEmail, setSupportEmail] = useState("support@kolekcia.com")
   const [supportPhone, setSupportPhone] = useState("")
-  const { sections, loaded } = usePageSections("contact")
-  const locale = getRequestLocale()
+  const [contactFaqs, setContactFaqs] = useState(FAQS)
+  const ui = CONTACT_UI[locale] ?? CONTACT_UI.en
+  const { sections, loaded } = usePageSections("contact", locale, initialSections)
   const hero = withFallback<Required<ContactHeroContent>>(sections, "hero", locale, DEFAULT_CONTACT_HERO)
   const reasons = withFallback<Required<ContactReasonsContent>>(sections, "reasons", locale, DEFAULT_CONTACT_REASONS)
   const formIntro = withFallback<Required<ContactFormIntroContent>>(sections, "form_intro", locale, { heading: "Send Us a Message", body: "We read every message and reply personally." })
@@ -398,6 +438,17 @@ export default function ContactPage() {
       })
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    apiFetch<Array<{ question: string; answer: string }>>("/cms/faqs/")
+      .then((data) => {
+        const localized = Array.isArray(data)
+          ? data.map((item) => ({ q: item.question, a: item.answer })).filter((item) => item.q && item.a)
+          : []
+        setContactFaqs(localized)
+      })
+      .catch(() => { if (locale !== "en") setContactFaqs([]) })
+  }, [locale])
 
   if (!loaded) {
     return (
@@ -486,7 +537,7 @@ export default function ContactPage() {
           <div className="lg:col-span-3 bg-dp-bg-surface border border-dp-border rounded-sm p-8">
             <h2 id="contact-form-heading" className="font-display text-4xl text-dp-text-primary mb-2">{formIntro.heading}</h2>
             <p className="text-[13px] text-dp-text-tertiary mb-8">{formIntro.body}</p>
-            <ContactForm />
+            <ContactForm ui={ui} />
           </div>
 
           {/* Sidebar */}
@@ -528,11 +579,11 @@ export default function ContactPage() {
 
             {/* Quick links */}
             <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
-              <p className="px-5 py-3 border-b border-dp-border text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary">Quick Links</p>
+              <p className="px-5 py-3 border-b border-dp-border text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary">{ui.quick}</p>
               {[
-                { label: "Start a Return",    href: "/account/orders", icon: <RotateCcw size={13} /> },
-                { label: "Shipping Guide",    href: "#shipping",        icon: <Truck     size={13} /> },
-                { label: "Artist Resources",  href: "/about",           icon: <Brush     size={13} /> },
+                { label: ui.return,   href: "/account/orders", icon: <RotateCcw size={13} /> },
+                { label: ui.shipping, href: "#shipping",       icon: <Truck size={13} /> },
+                { label: ui.artist,   href: "/about",          icon: <Brush size={13} /> },
               ].map(({ label, href, icon }) => (
                 <LocalizedLink
                   key={label}
@@ -558,7 +609,7 @@ export default function ContactPage() {
             <p className="text-[14px] text-dp-text-secondary mt-3 max-w-md mx-auto">{faqIntro.body}</p>
           </div>
           <div className="max-w-3xl mx-auto bg-dp-bg-surface border border-dp-border rounded-sm px-8 divide-dp-border">
-            {FAQS.map((faq) => (
+            {contactFaqs.map((faq) => (
               <FaqItem key={faq.q} q={faq.q} a={faq.a} />
             ))}
           </div>

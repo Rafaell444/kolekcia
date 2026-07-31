@@ -4,6 +4,8 @@ export type PendingCartIntent = {
   variantId?: number
   sizeVariantId?: number
   quantity: number
+  currency: string
+  processingOption?: string
   returnTo: string
 }
 

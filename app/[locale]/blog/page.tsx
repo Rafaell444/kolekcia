@@ -30,10 +30,10 @@ type BlogPost = {
   published_at: string
 }
 
-async function getPosts(): Promise<BlogPost[]> {
+async function getPosts(locale: string): Promise<BlogPost[]> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
   try {
-    const res = await fetch(`${apiUrl}/blog/`, { next: { revalidate: 10 } })
+    const res = await fetch(`${apiUrl}/blog/?lang=${locale}`, { next: { revalidate: 10 } })
     if (!res.ok) return []
     return (await res.json()) as BlogPost[]
   } catch {
@@ -41,19 +41,25 @@ async function getPosts(): Promise<BlogPost[]> {
   }
 }
 
-export default async function BlogPage() {
-  const posts = await getPosts()
+export default async function BlogPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params
+  const labels = {
+    en: { home: "Home", blog: "Blog", intro: "Stories, tips, and updates from the Koleqcia team.", empty: "No blog posts published yet." },
+    ka: { home: "მთავარი", blog: "ბლოგი", intro: "ისტორიები, რჩევები და სიახლეები Koleqcia-ს გუნდისგან.", empty: "გამოქვეყნებული ბლოგპოსტები ჯერ არ არის." },
+    ru: { home: "Главная", blog: "Блог", intro: "Истории, советы и новости от команды Koleqcia.", empty: "Опубликованных статей пока нет." },
+  }[locale === "ka" || locale === "ru" ? locale : "en"]
+  const posts = await getPosts(locale)
 
   return (
     <SiteShell>
       <div className="dp-container py-12">
         <nav className="flex items-center gap-2 text-[12px] text-dp-text-tertiary mb-6" aria-label="Breadcrumb">
-          <LocalizedLink href="/" className="hover:text-dp-text-primary transition-colors">Home</LocalizedLink>
+          <LocalizedLink href="/" className="hover:text-dp-text-primary transition-colors">{labels.home}</LocalizedLink>
           <span>/</span>
-          <span className="text-dp-text-secondary">Blog</span>
+          <span className="text-dp-text-secondary">{labels.blog}</span>
         </nav>
-        <h1 className="font-display text-5xl text-dp-text-primary">Blog</h1>
-        <p className="text-dp-text-secondary mt-2">Stories, tips, and updates from the Koleqcia team.</p>
+        <h1 className="font-display text-5xl text-dp-text-primary">{labels.blog}</h1>
+        <p className="text-dp-text-secondary mt-2">{labels.intro}</p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
           {posts.map((post) => (
@@ -71,7 +77,7 @@ export default async function BlogPage() {
             </LocalizedLink>
           ))}
           {posts.length === 0 && (
-            <p className="text-dp-text-tertiary">No blog posts published yet.</p>
+            <p className="text-dp-text-tertiary">{labels.empty}</p>
           )}
         </div>
       </div>

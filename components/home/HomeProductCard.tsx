@@ -30,12 +30,15 @@ type ApiProduct = {
 
 export default function HomeProductCard({ product }: { product: ApiProduct }) {
   const lp = useLocalePrefix()
+  const locale = lp.slice(1)
   const { currency, rates } = useLocale()
   const { price, original } = resolveListProductPrice(product, currency, rates)
   const discount = original && original > price ? Math.round(((original - price) / original) * 100) : null
 
   const activeVariants = (product.size_variants ?? []).filter((sv) => sv.is_active !== false)
   const showFrom = activeVariants.length > 1
+  const fromPrefix = locale === "ru" ? "от " : locale === "en" ? "From " : ""
+  const fromSuffix = locale === "ka" ? "-დან" : ""
 
   return (
     <Link href={`${lp}${productHref({ id: product.id, slug: product.slug, categorySlug: product.category_slug })}`}>
@@ -59,7 +62,9 @@ export default function HomeProductCard({ product }: { product: ApiProduct }) {
           <h3 className="text-[13px] font-semibold text-dp-text-primary truncate leading-tight">{product.title}</h3>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-[15px] font-bold text-dp-text-primary">
-              {formatAmount(price, currency)}{showFrom && <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">–დან</span>}
+              {showFrom && fromPrefix && <span className="text-[11px] font-normal text-dp-text-tertiary">{fromPrefix}</span>}
+              {formatAmount(price, currency)}
+              {showFrom && fromSuffix && <span className="text-[11px] font-normal text-dp-text-tertiary ml-0.5">{fromSuffix}</span>}
             </span>
             {original && original > price && (
               <span className="text-[12px] text-dp-text-tertiary line-through">{formatAmount(original, currency)}</span>

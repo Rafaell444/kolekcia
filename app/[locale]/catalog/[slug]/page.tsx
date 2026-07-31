@@ -22,7 +22,7 @@ type ProductPayload = {
 
 async function fetchProduct(slug: string, locale: string): Promise<ProductPayload | null> {
   const res = await fetch(`${API_URL}/products/${slug}/?lang=${locale}`, {
-    next: { revalidate: 60 },
+    cache: "no-store",
   }).catch(() => null)
   if (!res || !res.ok) return null
   return res.json()

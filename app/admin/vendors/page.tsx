@@ -12,7 +12,14 @@ type Vendor = {
 }
 
 type VendorStats = {
-  total_revenue: string; total_orders: number; total_products: number; unique_customers: number
+  total_revenue: string; total_revenue_usd?: string; total_revenue_gel?: string; total_orders: number; total_products: number; unique_customers: number
+}
+
+function formatRevenueBuckets(stats: VendorStats | null): string {
+  if (!stats) return "—"
+  const gel = parseFloat(stats.total_revenue_gel ?? "0")
+  const usd = parseFloat(stats.total_revenue_usd ?? stats.total_revenue ?? "0")
+  return `₾${gel.toFixed(2)} / $${usd.toFixed(2)}`
 }
 
 function VendorSaleModal({ vendor, onClose }: { vendor: Vendor; onClose: () => void }) {
@@ -160,7 +167,7 @@ function VendorCard({ vendor, onEdit, onSale }: { vendor: Vendor; onEdit: () => 
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 divide-x divide-y divide-dp-border">
         {[
-          { label: "Revenue", value: stats ? `$${parseFloat(stats.total_revenue).toFixed(2)}` : "—", Icon: DollarSign },
+          { label: "Revenue", value: formatRevenueBuckets(stats), Icon: DollarSign },
           { label: "Orders",  value: stats?.total_orders?.toLocaleString() ?? "—", Icon: TrendingUp },
           { label: "Products",value: stats?.total_products?.toLocaleString() ?? "—", Icon: Package },
           { label: "Customers",value: stats?.unique_customers?.toLocaleString() ?? "—", Icon: Users },

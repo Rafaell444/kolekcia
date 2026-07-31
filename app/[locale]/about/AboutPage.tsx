@@ -9,7 +9,6 @@ import {
   ArrowRight, Zap, Shield, Award, Palette,
   Globe2, Truck, Heart, CheckCircle2, ChevronRight,
 } from "lucide-react"
-import { getRequestLocale } from "@/lib/api"
 import { sectionContent, type PageSection } from "@/lib/page-sections"
 import { usePageSections } from "@/lib/use-page-sections"
 
@@ -162,10 +161,8 @@ function valueIcon(name?: string): React.ReactNode {
   }
 }
 
-export default function AboutPage(): React.ReactElement {
-  const { sections, loaded } = usePageSections("about")
-
-  const locale = getRequestLocale()
+export default function AboutPage({ locale, initialSections }: { locale: string; initialSections: PageSection[] }): React.ReactElement {
+  const { sections, loaded } = usePageSections("about", locale, initialSections)
   const hero = withFallback(sections, "hero", locale, DEFAULT_HERO)
   const mission = withFallback(sections, "mission", locale, DEFAULT_MISSION)
   const values = withFallback<Required<AboutValuesContent>>(sections, "values", locale, {

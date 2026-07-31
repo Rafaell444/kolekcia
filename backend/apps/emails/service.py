@@ -13,6 +13,7 @@ _VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 # Maps each event to a Workspace From alias category.
 _EVENT_FROM_CATEGORY = {
     "password_reset": "accounts",
+    "newsletter_welcome": "accounts",
     "order_confirmed": "orders",
     "order_shipped": "orders",
     "review_request": "orders",

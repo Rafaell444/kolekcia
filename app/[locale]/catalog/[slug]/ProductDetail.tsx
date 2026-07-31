@@ -12,7 +12,7 @@ import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
 import { savePendingCartIntent } from "@/lib/pending-cart"
 import { productHref } from "@/lib/product-url"
-import { formatAmount, resolveProductPrices, resolveSizeVariantPrice } from "@/lib/product-pricing"
+import { formatAmount, resolveListProductPrice, resolveProductPrices, resolveSizeVariantPrice } from "@/lib/product-pricing"
 import {
   ChevronLeft, ShoppingCart, Heart, Share2, Shield, Truck,
   RotateCcw, Check, Zap, ArrowRight, Award, Package,
@@ -106,8 +106,9 @@ type SizeVariant = {
   sale_price_gel?: string | null
   sort_order: number
   is_active: boolean
+  stock?: number | null
 }
-type ProcessingOpt = { id: number; slug: string; label: string; price_usd: string; price_gel: string; est_days_min: number; est_days_max: number }
+type ProcessingOpt = { id: number; slug: string; label: string; price_usd: string; price_gel: string; est_days_min: number; est_days_max: number; is_active?: boolean }
 type ApiProduct = {
   id: number; slug?: string; title: string; artist_name: string
   artist?: { id: number; name: string; handle: string; vendor_id?: number | null }
@@ -120,6 +121,8 @@ type ApiProduct = {
   base_price: string; original_price: string | null
   regional_prices?: Record<string, { price?: string | number | null; original?: string | number | null }>
   description?: string; material?: string; processing_time_label?: string
+  processing_options?: ProcessingOpt[]
+  product_details?: string[]
   rating: string; review_count: number
   is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean
   allow_custom_size?: boolean
@@ -130,7 +133,18 @@ type ApiProduct = {
   size_variants?: SizeVariant[]
   breadcrumbs?: { name: string; url: string }[]
 }
-type RelatedProduct = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
+type RelatedProduct = {
+  id: number
+  slug?: string
+  category_slug?: string
+  title: string
+  artist_name: string
+  base_price: string
+  original_price?: string | null
+  regional_prices?: Record<string, { price?: string | number | null; original?: string | number | null }>
+  size_variants?: SizeVariant[]
+  image_url: string
+}
 
 function ProductContactModal({
   product,
@@ -264,9 +278,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const giftWrapPreviewRef = useRef<HTMLDivElement>(null)
   const mainVideoRef = useRef<HTMLVideoElement>(null)
   const [giftWrapPrice, setGiftWrapPrice] = useState(0)
-  const [processingOption, setProcessingOption] = useState("standard")
-  const [processingOptions, setProcessingOptions] = useState<ProcessingOpt[]>([])
-  const { sections: productCmsSections, loaded: productCmsLoaded } = usePageSections("product")
+  const processingOptions = useMemo(() => (product.processing_options ?? []).filter((option) => option.is_active !== false), [product.processing_options])
+  const [processingOption, setProcessingOption] = useState(processingOptions[0]?.slug ?? "")
+  const { sections: productCmsSections, loaded: productCmsLoaded } = usePageSections("product", locale)
 
   const wishlisted = isWishlisted(product.id)
 
@@ -292,19 +306,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
       .catch(() => {})
   }, [product.vendor_slug, currency])
 
-  // Load processing options for wallpanel products
   useEffect(() => {
-    if (!isWallpanel) return
-    const slug = product.vendor_slug ?? "panel-studio"
-    apiFetch<ProcessingOpt[]>(`/orders/processing-options/?vendor=${slug}`)
-      .then((d) => {
-        if (Array.isArray(d) && d.length > 0) {
-          setProcessingOptions(d)
-          setProcessingOption(d[0].slug)
-        }
-      })
-      .catch(() => {})
-  }, [isWallpanel])
+    setProcessingOption(processingOptions[0]?.slug ?? "")
+  }, [product.id, processingOptions])
 
   const productCmsContent = useMemo(() => {
     const sectionKey = isFigure ? "figures" : isWallpanel ? "wallpanels" : "default"
@@ -379,6 +383,16 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const size    = product.sizes?.find((s) => s.id === selectedSize)
   const finish  = product.finishes?.find((f) => f.id === selectedFinish)
   const frame   = product.frames?.find((fr) => fr.id === selectedFrame)
+  const selectedLegacyVariant = product.variants?.find(
+    // eslint-disable-next-line eqeqeq
+    (variant) => variant.size?.id == selectedSize && variant.finish?.id == selectedFinish && variant.frame?.id == selectedFrame,
+  )
+  const selectedStock = hasSizeVariants ? selectedSizeVariant?.stock : selectedLegacyVariant?.stock
+  const maxQuantity = selectedStock == null ? null : Math.max(0, selectedStock)
+
+  useEffect(() => {
+    if (maxQuantity != null) setQty((current) => Math.max(1, Math.min(current, maxQuantity || 1)))
+  }, [selectedSizeVariantId, selectedLegacyVariant?.id, maxQuantity])
   const surcharge = (opt?: ApiVariantOption) => Number(opt?.surcharge ?? 0)
   const variantSurcharge = surcharge(size) + surcharge(finish) + surcharge(frame)
 
@@ -450,7 +464,19 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   }
 
   async function handleAddToCart() {
+    if (maxQuantity != null && qty > maxQuantity) {
+      setAddError(`Only ${maxQuantity} item(s) available.`)
+      return
+    }
     if (!getAccessToken()) {
+      savePendingCartIntent({
+        ...(hasSizeVariants && selectedSizeVariantId ? { sizeVariantId: selectedSizeVariantId } : {}),
+        ...(!hasSizeVariants && selectedLegacyVariant ? { variantId: selectedLegacyVariant.id } : {}),
+        quantity: qty,
+        currency,
+        processingOption,
+        returnTo: selfHref,
+      })
       router.push(`${lp}/login?next=${encodeURIComponent(selfHref)}`)
       return
     }
@@ -468,7 +494,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
           gift_wrap: giftWrap,
           gift_wrap_note: giftWrap ? giftWrapNote : "",
           gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "",
-          processing_option: isWallpanel ? processingOption : "",
+          processing_option: processingOption,
           size_variant_id: selectedSizeVariantId,
           currency,
         })
@@ -483,10 +509,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     }
 
     // Legacy variant path
-    const variant = product.variants?.find(
-      // eslint-disable-next-line eqeqeq
-      (v) => v.size?.id == selectedSize && v.finish?.id == selectedFinish && v.frame?.id == selectedFrame,
-    )
+    const variant = selectedLegacyVariant
     if (!variant) {
       setAddError("This combination is unavailable. Please try a different option.")
       return
@@ -494,7 +517,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     setAdding(true)
     setAddError("")
     try {
-      await addItem(variant.id, qty, { gift_wrap: giftWrap, gift_wrap_note: giftWrap ? giftWrapNote : "", gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "", processing_option: isWallpanel ? processingOption : "", currency })
+      await addItem(variant.id, qty, { gift_wrap: giftWrap, gift_wrap_note: giftWrap ? giftWrapNote : "", gift_wrap_image_url: giftWrap ? giftWrapImageUrl : "", processing_option: processingOption, currency })
       setAdded(true)
       setTimeout(() => setAdded(false), 2200)
     } catch (err) {
@@ -661,8 +684,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             )}
 
             <div className="flex flex-wrap gap-2">
-              {(product.tags ?? []).map((tag) => (
-                <LocalizedLink key={tag} href={`/catalog?tag=${tag}`}
+              {(product.tags ?? []).filter((tag) => tag.trim()).map((tag, index) => (
+                <LocalizedLink key={`${tag}-${index}`} href={`/catalog?tag=${encodeURIComponent(tag)}`}
                   className="px-3 py-1 text-[11px] font-semibold uppercase tracking-widest border border-dp-border rounded-full text-dp-text-tertiary hover:border-dp-border-hover hover:text-dp-text-secondary transition-colors">
                   {tag}
                 </LocalizedLink>
@@ -890,7 +913,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 <div className="flex items-center border border-dp-border rounded-sm overflow-hidden shrink-0">
                 <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Decrease quantity">−</button>
                 <span className="px-4 py-2.5 text-[14px] font-bold text-dp-text-primary min-w-[3rem] text-center tabular-nums">{qty}</span>
-                <button onClick={() => setQty((q) => q + 1)} className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors" aria-label="Increase quantity">+</button>
+                <button
+                  onClick={() => setQty((q) => maxQuantity == null ? q + 1 : Math.min(maxQuantity, q + 1))}
+                  disabled={maxQuantity != null && qty >= maxQuantity}
+                  className="px-3 py-2.5 text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+                  aria-label="Increase quantity"
+                >+</button>
               </div>
               <button
                 onClick={() => { if (!isSoldOut) void handleAddToCart() }}
@@ -985,31 +1013,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             </div>
 
             <div className="border border-dp-border rounded-sm px-4 mt-1">
-              <AccordionItem title="Product Details">
-                {isFigure ? (
+              {(product.product_details?.length ?? 0) > 0 && (
+                <AccordionItem title="Product Details">
                   <ul className="list-disc list-inside space-y-1">
-                    <li>Premium metal figure print with crisp edge definition</li>
-                    <li>UV-resistant inks preserve colour and detail for years</li>
-                    <li>Lightweight aluminium — easy to display on shelves or walls</li>
-                    <li>Scratch-resistant finish built for collectors</li>
+                    {product.product_details?.map((detail, index) => <li key={`${detail}-${index}`}>{detail}</li>)}
                   </ul>
-                ) : isWallpanel ? (
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Printed on 0.045&quot; thick aluminium composite</li>
-                    <li>UV-resistant, fade-proof inks — no frame needed</li>
-                    <li>Comes with 4 magnetic mounting pins, no tools required</li>
-                    <li>Scratch and moisture resistant surface</li>
-                  </ul>
-                ) : (
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Printed on 0.045&quot; thick aluminium composite</li>
-                    <li>UV-resistant, fade-proof inks — no frame needed</li>
-                    <li>Comes with 4 magnetic mounting pins, no tools required</li>
-                    <li>Scratch and moisture resistant surface</li>
-                    <li>Made to order — produced within 3 business days</li>
-                  </ul>
-                )}
-              </AccordionItem>
+                </AccordionItem>
+              )}
 
               {/* Figure-specific processing & shipping */}
               {isFigure && (
@@ -1304,7 +1314,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             </LocalizedLink>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {related.map((p) => (
+            {related.map((p) => {
+              const relatedPrice = resolveListProductPrice(p, currency, rates)
+              return (
               <LocalizedLink key={p.id} href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover">
                 <div className="aspect-poster relative bg-dp-bg-elevated overflow-hidden">
                   {p.image_url && <Image src={p.image_url} alt={p.title} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 640px) 50vw, 25vw" />}
@@ -1312,10 +1324,11 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                 <div className="p-3">
                   <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
                   <p className="text-[13px] font-semibold text-dp-text-primary truncate mt-0.5">{p.title}</p>
-                  <p className="text-[14px] font-bold text-dp-text-primary mt-1">{formatPrice(parseFloat(p.base_price))}</p>
+                  <p className="text-[14px] font-bold text-dp-text-primary mt-1">{formatAmount(relatedPrice.price, currency)}</p>
                 </div>
               </LocalizedLink>
-            ))}
+              )
+            })}
           </div>
         </section>
       )}

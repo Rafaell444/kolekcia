@@ -5,6 +5,8 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save, CalendarClock } from "lucide-react"
+import { formatAmount } from "@/lib/product-pricing"
+import type { Currency } from "@/contexts/locale-context"
 
 type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled"
 
@@ -72,6 +74,7 @@ type OrderDetail = {
   subtotal: string
   discount: string
   total: string
+  currency: string
   promo_code_str: string | null
   tracking_code: string
   created_at: string
@@ -227,7 +230,7 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-[13px] text-dp-text-secondary">×{item.quantity}</p>
-                    <p className="text-[14px] font-bold text-dp-text-primary">${parseFloat(item.line_total).toFixed(2)}</p>
+                    <p className="text-[14px] font-bold text-dp-text-primary">{formatAmount(parseFloat(item.line_total), order.currency as Currency)}</p>
                   </div>
                 </li>
               ))}
@@ -352,12 +355,12 @@ export default function AdminOrderDetailPage(): React.ReactElement {
           <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-4">
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-3">Totals</h2>
             <dl className="space-y-2 text-[13px]">
-              <div className="flex justify-between"><dt className="text-dp-text-tertiary">Subtotal</dt><dd>${parseFloat(order.subtotal).toFixed(2)}</dd></div>
+              <div className="flex justify-between"><dt className="text-dp-text-tertiary">Subtotal</dt><dd>{formatAmount(parseFloat(order.subtotal), order.currency as Currency)}</dd></div>
               {parseFloat(order.discount) > 0 && (
-                <div className="flex justify-between"><dt className="text-dp-text-tertiary">Discount{order.promo_code_str ? ` (${order.promo_code_str})` : ""}</dt><dd className="text-dp-success">-${parseFloat(order.discount).toFixed(2)}</dd></div>
+                <div className="flex justify-between"><dt className="text-dp-text-tertiary">Discount{order.promo_code_str ? ` (${order.promo_code_str})` : ""}</dt><dd className="text-dp-success">-{formatAmount(parseFloat(order.discount), order.currency as Currency)}</dd></div>
               )}
               <div className="flex justify-between font-bold text-dp-text-primary pt-2 border-t border-dp-border">
-                <dt>Total</dt><dd>${parseFloat(order.total).toFixed(2)}</dd>
+                <dt>Total</dt><dd>{formatAmount(parseFloat(order.total), order.currency as Currency)}</dd>
               </div>
             </dl>
           </div>

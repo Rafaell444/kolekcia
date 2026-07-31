@@ -78,7 +78,7 @@ export default function WishlistPage(): React.ReactElement {
                   >
                     <Trash2 size={12} />
                   </button>
-                  <Link href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })}>
+                  <Link href={`${lp}${productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })}`}>
                     <div className="aspect-poster relative bg-dp-bg-elevated overflow-hidden">
                       {p.image_url && (
                         <Image

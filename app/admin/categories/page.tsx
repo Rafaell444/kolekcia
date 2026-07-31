@@ -50,7 +50,13 @@ export default function AdminCategoriesPage(): React.ReactElement {
     e.preventDefault()
     setSaving(true)
     try {
-      const payload = { name: form.name.trim(), slug: form.slug.trim() || slugify(form.name), image_url: form.image_url }
+      const payload = {
+        name: form.name.trim(),
+        name_ka: form.name_ka.trim(),
+        name_ru: form.name_ru.trim(),
+        slug: form.slug.trim() || slugify(form.name),
+        image_url: form.image_url,
+      }
       if (editing) {
         const updated = await adminFetch<Category>(`/admin/categories/${editing.id}/`, {
           method: "PATCH",

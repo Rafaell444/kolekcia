@@ -6,12 +6,12 @@ class EmailTemplate(models.Model):
         ("order_confirmed", "Order Confirmed"),
         ("order_shipped", "Order Shipped"),
         ("review_request", "Review Request"),
-        ("review_request", "Review Request"),
         ("custom_order_shipped", "Custom Order Shipped"),
         ("auction_new", "New Auction Notification"),
         ("auction_won", "Auction Won"),
         ("password_reset", "Password Reset"),
         ("welcome", "Welcome / Registration"),
+        ("newsletter_welcome", "Newsletter Welcome"),
         ("custom", "Custom / One-off"),
     ]
 

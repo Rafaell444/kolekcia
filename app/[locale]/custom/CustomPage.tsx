@@ -388,15 +388,15 @@ function PendingStep({ email, vendorName }: { email: string; vendorName: string 
         <div className="flex items-center gap-3">
           <Mail size={16} className="text-dp-text-tertiary shrink-0" />
           <div>
-            <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Confirmation sent to</p>
-            <p className="text-[13px] font-semibold text-dp-text-primary">{email}</p>
+            <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Next step</p>
+            <p className="text-[13px] font-semibold text-dp-text-primary">We will contact you</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Phone size={16} className="text-dp-text-tertiary shrink-0" />
           <div>
-            <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Payment link delivery</p>
-            <p className="text-[13px] font-semibold text-dp-text-primary">Email + SMS once approved</p>
+            <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Order status</p>
+            <p className="text-[13px] font-semibold text-dp-text-primary">Please check your profile for updates</p>
           </div>
         </div>
       </div>

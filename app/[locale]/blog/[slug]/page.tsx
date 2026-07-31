@@ -21,10 +21,10 @@ type BlogPost = {
   published_at: string
 }
 
-async function getPost(slug: string): Promise<BlogPost | null> {
+async function getPost(slug: string, locale: string): Promise<BlogPost | null> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
   try {
-    const res = await fetch(`${apiUrl}/blog/${slug}/`, { next: { revalidate: 10 } })
+    const res = await fetch(`${apiUrl}/blog/${slug}/?lang=${locale}`, { next: { revalidate: 10 } })
     if (!res.ok) return null
     return (await res.json()) as BlogPost
   } catch {
@@ -78,7 +78,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string; slug: string }>
 }): Promise<Metadata> {
   const { locale, slug } = await params
-  const post = await getPost(slug)
+  const post = await getPost(slug, locale)
   if (!post) return { title: "Post Not Found" }
 
   const title = `${post.title} | Koleqcia Blog`
@@ -96,10 +96,10 @@ export async function generateMetadata({
 
 export default async function BlogDetailPage({ params }: { params: Promise<{ locale: string; slug: string }> }) {
   const { locale, slug } = await params
-  const post = await getPost(slug)
+  const post = await getPost(slug, locale)
   if (!post) notFound()
 
-  const hasBlocks = post.content_blocks && post.content_blocks.length > 0
+  const hasBlocks = locale === "en" && post.content_blocks && post.content_blocks.length > 0
 
   return (
     <SiteShell>

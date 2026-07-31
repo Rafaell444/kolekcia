@@ -218,6 +218,9 @@
   }
 
   /* ── Scrollbar styling (dark theme) ── */
+  * {
+    scrollbar-color: var(--dp-accent-cta) var(--dp-bg-base);
+  }
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -226,11 +229,11 @@
     background: var(--dp-bg-base);
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--dp-bg-elevated);
+    background: var(--dp-accent-cta);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--dp-border-hover);
+    background: var(--dp-accent-cta-hover);
   }
 }
 

@@ -7,7 +7,10 @@ class CategoryTranslationOptions(TranslationOptions):
 
 
 class ProductTranslationOptions(TranslationOptions):
-    fields = ("title", "description", "meta_title", "meta_description", "meta_keywords")
+    fields = (
+        "title", "description", "material", "tags", "processing_time_label", "product_details",
+        "meta_title", "meta_description", "meta_keywords",
+    )
 
 
 class ArtistTranslationOptions(TranslationOptions):

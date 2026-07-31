@@ -11,6 +11,8 @@ import { getAdminUser } from "@/lib/admin-auth"
 
 type DashStats = {
   total_revenue: string
+  total_revenue_usd?: string
+  total_revenue_gel?: string
   total_orders: number
   total_products: number
   orders_last_30d: number
@@ -18,6 +20,12 @@ type DashStats = {
   new_users_last_30d?: number
   active_auctions?: number
   active_since?: string | null
+}
+
+function formatRevenueBuckets(stats: DashStats): string {
+  const gel = parseFloat(stats.total_revenue_gel ?? "0")
+  const usd = parseFloat(stats.total_revenue_usd ?? stats.total_revenue ?? "0")
+  return `₾${gel.toLocaleString("en", { minimumFractionDigits: 2 })} / $${usd.toLocaleString("en", { minimumFractionDigits: 2 })}`
 }
 
 function StatCard({
@@ -74,7 +82,7 @@ export default function AdminDashboard(): React.ReactElement {
         </div>
       ) : stats ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Revenue" value={`$${parseFloat(stats.total_revenue).toLocaleString("en", { minimumFractionDigits: 2 })}`} Icon={DollarSign} accent="#e63946" sub={`${stats.orders_last_30d} orders this month`} />
+          <StatCard label="Total Revenue" value={formatRevenueBuckets(stats)} Icon={DollarSign} accent="#e63946" sub={`${stats.orders_last_30d} orders this month`} />
           <StatCard label="Total Orders" value={stats.total_orders.toLocaleString()} Icon={ShoppingCart} accent="#00b4d8" />
           <StatCard label="Products" value={stats.total_products.toLocaleString()} Icon={Package} accent="#e8a427" />
           <StatCard label={isVendor ? "Unique Customers" : "Total Users"} value={(isVendor ? stats.unique_customers : stats.new_users_last_30d)?.toLocaleString() ?? "—"} Icon={Users} accent="#2d6a4f" />
@@ -90,7 +98,7 @@ export default function AdminDashboard(): React.ReactElement {
           {[
             { href: "/admin/products", label: "Manage Products", Icon: Package },
             { href: "/admin/orders", label: "View Orders", Icon: ShoppingCart },
-            { href: "/admin/blog", label: "Manage Blog", Icon: TrendingUp },
+            ...(!isVendor ? [{ href: "/admin/blog", label: "Manage Blog", Icon: TrendingUp }] : []),
             { href: "/admin/users", label: isVendor ? "Customers" : "All Users", Icon: Users },
             { href: "/admin/analytics", label: "Analytics", Icon: TrendingUp },
           ].map(({ href, label, Icon }) => (

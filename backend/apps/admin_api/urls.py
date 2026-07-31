@@ -76,6 +76,8 @@ from .views import (
     AdminEmailTemplateSeedView,
     AdminEmailLogListView,
     AdminAuctionSubscriberListView,
+    AdminContactMessageListView,
+    AdminContactMessageDetailView,
 )
 
 urlpatterns = [
@@ -157,4 +159,6 @@ urlpatterns = [
     path("email-templates/<int:pk>/", AdminEmailTemplateDetailView.as_view(), name="admin-email-template-detail"),
     path("email-logs/", AdminEmailLogListView.as_view(), name="admin-email-logs"),
     path("auction-subscribers/", AdminAuctionSubscriberListView.as_view(), name="admin-auction-subscribers"),
+    path("contact-messages/", AdminContactMessageListView.as_view(), name="admin-contact-messages"),
+    path("contact-messages/<int:pk>/", AdminContactMessageDetailView.as_view(), name="admin-contact-message-detail"),
 ]

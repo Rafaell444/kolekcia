@@ -14,7 +14,7 @@ export type CartItemType = {
     stock: number
     price: string
   } | null
-  size_variant?: { id: number; label: string; price_usd: string } | null
+  size_variant?: { id: number; label: string; price_usd: string; stock?: number | null } | null
   quantity: number
   unit_price?: string
   currency?: string
@@ -64,7 +64,7 @@ const CartContext = createContext<CartContextValue | null>(null)
 
 export function CartProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [cart, setCart] = useState<CartType | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [isOpen, setIsOpen] = useState(false)
 
   const openCart = useCallback(() => setIsOpen(true), [])
@@ -73,6 +73,7 @@ export function CartProvider({ children }: { children: React.ReactNode }): React
   const refresh = useCallback(async () => {
     if (!getAccessToken()) {
       setCart(null)
+      setLoading(false)
       return
     }
     setLoading(true)

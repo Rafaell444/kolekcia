@@ -194,12 +194,18 @@ class AdminDashboardView(APIView):
         now = timezone.now()
         thirty_days_ago = now - timedelta(days=30)
 
-        total_revenue = Order.objects.filter(
-            status__in=["processing", "shipped", "delivered"]
-        ).aggregate(total=Sum("total"))["total"] or 0
+        paid_orders = Order.objects.filter(status__in=["processing", "shipped", "delivered"])
+        revenue_by_currency = {
+            row["currency"]: row["total"] or 0
+            for row in paid_orders.values("currency").annotate(total=Sum("total"))
+        }
+        total_revenue_usd = revenue_by_currency.get("USD", 0)
+        total_revenue_gel = revenue_by_currency.get("GEL", 0)
 
         return Response({
-            "total_revenue": str(total_revenue),
+            "total_revenue": str(total_revenue_usd),
+            "total_revenue_usd": str(total_revenue_usd),
+            "total_revenue_gel": str(total_revenue_gel),
             "total_orders": Order.objects.count(),
             "total_users": User.objects.count(),
             "total_products": Product.objects.count(),
@@ -549,7 +555,7 @@ class AdminProductListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
 
     def get_queryset(self):
         from apps.products.models import Product
-        qs = Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
+        qs = Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories", "processing_options")
         if not self.request.user.is_staff and hasattr(self.request.user, "vendor_profile"):
             qs = qs.filter(vendor=self.request.user.vendor_profile)
         return qs
@@ -564,7 +570,7 @@ class AdminProductDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         from apps.products.models import Product
-        qs = Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories")
+        qs = Product.objects.select_related("artist", "category").prefetch_related("images", "variants__size", "variants__finish", "variants__frame", "size_variants", "categories", "processing_options")
         if not self.request.user.is_staff and hasattr(self.request.user, "vendor_profile"):
             qs = qs.filter(vendor=self.request.user.vendor_profile)
         return qs
@@ -2009,8 +2015,46 @@ class AdminPageSectionDetailView(APIView):
 
 # ── Email Templates ─────────────────────────────────────────────────────────────
 
+class AdminContactMessageListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.contact.models import ContactMessage
+
+        data = [
+            {
+                "id": message.id,
+                "reason": message.reason,
+                "first_name": message.first_name,
+                "last_name": message.last_name,
+                "email": message.email,
+                "order_number": message.order_number,
+                "message": message.message,
+                "attachment": request.build_absolute_uri(message.attachment.url) if message.attachment else "",
+                "created_at": message.created_at,
+            }
+            for message in ContactMessage.objects.all()[:250]
+        ]
+        return Response(data)
+
+
+class AdminContactMessageDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def delete(self, request, pk):
+        from apps.contact.models import ContactMessage
+
+        try:
+            message = ContactMessage.objects.get(pk=pk)
+        except ContactMessage.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        log_action(request.user, "delete", "contact_message", message.pk, {"email": message.email})
+        message.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class AdminEmailTemplateListView(APIView):
-    permission_classes = [IsAdminOrVendor]
+    permission_classes = [IsAdminUser]
 
     def get(self, request):
         from apps.emails.models import EmailTemplate
@@ -2018,29 +2062,13 @@ class AdminEmailTemplateListView(APIView):
 
         qs = EmailTemplate.objects.select_related("vendor").all()
 
-        if not request.user.is_staff:
-            vendor = getattr(request.user, "vendor_profile", None)
-            if vendor:
-                qs = qs.filter(Q(vendor=vendor) | Q(vendor__isnull=True))
-            else:
-                qs = qs.filter(vendor__isnull=True)
-
         return Response(EmailTemplateListSerializer(qs, many=True).data)
 
     def post(self, request):
         from apps.emails.models import EmailTemplate
         from apps.emails.serializers import EmailTemplateSerializer
 
-        data = request.data.copy()
-
-        if not request.user.is_staff:
-            vendor = getattr(request.user, "vendor_profile", None)
-            if vendor:
-                data["vendor"] = vendor.id
-            else:
-                return Response({"detail": "No vendor profile."}, status=status.HTTP_403_FORBIDDEN)
-
-        ser = EmailTemplateSerializer(data=data)
+        ser = EmailTemplateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         tpl = ser.save()
         log_action(request.user, "create", "email_template", tpl.pk, {
@@ -2050,7 +2078,7 @@ class AdminEmailTemplateListView(APIView):
 
 
 class AdminEmailTemplateDetailView(APIView):
-    permission_classes = [IsAdminOrVendor]
+    permission_classes = [IsAdminUser]
 
     def _get_template(self, pk, user):
         from apps.emails.models import EmailTemplate
@@ -2058,10 +2086,6 @@ class AdminEmailTemplateDetailView(APIView):
             tpl = EmailTemplate.objects.select_related("vendor").get(pk=pk)
         except EmailTemplate.DoesNotExist:
             return None
-        if not user.is_staff:
-            vendor = getattr(user, "vendor_profile", None)
-            if tpl.vendor_id and (not vendor or tpl.vendor_id != vendor.id):
-                return None
         return tpl
 
     def get(self, request, pk):

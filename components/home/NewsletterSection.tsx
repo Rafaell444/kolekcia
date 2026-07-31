@@ -50,7 +50,7 @@ export default function NewsletterSection({ content }: { content?: { heading?: s
             {submitted ? (
               <div className="text-center">
                 <p className="font-display text-3xl font-black text-dp-text-primary mb-2">You&apos;re in!</p>
-                <p className="text-dp-text-secondary text-sm">Check your inbox for your 25% off code. You earned +25 XP!</p>
+                <p className="text-dp-text-secondary text-sm">Check your inbox for your 25% off code.</p>
               </div>
             ) : (
               <>

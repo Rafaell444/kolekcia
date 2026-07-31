@@ -95,8 +95,11 @@ export default function CartPage(): React.ReactElement {
                         >−</button>
                         <span className="px-3">{item.quantity}</span>
                         <button
-                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                          className="px-2.5 py-1.5 hover:bg-dp-bg-elevated transition-colors"
+                          onClick={() => void updateQuantity(item.id, item.quantity + 1)}
+                          disabled={item.size_variant?.stock != null
+                            ? item.quantity >= item.size_variant.stock
+                            : item.variant?.stock != null && item.quantity >= item.variant.stock}
+                          className="px-2.5 py-1.5 hover:bg-dp-bg-elevated transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
                           aria-label="Increase quantity"
                         >+</button>
                       </div>

@@ -165,9 +165,7 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
                 <GripVertical size={16} className="text-dp-text-tertiary shrink-0" aria-hidden />
                 <div className="relative w-28 h-16 rounded-sm overflow-hidden bg-dp-bg-elevated shrink-0">
                   {slide.type === "video" && slide.video_url ? (
-                    <video poster={slide.video_poster_url || undefined} muted playsInline controls preload="metadata" className="h-full w-full object-cover">
-                      <source src={slide.video_url} type={/\.webm(?:\?|$)/i.test(slide.video_url) ? "video/webm" : "video/mp4"} />
-                    </video>
+                    <video src={slide.video_url} poster={slide.video_poster_url || undefined} muted playsInline controls preload="metadata" className="h-full w-full object-cover" />
                   ) : thumb ? (
                     <Image src={thumb} alt={slide.headline} fill className="object-cover" sizes="112px" />
                   ) : null}
@@ -220,9 +218,8 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
               ) : (
                 <>
                   <AdminMediaUpload label="Video file (autoplays on homepage)" previewUrl={form.video_url} folder="hero" accept="video/mp4,video/webm" onUploaded={(url) => setForm((f) => ({ ...f, video_url: url }))} />
-                  <AdminMediaUpload label="Poster image (optional thumbnail before video loads)" previewUrl={form.video_poster_url} folder="hero" accept="image/*" onUploaded={(url) => setForm((f) => ({ ...f, video_poster_url: url }))} />
                   <p className="text-[11px] text-dp-text-tertiary">
-                    Upload an H.264 MP4 or WebM file. The poster is only an optional thumbnail shown while the slide is inactive.
+                    Upload an H.264 MP4 or WebM file. The video itself is previewed here and shown on the homepage.
                   </p>
                 </>
               )}

@@ -6,13 +6,20 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 // Singleton refresh promise — prevents concurrent refresh races
 let refreshPromise: Promise<string | null> | null = null
 
+function notifyAuthExpired(): void {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(new Event("kol-auth-expired"))
+}
+
 /**
  * Resolve UI locale for API requests.
- * Priority: NEXT_LOCALE cookie → path segment → Accept-Language → default.
+ * Priority: path segment → NEXT_LOCALE cookie → default.
  * Passed as `?lang=` and `Accept-Language` so the backend can localize responses.
  */
 export function getRequestLocale(): Locale {
   if (typeof window !== "undefined") {
+    const segment = window.location.pathname.split("/").filter(Boolean)[0]
+    if (segment && isValidLocale(segment)) return segment
     try {
       const match = document.cookie.match(/(?:^|;\s*)NEXT_LOCALE=([^;]+)/)
       const cookie = match?.[1]
@@ -20,8 +27,6 @@ export function getRequestLocale(): Locale {
     } catch {
       /* ignore */
     }
-    const segment = window.location.pathname.split("/").filter(Boolean)[0]
-    if (segment && isValidLocale(segment)) return segment
   }
   return DEFAULT_LOCALE
 }
@@ -54,9 +59,11 @@ export async function refreshAccessToken(): Promise<string | null> {
         return data.access
       }
       clearTokens()
+      notifyAuthExpired()
       return null
     } catch {
       clearTokens()
+      notifyAuthExpired()
       return null
     } finally {
       refreshPromise = null
@@ -119,6 +126,7 @@ async function request<T>(
     }
     // Refresh failed — clear and throw
     clearTokens()
+    notifyAuthExpired()
     const err: ApiError = { status: 401, data: { detail: "Session expired. Please log in again." } }
     throw err
   }

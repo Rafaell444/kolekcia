@@ -133,18 +133,14 @@ export default function AdminReviewsPage(): React.ReactElement {
                   className={inputCls}
                   placeholder="https://"
                   value={s.url}
-                  onChange={(e) => setSocials((prev) => prev.map((item) => item.id === s.id ? { ...item, url: e.target.value, is_active: e.target.value.trim() ? item.is_active : false } : item))}
+                  onChange={(e) => setSocials((prev) => prev.map((item) => item.id === s.id ? {
+                    ...item,
+                    url: e.target.value,
+                    is_active: Boolean(e.target.value.trim()),
+                  } : item))}
                 />
               </div>
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-[12px] text-dp-text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={s.is_active}
-                    onChange={(e) => setSocials((prev) => prev.map((item) => item.id === s.id ? { ...item, is_active: e.target.checked } : item))}
-                  />
-                  Active
-                </label>
                 <button type="submit" disabled={savingSocialId === s.id} className="inline-flex items-center gap-1 px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase rounded-sm disabled:opacity-50">
                   <Save size={12} /> {savingSocialId === s.id ? "Saving..." : "Save"}
                 </button>

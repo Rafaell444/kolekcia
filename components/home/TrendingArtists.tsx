@@ -42,15 +42,17 @@ export default async function TrendingArtists({ locale }: { locale: string }): P
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl mx-auto justify-items-center">
-        {vendors.slice(0, 2).map((vendor) => (
+        {vendors.slice(0, 2).map((vendor) => {
+          const imageUrl = vendor.logo_url || vendor.banner_url
+          return (
           <LocalizedLink
             key={vendor.id}
-            href={`/catalog?category=${vendor.catalog_category_slug}`}
+            href={`/catalog?vendor=${encodeURIComponent(vendor.slug)}`}
             className="group flex items-center gap-4 p-4 bg-dp-bg-surface border border-dp-border rounded-sm"
           >
             <div className="relative w-16 h-16 rounded-sm overflow-hidden border border-dp-border shrink-0 bg-dp-bg-elevated">
-              {vendor.logo_url && (
-                <Image src={vendor.logo_url} alt={vendor.name} fill className="object-cover" sizes="64px" />
+              {imageUrl && (
+                <Image src={imageUrl} alt={vendor.name} fill className="object-cover" sizes="64px" />
               )}
             </div>
             <div className="min-w-0 flex-1">
@@ -63,7 +65,8 @@ export default async function TrendingArtists({ locale }: { locale: string }): P
               <p className="text-[11px] text-dp-text-tertiary truncate">Browse the full collection</p>
             </div>
           </LocalizedLink>
-        ))}
+          )
+        })}
       </div>
     </section>
   )

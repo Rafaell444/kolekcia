@@ -14,7 +14,10 @@ import { CSS } from "@dnd-kit/utilities"
 
 type SizeVariantItem = {
   id: number
+  sku?: string | null
   label: string
+  label_ka?: string
+  label_ru?: string
   price_usd: string
   price_gel?: string | null
   price_eur?: string | null
@@ -23,6 +26,7 @@ type SizeVariantItem = {
   sale_price_gel?: string | null
   sort_order: number
   is_active: boolean
+  stock?: number | null
   images?: { id: number; url: string; src?: string; media_type?: string }[]
 }
 
@@ -35,11 +39,22 @@ type AdminProduct = {
   category_slug: string
   category_slugs?: string[]
   tags?: string[]
+  tags_ka?: string[]
+  tags_ru?: string[]
   status?: "active" | "paused" | "sold"
   vendor_slug?: string | null
   vendor_name?: string | null
   description?: string; description_ka?: string; description_ru?: string
   material?: string
+  material_ka?: string
+  material_ru?: string
+  processing_time_label?: string
+  processing_time_label_ka?: string
+  processing_time_label_ru?: string
+  processing_options?: ProcessingOptionItem[]
+  product_details?: string[]
+  product_details_ka?: string[]
+  product_details_ru?: string[]
   size_variants?: SizeVariantItem[]
   variants?: Array<{
     id: number
@@ -55,6 +70,10 @@ type AdminProduct = {
 type PendingVariant = {
   _key: string
   label: string
+  labelKa: string
+  labelRu: string
+  sku: string
+  stock: string
   priceUsd: string
   priceGel: string
   salePriceUsd: string
@@ -66,6 +85,8 @@ type ProductDraft = {
   title_ka: string; title_ru: string
   categories: string
   tags: string
+  tags_ka: string
+  tags_ru: string
   vendorSlug: string
   status: "active" | "paused" | "sold"
   isLimited: boolean; isSale: boolean; isNew: boolean; isExclusive: boolean; isFeatured: boolean; isReadyToShip: boolean
@@ -73,21 +94,33 @@ type ProductDraft = {
   description: string
   description_ka: string; description_ru: string
   material: string
+  material_ka: string
+  material_ru: string
   processingTimeLabel: string
+  processingTimeLabel_ka: string
+  processingTimeLabel_ru: string
+  processingOptionIds: number[]
+  productDetails: string
+  productDetails_ka: string
+  productDetails_ru: string
 }
 
 type ProcessingOptionItem = {
   id: number
+  slug?: string
   label: string
+  label_ka?: string
+  label_ru?: string
   est_days_min: number
   est_days_max: number
   price_usd: string | number
   price_gel: string | number
   is_included: boolean
   vendor_slug?: string
+  is_active?: boolean
 }
 
-type CategoryOption = { id: number; name: string; slug: string }
+type CategoryOption = { id: number; name: string; name_ka?: string; name_ru?: string; slug: string }
 
 type VendorOption = { id: number; name: string; slug: string }
 
@@ -128,15 +161,49 @@ function StatusBadge({ status }: { status?: ProductStatus }) {
   )
 }
 
+function formatPriceRange(values: Array<number | null>, prefix: string): string {
+  const nums = values.filter((value): value is number => value != null && !Number.isNaN(value))
+  if (nums.length === 0) return "—"
+  const min = Math.min(...nums)
+  const max = Math.max(...nums)
+  if (min === max) return `${prefix}${min.toFixed(2)}`
+  return `${prefix}${min.toFixed(2)}-${prefix}${max.toFixed(2)}`
+}
+
+function productCardPriceRanges(p: AdminProduct): { usd: string; gel: string } {
+  if (p.size_variants && p.size_variants.length > 0) {
+    return {
+      usd: formatPriceRange(
+        p.size_variants.map((sv) => parseFloat(String(sv.sale_price_usd || sv.price_usd || "0"))),
+        "$",
+      ),
+      gel: formatPriceRange(
+        p.size_variants.map((sv) => {
+          const raw = sv.sale_price_gel || sv.price_gel
+          return raw ? parseFloat(String(raw)) : null
+        }),
+        "₾",
+      ),
+    }
+  }
+  return {
+    usd: formatPriceRange([parseFloat(String(p.base_price || "0"))], "$"),
+    gel: formatPriceRange([p.regional_prices?.GEL?.price ? parseFloat(String(p.regional_prices.GEL.price)) : null], "₾"),
+  }
+}
+
 const BLANK_DRAFT: ProductDraft = {
   title: "",
   title_ka: "", title_ru: "",
-  categories: "", tags: "", vendorSlug: "",
+  categories: "", tags: "", tags_ka: "", tags_ru: "", vendorSlug: "",
   status: "active",
-  isLimited: false, isSale: false, isNew: true, isExclusive: false, isFeatured: false, isReadyToShip: false,
+  isLimited: false, isSale: false, isNew: false, isExclusive: false, isFeatured: false, isReadyToShip: false,
   allowCustomSize: false,
   processingTimeLabel: "",
-  description: "", description_ka: "", description_ru: "", material: "",
+  processingTimeLabel_ka: "", processingTimeLabel_ru: "",
+  processingOptionIds: [],
+  productDetails: "", productDetails_ka: "", productDetails_ru: "",
+  description: "", description_ka: "", description_ru: "", material: "", material_ka: "", material_ru: "",
 }
 
 const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
@@ -445,18 +512,18 @@ function ProcessingTimesModal({
   vendorSlug,
   isStaff = false,
   vendors = [],
-  onSelect,
   onClose,
 }: {
   vendorSlug: string
   isStaff?: boolean
   vendors?: VendorOption[]
-  onSelect: (label: string) => void
   onClose: () => void
 }) {
   const [options, setOptions] = useState<ProcessingOptionItem[]>([])
   const [loading, setLoading] = useState(true)
   const [newLabel, setNewLabel] = useState("")
+  const [newLabelKa, setNewLabelKa] = useState("")
+  const [newLabelRu, setNewLabelRu] = useState("")
   const [newMin, setNewMin] = useState("")
   const [newMax, setNewMax] = useState("")
   const [newPriceGel, setNewPriceGel] = useState("")
@@ -466,6 +533,8 @@ function ProcessingTimesModal({
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [editLabel, setEditLabel] = useState("")
+  const [editLabelKa, setEditLabelKa] = useState("")
+  const [editLabelRu, setEditLabelRu] = useState("")
   const [editMin, setEditMin] = useState("")
   const [editMax, setEditMax] = useState("")
   const [editPriceGel, setEditPriceGel] = useState("")
@@ -501,6 +570,8 @@ function ProcessingTimesModal({
         method: "POST",
         body: JSON.stringify({
           label: newLabel.trim(),
+          label_ka: newLabelKa.trim(),
+          label_ru: newLabelRu.trim(),
           est_days_min: min,
           est_days_max: max,
           price_gel: newIncluded ? 0 : (parseFloat(newPriceGel) || 0),
@@ -509,7 +580,7 @@ function ProcessingTimesModal({
           vendor_slug: newVendorSlug || undefined,
         }),
       })
-      setNewLabel(""); setNewMin(""); setNewMax(""); setNewPriceGel(""); setNewPriceUsd(""); setNewIncluded(false)
+      setNewLabel(""); setNewLabelKa(""); setNewLabelRu(""); setNewMin(""); setNewMax(""); setNewPriceGel(""); setNewPriceUsd(""); setNewIncluded(false)
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add.")
@@ -529,6 +600,8 @@ function ProcessingTimesModal({
         method: "PATCH",
         body: JSON.stringify({
           label: editLabel.trim(),
+          label_ka: editLabelKa.trim(),
+          label_ru: editLabelRu.trim(),
           est_days_min: min,
           est_days_max: max,
           price_gel: editIncluded ? 0 : (parseFloat(editPriceGel) || 0),
@@ -576,6 +649,8 @@ function ProcessingTimesModal({
                     <div className="flex flex-col gap-2 w-full">
                       <div className="flex gap-2 flex-wrap items-center">
                         <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className={INPUT_CLS + " flex-1 min-w-[140px]"} placeholder="Label" />
+                        <input value={editLabelKa} onChange={(e) => setEditLabelKa(e.target.value)} className={INPUT_CLS + " flex-1 min-w-[140px]"} placeholder="Label (Georgian)" />
+                        <input value={editLabelRu} onChange={(e) => setEditLabelRu(e.target.value)} className={INPUT_CLS + " flex-1 min-w-[140px]"} placeholder="Label (Russian)" />
                         <input value={editMin} onChange={(e) => setEditMin(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Min" />
                         <span className="text-dp-text-tertiary text-[11px]">–</span>
                         <input value={editMax} onChange={(e) => setEditMax(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Max" />
@@ -597,10 +672,7 @@ function ProcessingTimesModal({
                     </div>
                   ) : (
                     <>
-                      <button
-                        onClick={() => { onSelect(opt.label); onClose() }}
-                        className="flex-1 text-left text-[13px] text-dp-text-primary hover:text-dp-accent-cta transition-colors"
-                      >
+                      <div className="flex-1 text-left text-[13px] text-dp-text-primary">
                         <span className="font-semibold">{opt.label}</span>
                         <span className="ml-2 text-dp-text-tertiary text-[11px]">({opt.est_days_min}–{opt.est_days_max} days)</span>
                         {opt.is_included ? (
@@ -616,10 +688,12 @@ function ProcessingTimesModal({
                             {opt.vendor_slug}
                           </span>
                         )}
-                      </button>
+                      </div>
                       <button onClick={() => {
                         setEditId(opt.id)
                         setEditLabel(opt.label)
+                        setEditLabelKa(opt.label_ka ?? "")
+                        setEditLabelRu(opt.label_ru ?? "")
                         setEditMin(String(opt.est_days_min))
                         setEditMax(String(opt.est_days_max))
                         setEditPriceGel(Number(opt.price_gel) > 0 ? String(opt.price_gel) : "")
@@ -657,7 +731,9 @@ function ProcessingTimesModal({
                 </select>
               )}
               <div className="flex gap-2 flex-wrap items-center">
-                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. 20–35 business days)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
+                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (English)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
+                <input value={newLabelKa} onChange={(e) => setNewLabelKa(e.target.value)} placeholder="Label (Georgian)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
+                <input value={newLabelRu} onChange={(e) => setNewLabelRu(e.target.value)} placeholder="Label (Russian)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
                 <input value={newMin} onChange={(e) => setNewMin(e.target.value)} type="number" placeholder="Min days" className={INPUT_CLS + " w-24"} />
                 <input value={newMax} onChange={(e) => setNewMax(e.target.value)} type="number" placeholder="Max days" className={INPUT_CLS + " w-24"} />
               </div>
@@ -713,6 +789,8 @@ function ProductModal({
           title_ka: editProduct.title_ka ?? "", title_ru: editProduct.title_ru ?? "",
           categories: editProduct.category_slugs?.join(",") ?? editProduct.category_slug ?? "",
           tags: Array.isArray(editProduct.tags) ? editProduct.tags.join(", ") : "",
+          tags_ka: Array.isArray(editProduct.tags_ka) ? editProduct.tags_ka.join(", ") : "",
+          tags_ru: Array.isArray(editProduct.tags_ru) ? editProduct.tags_ru.join(", ") : "",
           vendorSlug: editProduct.vendor_slug ?? "",
           status: editProduct.status ?? "active",
           isLimited: editProduct.is_limited,
@@ -725,7 +803,15 @@ function ProductModal({
           description: editProduct.description ?? "",
           description_ka: editProduct.description_ka ?? "", description_ru: editProduct.description_ru ?? "",
           material: editProduct.material ?? "",
-          processingTimeLabel: (editProduct as {processing_time_label?: string}).processing_time_label ?? "",
+          material_ka: editProduct.material_ka ?? "",
+          material_ru: editProduct.material_ru ?? "",
+          processingTimeLabel: editProduct.processing_time_label ?? "",
+          processingTimeLabel_ka: editProduct.processing_time_label_ka ?? "",
+          processingTimeLabel_ru: editProduct.processing_time_label_ru ?? "",
+          processingOptionIds: editProduct.processing_options?.map((option) => option.id) ?? [],
+          productDetails: editProduct.product_details?.join("\n") ?? "",
+          productDetails_ka: editProduct.product_details_ka?.join("\n") ?? "",
+          productDetails_ru: editProduct.product_details_ru?.join("\n") ?? "",
         }
       : BLANK_DRAFT
   )
@@ -740,23 +826,26 @@ function ProductModal({
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const [thumbnailEditorItem, setThumbnailEditorItem] = useState<{ id?: number; src: string } | null>(null)
   const [showProcessingModal, setShowProcessingModal] = useState(false)
+  const [showTagsModal, setShowTagsModal] = useState(false)
+  const [newTag, setNewTag] = useState({ en: "", ka: "", ru: "" })
 
   // Size variants - existing (saved) and pending (to be created on save)
   const [sizeVariants, setSizeVariants] = useState<SizeVariantItem[]>(editProduct?.size_variants ?? [])
   const [pendingVariants, setPendingVariants] = useState<PendingVariant[]>([])
   const [variantImagePickerOpen, setVariantImagePickerOpen] = useState<number | null>(null)
-  const newVarRef = useRef({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
-  const [newVarDraft, setNewVarDraft] = useState({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
+  const emptyVariant = { label: "", labelKa: "", labelRu: "", sku: "", stock: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" }
+  const newVarRef = useRef(emptyVariant)
+  const [newVarDraft, setNewVarDraft] = useState(emptyVariant)
 
   // Categories
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [showNewCat, setShowNewCat] = useState(false)
   const [newCatName, setNewCatName] = useState("")
+  const [newCatNameKa, setNewCatNameKa] = useState("")
+  const [newCatNameRu, setNewCatNameRu] = useState("")
   const [creatingCat, setCreatingCat] = useState(false)
   const [catError, setCatError] = useState("")
 
-  // Available tags (fetched from filter-options)
-  const [availableTags, setAvailableTags] = useState<string[]>([])
   const [processingOptions, setProcessingOptions] = useState<ProcessingOptionItem[]>([])
 
   const [saving, setSaving] = useState(false)
@@ -777,6 +866,8 @@ function ProductModal({
           title_ka: p.title_ka ?? prev.title_ka, title_ru: p.title_ru ?? prev.title_ru,
           categories: p.category_slugs?.join(",") ?? prev.categories,
           tags: Array.isArray(p.tags) ? p.tags.join(", ") : prev.tags,
+          tags_ka: Array.isArray(p.tags_ka) ? p.tags_ka.join(", ") : prev.tags_ka,
+          tags_ru: Array.isArray(p.tags_ru) ? p.tags_ru.join(", ") : prev.tags_ru,
           vendorSlug: p.vendor_slug ?? prev.vendorSlug,
           status: p.status ?? prev.status,
           isLimited: p.is_limited ?? prev.isLimited,
@@ -789,7 +880,15 @@ function ProductModal({
           description: p.description ?? prev.description,
           description_ka: p.description_ka ?? prev.description_ka, description_ru: p.description_ru ?? prev.description_ru,
           material: p.material ?? prev.material,
-          processingTimeLabel: (p as {processing_time_label?: string}).processing_time_label ?? prev.processingTimeLabel,
+          material_ka: p.material_ka ?? prev.material_ka,
+          material_ru: p.material_ru ?? prev.material_ru,
+          processingTimeLabel: p.processing_time_label ?? prev.processingTimeLabel,
+          processingTimeLabel_ka: p.processing_time_label_ka ?? prev.processingTimeLabel_ka,
+          processingTimeLabel_ru: p.processing_time_label_ru ?? prev.processingTimeLabel_ru,
+          processingOptionIds: p.processing_options?.map((option) => option.id) ?? prev.processingOptionIds,
+          productDetails: p.product_details?.join("\n") ?? prev.productDetails,
+          productDetails_ka: p.product_details_ka?.join("\n") ?? prev.productDetails_ka,
+          productDetails_ru: p.product_details_ru?.join("\n") ?? prev.productDetails_ru,
         }))
       })
       .catch(() => {})
@@ -802,19 +901,16 @@ function ProductModal({
         setCategories(list)
       })
       .catch(() => {})
-    // Fetch available tags for pill selector
-    fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"}/products/filter-options/`)
-      .then((r) => r.json())
-      .then((d: { themes?: string[] }) => { if (Array.isArray(d.themes)) setAvailableTags(d.themes) })
-      .catch(() => {})
-    // Fetch processing time options (also called after modal closes)
-    loadProcessingOptions()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    loadProcessingOptions()
+  }, [draft.vendorSlug]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function loadProcessingOptions() {
     const vendorSlug = editProduct?.vendor_slug ?? draft.vendorSlug ?? ""
     // Vendor admins filter by their vendor; superadmins load all
-    const ptUrl = (isVendor && vendorSlug)
+    const ptUrl = vendorSlug
       ? `/admin/processing-options/?vendor=${vendorSlug}`
       : "/admin/processing-options/"
     adminFetch<ProcessingOptionItem[] | { results?: ProcessingOptionItem[] }>(ptUrl)
@@ -844,11 +940,13 @@ function ProductModal({
       const slug = newCatName.trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/[^a-z0-9-]/g, "")
       const cat = await adminFetch<CategoryOption>("/admin/categories/", {
         method: "POST",
-        body: JSON.stringify({ name: newCatName.trim(), slug }),
+        body: JSON.stringify({ name: newCatName.trim(), name_ka: newCatNameKa.trim(), name_ru: newCatNameRu.trim(), slug }),
       })
       setCategories((prev) => [...prev, cat])
       toggleCategory(cat.slug)
       setNewCatName("")
+      setNewCatNameKa("")
+      setNewCatNameRu("")
       setShowNewCat(false)
     } catch (err: unknown) {
       const e = err as { data?: { detail?: string; slug?: string[] } }
@@ -938,7 +1036,7 @@ function ProductModal({
       ...prev,
       { _key: `${Date.now()}-${Math.random()}`, ...newVarDraft },
     ])
-    setNewVarDraft({ label: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" })
+    setNewVarDraft(emptyVariant)
   }
 
   function removePendingVariant(key: string) {
@@ -964,6 +1062,19 @@ function ProductModal({
     }
   }
 
+  function updateSizeVariant(id: number, patch: Partial<SizeVariantItem>) {
+    setSizeVariants((prev) => prev.map((variant) => variant.id === id ? { ...variant, ...patch } : variant))
+  }
+
+  function saveSizeVariant(id: number, patch: Partial<SizeVariantItem>) {
+    void adminFetch<SizeVariantItem>(`/admin/size-variants/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    })
+      .then((updated) => updateSizeVariant(id, updated))
+      .catch(() => setError("Failed to update the size variant. Check that the SKU is unique."))
+  }
+
   async function handleSave() {
     if (!draft.title) { setError("Title is required."); return }
     setSaving(true)
@@ -984,7 +1095,9 @@ function ProductModal({
         categories_input: catSlugs.join(","),
         vendor_slug_input: draft.vendorSlug || undefined,
         status: draft.status,
-        tags: draft.tags.split(",").map((t) => t.trim()).filter(Boolean),
+        tags: tagValues(draft.tags).filter(Boolean),
+        tags_ka: tagValues(draft.tags_ka),
+        tags_ru: tagValues(draft.tags_ru),
         is_limited: draft.isLimited,
         is_sale: draft.isSale,
         is_new: draft.isNew,
@@ -996,7 +1109,12 @@ function ProductModal({
         description_ka: draft.description_ka,
         description_ru: draft.description_ru,
         material: draft.material,
-        processing_time_label: draft.processingTimeLabel,
+        material_ka: draft.material_ka,
+        material_ru: draft.material_ru,
+        processing_option_ids: draft.processingOptionIds,
+        product_details: draft.productDetails.split("\n").map((line) => line.trim()).filter(Boolean),
+        product_details_ka: draft.productDetails_ka.split("\n").map((line) => line.trim()).filter(Boolean),
+        product_details_ru: draft.productDetails_ru.split("\n").map((line) => line.trim()).filter(Boolean),
       }
 
       let saved: AdminProduct
@@ -1010,6 +1128,23 @@ function ProductModal({
       }
 
       const productId = saved.id
+
+      if (sizeVariants.length > 0) {
+        setSavingStep(`Saving ${sizeVariants.length} size variant${sizeVariants.length > 1 ? "s" : ""}…`)
+        await Promise.all(sizeVariants.map((variant) => adminFetch<SizeVariantItem>(
+          `/admin/size-variants/${variant.id}/`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              label: variant.label,
+              label_ka: variant.label_ka ?? "",
+              label_ru: variant.label_ru ?? "",
+              sku: variant.sku?.trim() || null,
+              stock: variant.stock ?? null,
+            }),
+          },
+        )))
+      }
 
       // Upload pending media files
       if (pendingFiles.length > 0) {
@@ -1028,6 +1163,10 @@ function ProductModal({
             body: JSON.stringify({
               product_id: productId,
               label: v.label,
+              label_ka: v.labelKa,
+              label_ru: v.labelRu,
+              sku: v.sku.trim() || null,
+              stock: v.stock.trim() === "" ? null : parseInt(v.stock),
               price_usd: v.priceUsd,
               price_gel: v.priceGel || null,
               sale_price_usd: draft.isSale ? (v.salePriceUsd || null) : null,
@@ -1072,32 +1211,55 @@ function ProductModal({
   }
 
   const selectedCatSlugs = draft.categories.split(",").map((s) => s.trim()).filter(Boolean)
-  const [tagInput, setTagInput] = useState("")
+  function tagValues(value: string) {
+    return value ? value.split(",").map((tag) => tag.trim()) : []
+  }
 
-  function commitTagInput() {
-    const typed = tagInput.split(",").map((t) => t.trim()).filter(Boolean)
-    if (!typed.length) return
-    const existing = draft.tags.split(",").map((t) => t.trim()).filter(Boolean)
-    const merged = [...existing]
-    for (const t of typed) {
-      if (!merged.map((x) => x.toLowerCase()).includes(t.toLowerCase())) merged.push(t)
+  function addTag() {
+    const english = newTag.en.trim()
+    if (!english) return
+    const tags = tagValues(draft.tags).filter(Boolean)
+    if (tags.some((tag) => tag.toLowerCase() === english.toLowerCase())) {
+      setError("This tag has already been added.")
+      return
     }
-    set("tags", merged.join(", "))
-    setTagInput("")
+    const tagsKa = tagValues(draft.tags_ka)
+    const tagsRu = tagValues(draft.tags_ru)
+    while (tagsKa.length < tags.length) tagsKa.push("")
+    while (tagsRu.length < tags.length) tagsRu.push("")
+    setDraft((current) => ({
+      ...current,
+      tags: [...tags, english].join(", "),
+      tags_ka: [...tagsKa, newTag.ka.trim()].join(", "),
+      tags_ru: [...tagsRu, newTag.ru.trim()].join(", "),
+    }))
+    setNewTag({ en: "", ka: "", ru: "" })
+    setShowTagsModal(false)
+    setError("")
+  }
+
+  function removeTag(index: number) {
+    const removeAt = (value: string) => tagValues(value).filter((_, itemIndex) => itemIndex !== index).join(", ")
+    setDraft((current) => ({
+      ...current,
+      tags: removeAt(current.tags),
+      tags_ka: removeAt(current.tags_ka),
+      tags_ru: removeAt(current.tags_ru),
+    }))
   }
 
   return (
     <>
-    <div className="fixed inset-0 z-50 bg-black/80 overflow-y-auto py-4 px-2 sm:px-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-5xl mx-auto bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-black/80 p-2 sm:p-4 flex items-center justify-center overflow-hidden" role="dialog" aria-modal="true">
+      <div className="w-full max-w-7xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden bg-dp-bg-surface border border-dp-border rounded-sm shadow-2xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-dp-border sticky top-0 bg-dp-bg-surface z-10">
+        <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-dp-border bg-dp-bg-surface">
           <h2 className="font-display text-xl sm:text-2xl text-dp-text-primary">{editProduct ? "Edit Product" : "Add Product"}</h2>
           <button onClick={onClose} className="text-dp-text-tertiary hover:text-dp-text-primary transition-colors p-1" aria-label="Close"><X size={18} /></button>
         </div>
 
-        <div className="p-5 sm:p-6 flex flex-col gap-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6 flex flex-col gap-6">
           {error && <p className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/30 rounded-sm px-3 py-2">{error}</p>}
 
           {/* ── Top 2-column grid ── */}
@@ -1111,17 +1273,28 @@ function ProductModal({
               </div>
 
               <div>
-                <label className={LABEL_CLS}>Description</label>
+                <label className={LABEL_CLS}>Short description</label>
                 <textarea rows={10} value={draft.description} onChange={(e) => set("description", e.target.value)}
                   placeholder="Product description shown on the product page…"
                   className={`${INPUT_CLS} resize-y`} />
               </div>
-              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "title_ka", label: "Title · Georgian" }, { key: "title_ru", label: "Title · Russian" }, { key: "description_ka", label: "Description · Georgian", multiline: true }, { key: "description_ru", label: "Description · Russian", multiline: true }]} />
+              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "title_ka", label: "Title · Georgian" }, { key: "title_ru", label: "Title · Russian" }, { key: "description_ka", label: "Short description · Georgian", multiline: true }, { key: "description_ru", label: "Short description · Russian", multiline: true }]} />
 
               <div>
                 <label className={LABEL_CLS}>Material</label>
                 <input value={draft.material} onChange={(e) => set("material", e.target.value)} placeholder="e.g. Aluminium + UV ink" className={INPUT_CLS} />
               </div>
+              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "material_ka", label: "Material · Georgian" }, { key: "material_ru", label: "Material · Russian" }]} />
+
+              <div>
+                <label className={LABEL_CLS}>Product Details</label>
+                <p className="text-[10px] text-dp-text-tertiary mb-2">Write one product detail per line.</p>
+                <textarea rows={6} value={draft.productDetails} onChange={(e) => set("productDetails", e.target.value)} className={`${INPUT_CLS} resize-y`} placeholder={'Printed on 0.045" thick aluminium composite\nUV-resistant, fade-proof inks'} />
+              </div>
+              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[
+                { key: "productDetails_ka", label: "Product details · Georgian", multiline: true },
+                { key: "productDetails_ru", label: "Product details · Russian", multiline: true },
+              ]} />
 
               {/* Processing time */}
               <div>
@@ -1132,79 +1305,55 @@ function ProductModal({
                     Manage
                   </button>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    value={draft.processingTimeLabel}
-                    onChange={(e) => set("processingTimeLabel", e.target.value)}
-                    placeholder="e.g. 20–35 business days"
-                    className={INPUT_CLS + " flex-1"}
-                  />
-                  {draft.processingTimeLabel && (
-                    <button type="button" onClick={() => set("processingTimeLabel", "")}
-                      className="px-2 border border-dp-border text-dp-text-tertiary hover:text-dp-text-primary rounded-sm">
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
                 {processingOptions.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  <div className="flex flex-wrap gap-2 mt-1.5">
                     {processingOptions.map((opt) => (
                       <button key={opt.id} type="button"
-                        onClick={() => set("processingTimeLabel", opt.label)}
-                        className={`px-2 py-0.5 rounded-sm border text-[10px] font-semibold transition-colors ${
-                          draft.processingTimeLabel === opt.label
+                        onClick={() => setDraft((current) => ({ ...current,
+                          processingOptionIds: current.processingOptionIds.includes(opt.id)
+                            ? current.processingOptionIds.filter((id) => id !== opt.id)
+                            : [...current.processingOptionIds, opt.id],
+                        }))}
+                        className={`px-3 py-2 rounded-sm border text-left text-[11px] font-semibold transition-colors ${
+                          draft.processingOptionIds.includes(opt.id)
                             ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta"
                             : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
                         }`}>
-                        {opt.label}
+                        <span className="block">{opt.label}</span>
+                        <span className="block mt-0.5 text-[9px] font-normal opacity-75">
+                          {opt.est_days_min}-{opt.est_days_max} days · ${Number(opt.price_usd).toFixed(2)} / ₾{Number(opt.price_gel).toFixed(2)}
+                        </span>
                       </button>
                     ))}
                   </div>
                 )}
+                {processingOptions.length === 0 && <p className="text-[11px] text-dp-text-tertiary">Create processing options in Manage, then select them here.</p>}
               </div>
 
               {/* Tags as pill selector */}
               <div>
-                <div className="flex items-center gap-2 mb-1.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
                   <label className={LABEL_CLS + " mb-0"}>Tags / Themes</label>
+                  <button type="button" onClick={() => setShowTagsModal(true)} className="text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta hover:underline">
+                    Add
+                  </button>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mb-1.5">
-                  {availableTags.map((tag) => {
-                    const selected = draft.tags.split(",").map((t) => t.trim().toLowerCase()).includes(tag.toLowerCase())
-                    return (
-                      <button key={tag} type="button"
-                        onClick={() => {
-                          const cur = draft.tags.split(",").map((t) => t.trim()).filter(Boolean)
-                          const next = selected ? cur.filter((t) => t.toLowerCase() !== tag.toLowerCase()) : [...cur, tag]
-                          set("tags", next.join(", "))
-                        }}
-                        className={`px-2.5 py-1 rounded-sm border text-[11px] font-semibold transition-colors ${
-                          selected ? "border-dp-accent-cta bg-dp-accent-cta/10 text-dp-accent-cta" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"
-                        }`}>
-                        {tag}
-                      </button>
-                    )
-                  })}
+                  {tagValues(draft.tags).filter(Boolean).map((tag, index) => (
+                    <span key={`${tag}-${index}`} className="inline-flex items-center gap-2 px-2.5 py-1 rounded-sm border border-dp-accent-cta bg-dp-accent-cta/10 text-[11px] font-semibold text-dp-accent-cta">
+                      <span>
+                        <span className="block">{tag}</span>
+                        {(tagValues(draft.tags_ka)[index] || tagValues(draft.tags_ru)[index]) && (
+                          <span className="block text-[9px] font-normal text-dp-text-tertiary">
+                            KA: {tagValues(draft.tags_ka)[index] || "-"} · RU: {tagValues(draft.tags_ru)[index] || "-"}
+                          </span>
+                        )}
+                      </span>
+                      <button type="button" onClick={() => removeTag(index)} aria-label={`Remove ${tag}`} className="hover:text-red-400"><X size={11} /></button>
+                    </span>
+                  ))}
+                  {!draft.tags && <span className="text-[11px] text-dp-text-tertiary">No tags added.</span>}
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitTagInput() } }}
-                    onBlur={commitTagInput}
-                    placeholder="Type a tag and press Enter…"
-                    className={INPUT_CLS + " flex-1"}
-                  />
-                  {draft.tags && (
-                    <button type="button" onClick={() => set("tags", "")}
-                      className="px-3 py-2 border border-dp-border rounded-sm text-[11px] text-dp-text-tertiary hover:text-red-400 hover:border-red-400/50 transition-colors">
-                      Clear
-                    </button>
-                  )}
-                </div>
-                {draft.tags && (
-                  <p className="text-[10px] text-dp-text-tertiary mt-1">Tags: {draft.tags}</p>
-                )}
               </div>
 
               {/* Flags */}
@@ -1326,6 +1475,10 @@ function ProductModal({
                         {creatingCat ? "…" : "Create"}
                       </button>
                     </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input value={newCatNameKa} onChange={(e) => setNewCatNameKa(e.target.value)} placeholder="Category name (Georgian)" className={INPUT_CLS} />
+                      <input value={newCatNameRu} onChange={(e) => setNewCatNameRu(e.target.value)} placeholder="Category name (Russian)" className={INPUT_CLS} />
+                    </div>
                     {catError && <p className="text-[10px] text-red-400">{catError}</p>}
                   </div>
                 )}
@@ -1382,7 +1535,8 @@ function ProductModal({
                 <table className="w-full text-[12px]">
                   <thead>
                     <tr className="bg-dp-bg-elevated border-b border-dp-border text-dp-text-tertiary text-[10px] font-semibold uppercase tracking-wide">
-                      <th className="text-left px-3 py-2">Label</th>
+                      <th className="text-left px-3 py-2 min-w-[190px]">Labels</th>
+                      <th className="text-left px-3 py-2 min-w-[150px]">SKU</th>
                       <th className="text-right px-3 py-2">Other market (USD $)</th>
                       <th className="text-right px-3 py-2">Georgian market (GEL ₾)</th>
                       {draft.isSale && (
@@ -1392,7 +1546,7 @@ function ProductModal({
                         </>
                       )}
                       <th className="text-left px-3 py-2">Images</th>
-                      <th className="text-right px-3 py-2">Stock</th>
+                      <th className="text-right px-3 py-2">Inventory</th>
                       <th className="px-3 py-2 w-8" />
                     </tr>
                   </thead>
@@ -1402,7 +1556,23 @@ function ProductModal({
                       const isPickerOpen = variantImagePickerOpen === sv.id
                       return (
                       <tr key={sv.id} className="border-b border-dp-border last:border-0 hover:bg-dp-bg-elevated/40 transition-colors align-top">
-                        <td className="px-3 py-2 font-semibold text-dp-text-primary">{sv.label}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-0.5">
+                            <p className="text-[12px] font-semibold text-dp-text-primary">{sv.label || "Untitled size"}</p>
+                            {sv.label_ka && sv.label_ka !== sv.label && (
+                              <p className="text-[10px] text-dp-text-tertiary">KA: {sv.label_ka}</p>
+                            )}
+                            {sv.label_ru && sv.label_ru !== sv.label && (
+                              <p className="text-[10px] text-dp-text-tertiary">RU: {sv.label_ru}</p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <input value={sv.sku ?? ""} placeholder="Auto-generated"
+                            onChange={(e) => updateSizeVariant(sv.id, { sku: e.target.value })}
+                            onBlur={(e) => saveSizeVariant(sv.id, { sku: e.currentTarget.value.trim() || null })}
+                            className="w-full px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm font-mono text-[10px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover" />
+                        </td>
                         <td className="px-3 py-2 text-right text-dp-text-primary">${parseFloat(sv.price_usd).toFixed(2)}</td>
                         <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.price_gel ? `₾${parseFloat(sv.price_gel).toFixed(2)}` : <span className="text-dp-text-tertiary">—</span>}</td>
                         {draft.isSale && (
@@ -1454,14 +1624,9 @@ function ProductModal({
                             value={(sv as {stock?: number | null}).stock ?? ""}
                             onChange={(e) => {
                               const val = e.target.value === "" ? null : parseInt(e.target.value)
-                              setSizeVariants((prev) => prev.map((s) => s.id === sv.id ? { ...s, stock: val } as typeof s : s))
-                              if (sv.id) {
-                                void adminFetch(`/admin/size-variants/${sv.id}/`, {
-                                  method: "PATCH",
-                                  body: JSON.stringify({ stock: val }),
-                                }).catch(() => {})
-                              }
+                              updateSizeVariant(sv.id, { stock: val })
                             }}
+                            onBlur={(e) => saveSizeVariant(sv.id, { stock: e.currentTarget.value === "" ? null : parseInt(e.currentTarget.value) })}
                             className="w-16 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
                           />
                         </td>
@@ -1486,6 +1651,8 @@ function ProductModal({
                   <thead>
                     <tr className="border-b border-dp-accent-cta/20 text-dp-text-tertiary text-[10px] font-semibold uppercase tracking-wide">
                       <th className="text-left px-3 py-1.5 text-dp-accent-cta">Pending (saved on submit)</th>
+                      <th className="text-left px-3 py-1.5">SKU</th>
+                      <th className="text-right px-3 py-1.5">Inventory</th>
                       <th className="text-right px-3 py-1.5">USD $</th>
                       <th className="text-right px-3 py-1.5">GEL ₾</th>
                       {draft.isSale && (
@@ -1500,7 +1667,12 @@ function ProductModal({
                   <tbody>
                     {pendingVariants.map((v) => (
                       <tr key={v._key} className="border-b border-dp-accent-cta/10 last:border-0">
-                        <td className="px-3 py-1.5 font-semibold text-dp-text-primary">{v.label}</td>
+                        <td className="px-3 py-1.5 text-dp-text-primary">
+                          <span className="font-semibold">{v.label}</span>
+                          {(v.labelKa || v.labelRu) && <span className="block text-[10px] text-dp-text-tertiary">{[v.labelKa, v.labelRu].filter(Boolean).join(" / ")}</span>}
+                        </td>
+                        <td className="px-3 py-1.5 font-mono text-[10px] text-dp-text-secondary">{v.sku || "Auto"}</td>
+                        <td className="px-3 py-1.5 text-right">{v.stock || "Unlimited"}</td>
                         <td className="px-3 py-1.5 text-right">{v.priceUsd ? `$${v.priceUsd}` : "—"}</td>
                         <td className="px-3 py-1.5 text-right">{v.priceGel ? `₾${v.priceGel}` : "—"}</td>
                         {draft.isSale && (
@@ -1523,12 +1695,28 @@ function ProductModal({
             )}
 
             {/* Add new variant row */}
-            <div className={`border border-dp-border rounded-sm p-3 grid gap-2 items-end ${draft.isSale ? "grid-cols-2 lg:grid-cols-6" : "grid-cols-2 lg:grid-cols-4"}`}>
+            <div className="border border-dp-border rounded-sm p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-end">
               <div>
                 <label className={LABEL_CLS}>Label *</label>
                 <input value={newVarDraft.label} onChange={(e) => setNewVarDraft((d) => ({ ...d, label: e.target.value }))}
                   placeholder="e.g. M / 50×70cm" className={INPUT_CLS}
                   onKeyDown={(e) => { if (e.key === "Enter") addPendingVariant() }} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Label · Georgian</label>
+                <input value={newVarDraft.labelKa} onChange={(e) => setNewVarDraft((d) => ({ ...d, labelKa: e.target.value }))} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Label · Russian</label>
+                <input value={newVarDraft.labelRu} onChange={(e) => setNewVarDraft((d) => ({ ...d, labelRu: e.target.value }))} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>SKU <span className="normal-case font-normal">(optional)</span></label>
+                <input value={newVarDraft.sku} onChange={(e) => setNewVarDraft((d) => ({ ...d, sku: e.target.value }))} placeholder="Generated if blank" className={`${INPUT_CLS} font-mono`} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Inventory <span className="normal-case font-normal">(blank = unlimited)</span></label>
+                <input type="number" min={0} value={newVarDraft.stock} onChange={(e) => setNewVarDraft((d) => ({ ...d, stock: e.target.value }))} placeholder="Unlimited" className={INPUT_CLS} />
               </div>
               <div>
                 <label className={LABEL_CLS}>Other market (USD $) *</label>
@@ -1571,7 +1759,7 @@ function ProductModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-dp-border bg-dp-bg-elevated sticky bottom-0">
+        <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-4 border-t border-dp-border bg-dp-bg-elevated">
           {savingStep ? (
             <p className="text-[11px] text-dp-text-tertiary animate-pulse">{savingStep}</p>
           ) : <span />}
@@ -1627,9 +1815,30 @@ function ProductModal({
         vendorSlug={draft.vendorSlug}
         isStaff={!isVendor}
         vendors={vendors}
-        onSelect={(label) => set("processingTimeLabel", label)}
         onClose={() => { setShowProcessingModal(false); loadProcessingOptions() }}
       />
+    )}
+    {showTagsModal && (
+      <div className="fixed inset-0 z-[60] bg-black/70 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
+        <div className="w-full max-w-xl bg-dp-bg-surface border border-dp-border rounded-sm shadow-xl">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border">
+            <div>
+              <h2 className="font-display text-xl text-dp-text-primary">Add Tag / Theme</h2>
+              <p className="text-[11px] text-dp-text-tertiary mt-1">Add one tag and its translations.</p>
+            </div>
+            <button type="button" onClick={() => setShowTagsModal(false)} aria-label="Close" className="text-dp-text-tertiary hover:text-dp-text-primary"><X size={18} /></button>
+          </div>
+          <div className="p-5 flex flex-col gap-4">
+            <div><label className={LABEL_CLS}>English</label><input value={newTag.en} onChange={(e) => setNewTag((current) => ({ ...current, en: e.target.value }))} className={INPUT_CLS} placeholder="Anime" autoFocus /></div>
+            <div><label className={LABEL_CLS}>Georgian</label><input value={newTag.ka} onChange={(e) => setNewTag((current) => ({ ...current, ka: e.target.value }))} className={INPUT_CLS} /></div>
+            <div><label className={LABEL_CLS}>Russian</label><input value={newTag.ru} onChange={(e) => setNewTag((current) => ({ ...current, ru: e.target.value }))} className={INPUT_CLS} /></div>
+          </div>
+          <div className="flex justify-end px-5 py-4 border-t border-dp-border">
+            <button type="button" onClick={() => setShowTagsModal(false)} className="px-4 py-2 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm">Cancel</button>
+            <button type="button" onClick={addTag} disabled={!newTag.en.trim()} className="ml-2 px-5 py-2 bg-dp-accent-cta text-white text-[11px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-40">Add</button>
+          </div>
+        </div>
+      </div>
     )}
     </>
   )
@@ -1958,6 +2167,7 @@ export default function AdminProductsPage(): React.ReactElement {
             {filtered.map((p) => {
               const firstImg = p.images?.find((i) => (i.media_type ?? "image") === "image") ?? p.images?.[0]
               const thumb = firstImg?.src ?? firstImg?.url ?? p.image_url ?? ""
+              const prices = productCardPriceRanges(p)
               return (
                 <div key={p.id} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
                   <div className="aspect-[3/4] relative bg-dp-bg-elevated">
@@ -1977,12 +2187,13 @@ export default function AdminProductsPage(): React.ReactElement {
                   <div className="p-2.5 pt-2">
                     <p className="text-[9px] text-dp-text-tertiary truncate">{p.artist_name}</p>
                     <p className="text-[12px] font-semibold text-dp-text-primary truncate mt-0.5">{p.title}</p>
-                    <div className="mt-1">
-                      {p.size_variants && p.size_variants.length > 0 ? (
-                        <span className="text-[12px] font-bold text-dp-text-primary">${parseFloat(p.size_variants[0].price_usd).toFixed(2)}+</span>
-                      ) : (
-                        <span className="text-[12px] font-bold text-dp-text-primary">${parseFloat(p.base_price).toFixed(2)}</span>
-                      )}
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      <span className="text-[11px] font-bold text-dp-text-primary">
+                        GEL: {prices.gel}
+                      </span>
+                      <span className="text-[11px] font-bold text-dp-text-primary">
+                        USD: {prices.usd}
+                      </span>
                     </div>
                     <div className="flex gap-1 mt-1.5 flex-wrap">
                       {p.is_limited   && <span className="badge-limited text-[9px]">Limited</span>}

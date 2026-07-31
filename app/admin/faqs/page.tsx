@@ -106,8 +106,8 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
                 <p className="text-[13px] text-dp-text-secondary mt-1 line-clamp-2">{faq.answer}</p>
               </div>
               <div className="flex gap-2 shrink-0">
-                <button onClick={() => { setForm({ ...faq }); setEditingId(faq.id) }} className="p-2 border border-dp-border rounded-sm"><Pencil size={13} /></button>
-                <button onClick={() => remove(faq.id)} className="p-2 border border-dp-border rounded-sm text-red-400"><Trash2 size={13} /></button>
+                <button aria-label={`Edit ${faq.question}`} onClick={() => { setForm({ ...faq }); setEditingId(faq.id) }} className="p-2 border border-dp-border rounded-sm"><Pencil size={13} /></button>
+                <button aria-label={`Delete ${faq.question}`} onClick={() => remove(faq.id)} className="p-2 border border-dp-border rounded-sm text-red-400"><Trash2 size={13} /></button>
               </div>
             </div>
           ))}
