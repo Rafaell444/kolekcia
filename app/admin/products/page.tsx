@@ -27,6 +27,7 @@ type SizeVariantItem = {
   sort_order: number
   is_active: boolean
   stock?: number | null
+  is_ready_to_ship?: boolean
   images?: { id: number; url: string; src?: string; media_type?: string }[]
 }
 
@@ -1546,7 +1547,8 @@ function ProductModal({
                         </>
                       )}
                       <th className="text-left px-3 py-2">Images</th>
-                      <th className="text-right px-3 py-2">Inventory</th>
+                      <th className="text-right px-3 py-2">Stock</th>
+                      <th className="text-center px-3 py-2">Ready</th>
                       <th className="px-3 py-2 w-8" />
                     </tr>
                   </thead>
@@ -1628,6 +1630,17 @@ function ProductModal({
                             }}
                             onBlur={(e) => saveSizeVariant(sv.id, { stock: e.currentTarget.value === "" ? null : parseInt(e.currentTarget.value) })}
                             className="w-16 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={sv.is_ready_to_ship ?? false}
+                            onChange={() => {
+                              const next = !(sv.is_ready_to_ship ?? false)
+                              updateSizeVariant(sv.id, { is_ready_to_ship: next })
+                              saveSizeVariant(sv.id, { is_ready_to_ship: next })
+                            }}
+                            className="w-3.5 h-3.5 accent-emerald-500"
+                            title="Ready to ship — pre-made item, available for fast shipping"
                           />
                         </td>
                         <td className="px-3 py-2 text-right">

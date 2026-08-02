@@ -1,10 +1,10 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
 import LocalizedLink from "@/components/seo/LocalizedLink"
-import { ChevronRight, CreditCard, CheckCircle, Lock, Truck, ArrowLeft, MapPin } from "lucide-react"
+import { ChevronRight, CreditCard, CheckCircle, Lock, Truck, ArrowLeft, MapPin, Package } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
 import { authFetch } from "@/lib/api"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
@@ -16,12 +16,14 @@ type DeliveryOpt = {
   id: number
   slug: string
   label: string
+  vendor_id?: number
   vendor_name?: string
   price?: string
   price_gel: string
   price_usd: string
   est_days_min: number
   est_days_max: number
+  is_express?: boolean
 }
 
 type Step = "shipping" | "payment" | "review" | "confirmed"
@@ -32,7 +34,6 @@ function shippingPriceLabel(opt: DeliveryOpt, currency: string): string {
   return currency === "GEL" ? `₾${amount.toFixed(2)}` : `$${amount.toFixed(2)}`
 }
 
-// ─── Step indicator ───────────────────────────────────────
 function StepBar({ current }: { current: Step }) {
   const steps: { id: Step; label: string }[] = [
     { id: "shipping", label: "Shipping" },
@@ -73,7 +74,6 @@ function StepBar({ current }: { current: Step }) {
   )
 }
 
-// ─── Field component ──────────────────────────────────────
 function Field({
   label, id, type = "text", placeholder, autoComplete, required = true,
   value, onChange,
@@ -100,17 +100,10 @@ function Field({
   )
 }
 
-// ─── Geo-pricing modal ────────────────────────────────────
 function GeoPricingModal({
-  country,
-  currency,
-  loading,
-  onContinue,
+  country, currency, loading, onContinue,
 }: {
-  country: string
-  currency: string
-  loading?: boolean
-  onContinue: () => void
+  country: string; currency: string; loading?: boolean; onContinue: () => void
 }) {
   const isGE = country === "GE"
   const countryLabel = isGE ? "Georgia 🇬🇪" : country
@@ -143,17 +136,35 @@ function GeoPricingModal({
   )
 }
 
-// ─── Shipping form ────────────────────────────────────────
-function ShippingMethodSelector({
-  options,
-  value,
+// Group delivery options by vendor
+type VendorGroup = {
+  vendorId: number
+  vendorName: string
+  options: DeliveryOpt[]
+}
+
+function groupOptionsByVendor(options: DeliveryOpt[]): VendorGroup[] {
+  const map = new Map<number, VendorGroup>()
+  for (const opt of options) {
+    const vid = opt.vendor_id ?? 0
+    if (!map.has(vid)) {
+      map.set(vid, { vendorId: vid, vendorName: opt.vendor_name ?? "", options: [] })
+    }
+    map.get(vid)!.options.push(opt)
+  }
+  return Array.from(map.values())
+}
+
+function PerVendorShippingSelector({
+  groups,
+  selections,
   onChange,
   currency,
   loading,
 }: {
-  options: DeliveryOpt[]
-  value: string
-  onChange: (slug: string) => void
+  groups: VendorGroup[]
+  selections: Record<string, string>
+  onChange: (vendorId: number, slug: string) => void
   currency: string
   loading: boolean
 }) {
@@ -164,57 +175,67 @@ function ShippingMethodSelector({
       </div>
     )
   }
-  if (options.length === 0) return null
+  if (groups.length === 0) return null
+
   return (
-    <div>
-      <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2">Shipping Method</p>
-      <div className="flex flex-col gap-2">
-        {options.map((opt) => (
-          <label
-            key={opt.slug}
-            className={`flex items-center justify-between gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${
-              value === opt.slug
-                ? "border-dp-accent-cta bg-dp-accent-cta/5"
-                : "border-dp-border hover:border-dp-border-hover"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <input
-                type="radio"
-                name="delivery"
-                value={opt.slug}
-                checked={value === opt.slug}
-                onChange={() => onChange(opt.slug)}
-                className="accent-dp-accent-cta"
-              />
-              <div>
-                <p className="text-[13px] font-semibold text-dp-text-primary">{opt.label}</p>
-                {opt.vendor_name && <p className="text-[11px] text-dp-text-secondary">{opt.vendor_name}</p>}
-                <p className="text-[11px] text-dp-text-tertiary">{opt.est_days_min}-{opt.est_days_max} business days</p>
-              </div>
+    <div className="flex flex-col gap-4">
+      <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">Shipping Method</p>
+      {groups.map((group) => (
+        <div key={group.vendorId} className="flex flex-col gap-2">
+          {groups.length > 1 && (
+            <div className="flex items-center gap-2">
+              <Package size={13} className="text-dp-accent-cta" />
+              <span className="text-[12px] font-semibold text-dp-text-primary">{group.vendorName}</span>
             </div>
-            <span className="text-[13px] font-bold text-dp-text-primary">{shippingPriceLabel(opt, currency)}</span>
-          </label>
-        ))}
-      </div>
+          )}
+          {group.options.map((opt) => (
+            <label
+              key={opt.slug}
+              className={`flex items-center justify-between gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${
+                selections[String(group.vendorId)] === opt.slug
+                  ? "border-dp-accent-cta bg-dp-accent-cta/5"
+                  : "border-dp-border hover:border-dp-border-hover"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  name={`delivery-${group.vendorId}`}
+                  value={opt.slug}
+                  checked={selections[String(group.vendorId)] === opt.slug}
+                  onChange={() => onChange(group.vendorId, opt.slug)}
+                  className="accent-dp-accent-cta"
+                />
+                <div>
+                  <p className="text-[13px] font-semibold text-dp-text-primary">
+                    {opt.label}
+                    {opt.is_express && <span className="ml-1.5 text-[10px] font-bold text-dp-accent-cta">EXPRESS</span>}
+                  </p>
+                  {groups.length <= 1 && opt.vendor_name && <p className="text-[11px] text-dp-text-secondary">{opt.vendor_name}</p>}
+                  <p className="text-[11px] text-dp-text-tertiary">{opt.est_days_min}-{opt.est_days_max} business days</p>
+                </div>
+              </div>
+              <span className="text-[13px] font-bold text-dp-text-primary">{shippingPriceLabel(opt, currency)}</span>
+            </label>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
 
 function ShippingForm({
-  onNext,
-  onCountryChange,
-  deliveryOptions,
-  deliveryType,
-  onDeliveryTypeChange,
-  deliveryLoading,
+  onNext, onCountryChange,
+  deliveryOptions, shippingSelections, onShippingSelectionChange,
+  deliveryLoading, vendorGroups,
 }: {
   onNext: (data: Record<string, string>, country: string) => void
   onCountryChange: (country: string) => void
   deliveryOptions: DeliveryOpt[]
-  deliveryType: string
-  onDeliveryTypeChange: (slug: string) => void
+  shippingSelections: Record<string, string>
+  onShippingSelectionChange: (vendorId: number, slug: string) => void
   deliveryLoading: boolean
+  vendorGroups: VendorGroup[]
 }) {
   const [f, setF] = useState({
     name: "", streetAddress: "", country: "US", state: "", zipCode: "",
@@ -225,7 +246,11 @@ function ShippingForm({
     if (key === "country") onCountryChange(v)
   }
   const shippingCurrency = f.country === "GE" ? "GEL" : "USD"
-  const valid = Object.values(f).every(Boolean) && !deliveryLoading && (deliveryOptions.length === 0 || Boolean(deliveryType))
+
+  const allVendorsHaveSelection = vendorGroups.length === 0 || vendorGroups.every(
+    (g) => Boolean(shippingSelections[String(g.vendorId)])
+  )
+  const valid = Object.values(f).every(Boolean) && !deliveryLoading && allVendorsHaveSelection
 
   return (
     <form
@@ -247,13 +272,9 @@ function ShippingForm({
     >
       <h2 className="font-display text-3xl text-dp-text-primary">Shipping Information</h2>
 
-      {/* Full name */}
       <Field label="Full Name" id="name" autoComplete="name" placeholder="First and last name" value={f.name} onChange={set("name")} />
-
-      {/* Street address */}
       <Field label="Street Address" id="streetAddress" autoComplete="street-address" placeholder="123 Main Street, Apt 4B" value={f.streetAddress} onChange={set("streetAddress")} />
 
-      {/* Country + State */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
           <label htmlFor="country" className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">
@@ -279,21 +300,17 @@ function ShippingForm({
         <Field label="State / Region" id="state" autoComplete="address-level1" placeholder="e.g. New York" value={f.state} onChange={set("state")} />
       </div>
 
-      {/* Zip code */}
       <Field label="ZIP / Postal Code" id="zipCode" autoComplete="postal-code" placeholder="e.g. 10001" value={f.zipCode} onChange={set("zipCode")} />
-
-      {/* Email */}
       <Field label="Email Address" id="email" type="email" autoComplete="email" placeholder="you@example.com" value={f.email} onChange={set("email")} />
 
-      <ShippingMethodSelector
-        options={deliveryOptions}
-        value={deliveryType}
-        onChange={onDeliveryTypeChange}
+      <PerVendorShippingSelector
+        groups={vendorGroups}
+        selections={shippingSelections}
+        onChange={onShippingSelectionChange}
         currency={shippingCurrency}
         loading={deliveryLoading}
       />
 
-      {/* Phone with hint */}
       <div className="flex flex-col gap-1">
         <label htmlFor="phone" className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">
           Phone Number *
@@ -324,7 +341,6 @@ function ShippingForm({
   )
 }
 
-// ─── Payment form ─────────────────────────────────────────
 type PaymentMethod = { id: number; brand: string; last4: string; exp_month: number; exp_year: number; is_default: boolean }
 
 export type CheckoutPaymentData = {
@@ -480,18 +496,16 @@ function PaymentForm({
   )
 }
 
-// ─── Review step ──────────────────────────────────────────
 function ReviewStep({
   onConfirm, onBack, shippingData, checkoutCurrency, paymentData,
-  deliveryType, onDeliveryTypeChange, deliveryOptions,
+  shippingSelections, deliveryOptions,
 }: {
   onConfirm: (orderNum: string, orderId: string) => void
   onBack: () => void
   shippingData: Record<string, string>
   checkoutCurrency: string
   paymentData: CheckoutPaymentData | null
-  deliveryType: string
-  onDeliveryTypeChange: (slug: string) => void
+  shippingSelections: Record<string, string>
   deliveryOptions: DeliveryOpt[]
 }) {
   const { cart, refresh } = useCart()
@@ -510,12 +524,23 @@ function ReviewStep({
     const proc = item.processing_option ? parseFloat(item.processing_fee || "0") : 0
     return sum + Math.max(0, line - wrap - proc)
   }, 0)
-  const selectedDelivery = deliveryOptions.find((o) => o.slug === deliveryType)
-  const deliveryPrice = selectedDelivery
-    ? parseFloat(selectedDelivery.price ?? (checkoutCurrency === "GEL" ? selectedDelivery.price_gel : selectedDelivery.price_usd) ?? "0")
-    : 0
+
+  // Sum delivery from all vendor selections
+  const deliveryPrice = useMemo(() => {
+    let total = 0
+    for (const slug of Object.values(shippingSelections)) {
+      const opt = deliveryOptions.find((o) => o.slug === slug)
+      if (opt) total += parseFloat(opt.price ?? (checkoutCurrency === "GEL" ? opt.price_gel : opt.price_usd) ?? "0")
+    }
+    return total
+  }, [shippingSelections, deliveryOptions, checkoutCurrency])
+
   const discount = parseFloat(cart?.discount || "0")
   const total = Math.max(0, productsTotal + giftWrapTotal + processingTotal - discount + deliveryPrice)
+
+  // Determine checkout payload: use per-vendor shipping_selections or single delivery_type
+  const hasMultipleVendors = Object.keys(shippingSelections).length > 1
+  const singleDeliveryType = Object.values(shippingSelections)[0] ?? "standard"
 
   async function handlePlaceOrder() {
     setLoading(true)
@@ -534,13 +559,21 @@ function ReviewStep({
         }).catch(() => {})
       }
       type OrderResponse = { id: string; order_number: string }
+      const checkoutBody: Record<string, unknown> = {
+        ...shippingData,
+        currency: checkoutCurrency,
+      }
+
+      if (hasMultipleVendors) {
+        checkoutBody.shipping_selections = shippingSelections
+        checkoutBody.delivery_type = "per-vendor"
+      } else {
+        checkoutBody.delivery_type = singleDeliveryType
+      }
+
       const order = await authFetch<OrderResponse>("/orders/checkout/", {
         method: "POST",
-        body: JSON.stringify({
-          ...shippingData,
-          currency: checkoutCurrency,
-          delivery_type: deliveryType,
-        }),
+        body: JSON.stringify(checkoutBody),
       })
       await authFetch("/orders/cart/", { method: "DELETE" }).catch(() => {})
       await refresh()
@@ -552,6 +585,22 @@ function ReviewStep({
       setLoading(false)
     }
   }
+
+  // Group selected shipping for display
+  const shippingLines = useMemo(() => {
+    const lines: { label: string; vendorName: string; price: number }[] = []
+    for (const [, slug] of Object.entries(shippingSelections)) {
+      const opt = deliveryOptions.find((o) => o.slug === slug)
+      if (opt) {
+        lines.push({
+          label: opt.label,
+          vendorName: opt.vendor_name ?? "",
+          price: parseFloat(opt.price ?? (checkoutCurrency === "GEL" ? opt.price_gel : opt.price_usd) ?? "0"),
+        })
+      }
+    }
+    return lines
+  }, [shippingSelections, deliveryOptions, checkoutCurrency])
 
   return (
     <div className="flex flex-col gap-5" aria-label="Order review">
@@ -601,12 +650,23 @@ function ReviewStep({
               <span className="font-semibold">−{formatPrice(discount)}</span>
             </div>
           )}
-          <div className="flex justify-between text-[13px]">
-            <span className="text-dp-text-secondary">Shipping</span>
-            <span className="text-dp-text-primary font-semibold">
-              {deliveryPrice === 0 ? "Free" : `+${formatPrice(deliveryPrice)}`}
-            </span>
-          </div>
+          {shippingLines.map((line, i) => (
+            <div key={i} className="flex justify-between text-[13px]">
+              <span className="text-dp-text-secondary">
+                Shipping{line.vendorName && shippingLines.length > 1 ? ` · ${line.vendorName}` : ""}
+                <span className="text-dp-text-tertiary text-[11px] ml-1">({line.label})</span>
+              </span>
+              <span className="text-dp-text-primary font-semibold">
+                {line.price === 0 ? "Free" : `+${formatPrice(line.price)}`}
+              </span>
+            </div>
+          ))}
+          {shippingLines.length === 0 && (
+            <div className="flex justify-between text-[13px]">
+              <span className="text-dp-text-secondary">Shipping</span>
+              <span className="text-dp-text-primary font-semibold">Free</span>
+            </div>
+          )}
           {checkoutCurrency !== "USD" && (
             <div className="flex justify-between text-[11px]">
               <span className="text-dp-text-tertiary">Currency</span>
@@ -619,47 +679,6 @@ function ReviewStep({
           </div>
         </div>
       </div>
-
-      {/* Delivery selector */}
-      {false && deliveryOptions.length > 0 && (
-        <div>
-          <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2">Shipping Method</p>
-          <div className="flex flex-col gap-2">
-            {deliveryOptions.map((opt) => {
-              const optPrice = parseFloat(opt.price ?? (checkoutCurrency === "GEL" ? opt.price_gel : opt.price_usd) ?? "0")
-              return (
-                <label
-                  key={opt.slug}
-                  className={`flex items-center justify-between gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${
-                    deliveryType === opt.slug
-                      ? "border-dp-accent-cta bg-dp-accent-cta/5"
-                      : "border-dp-border hover:border-dp-border-hover"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="radio"
-                      name="delivery"
-                      value={opt.slug}
-                      checked={deliveryType === opt.slug}
-                      onChange={() => onDeliveryTypeChange(opt.slug)}
-                      className="accent-dp-accent-cta"
-                    />
-                    <div>
-                      <p className="text-[13px] font-semibold text-dp-text-primary">{opt.label}</p>
-                      {opt.vendor_name && <p className="text-[11px] text-dp-text-secondary">{opt.vendor_name}</p>}
-                      <p className="text-[11px] text-dp-text-tertiary">{opt.est_days_min}–{opt.est_days_max} business days</p>
-                    </div>
-                  </div>
-                  <span className="text-[13px] font-bold text-dp-text-primary">
-                    {optPrice === 0 ? "Free" : checkoutCurrency === "GEL" ? `₾${optPrice.toFixed(2)}` : `$${optPrice.toFixed(2)}`}
-                  </span>
-                </label>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       <div className="flex gap-3 mt-1">
         <button onClick={onBack} className="flex items-center gap-1 px-4 py-3 border border-dp-border rounded-sm text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
@@ -678,7 +697,6 @@ function ReviewStep({
   )
 }
 
-// ─── Confirmation ─────────────────────────────────────────
 function Confirmed({ orderNumber, orderId }: { orderNumber: string; orderId?: string }) {
   const detailHref = orderId ? `/account/orders/${orderId}` : "/account/orders"
   return (
@@ -711,7 +729,6 @@ function Confirmed({ orderNumber, orderId }: { orderNumber: string; orderId?: st
   )
 }
 
-// ─── Order aside ──────────────────────────────────────────
 function OrderAside({
   deliveryPrice = 0,
   showShipping = false,
@@ -804,7 +821,6 @@ function OrderAside({
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────
 export default function CheckoutPage(): React.ReactElement {
   useRequireAuth()
   const { repriceCart } = useCart()
@@ -818,17 +834,20 @@ export default function CheckoutPage(): React.ReactElement {
   const [pendingShippingData, setPendingShippingData] = useState<Record<string, string>>({})
   const [pendingCountry, setPendingCountry] = useState("")
   const [checkoutCurrency, setCheckoutCurrency] = useState("USD")
-  const [isGE, setIsGE] = useState(false)
   const [paymentData, setPaymentData] = useState<CheckoutPaymentData | null>(null)
-  const [deliveryType, setDeliveryType] = useState("standard")
+
+  // Per-vendor shipping
+  const [shippingSelections, setShippingSelections] = useState<Record<string, string>>({})
   const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOpt[]>([])
   const [deliveryLoading, setDeliveryLoading] = useState(false)
   const [shippingCountryDraft, setShippingCountryDraft] = useState("US")
 
+  const vendorGroups = useMemo(() => groupOptionsByVendor(deliveryOptions), [deliveryOptions])
+
   useEffect(() => {
     if (!shippingCountryDraft) {
       setDeliveryOptions([])
-      setDeliveryType("standard")
+      setShippingSelections({})
       return
     }
     setDeliveryLoading(true)
@@ -836,34 +855,53 @@ export default function CheckoutPage(): React.ReactElement {
       .then((d) => {
         if (Array.isArray(d) && d.length > 0) {
           setDeliveryOptions(d)
-          setDeliveryType((prev) => (d.some((o) => o.slug === prev) ? prev : d[0].slug))
+          // Auto-select first option per vendor
+          const groups = groupOptionsByVendor(d)
+          const newSelections: Record<string, string> = {}
+          for (const g of groups) {
+            const existing = shippingSelections[String(g.vendorId)]
+            if (existing && g.options.some((o) => o.slug === existing)) {
+              newSelections[String(g.vendorId)] = existing
+            } else {
+              newSelections[String(g.vendorId)] = g.options[0].slug
+            }
+          }
+          setShippingSelections(newSelections)
         } else {
           setDeliveryOptions([])
-          setDeliveryType("standard")
+          setShippingSelections({})
         }
       })
       .catch(() => {
         setDeliveryOptions([])
-        setDeliveryType("standard")
+        setShippingSelections({})
       })
       .finally(() => setDeliveryLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingCountryDraft])
 
-  const selectedDelivery = deliveryOptions.find((o) => o.slug === deliveryType)
-  const deliveryPrice = selectedDelivery
-    ? parseFloat(selectedDelivery.price ?? (checkoutCurrency === "GEL" ? selectedDelivery.price_gel : selectedDelivery.price_usd) ?? "0")
-    : 0
+  const handleShippingSelectionChange = (vendorId: number, slug: string) => {
+    setShippingSelections((prev) => ({ ...prev, [String(vendorId)]: slug }))
+  }
+
+  // Total delivery price from all vendor selections
+  const deliveryPrice = useMemo(() => {
+    let total = 0
+    for (const slug of Object.values(shippingSelections)) {
+      const opt = deliveryOptions.find((o) => o.slug === slug)
+      if (opt) total += parseFloat(opt.price ?? (checkoutCurrency === "GEL" ? opt.price_gel : opt.price_usd) ?? "0")
+    }
+    return total
+  }, [shippingSelections, deliveryOptions, checkoutCurrency])
 
   function handleShippingNext(data: Record<string, string>, country: string) {
     const correctCurrency = country === "GE" ? "GEL" : "USD"
-    const isGEAddress = country === "GE"
 
     if (correctCurrency !== currency) {
       setPendingShippingData(data)
       setPendingCountry(country)
       setShowGeoModal(true)
     } else {
-      setIsGE(isGEAddress)
       setCheckoutCurrency(correctCurrency)
       setShippingData(data)
       setStep("payment")
@@ -872,22 +910,17 @@ export default function CheckoutPage(): React.ReactElement {
 
   async function handleGeoContinue() {
     const correctCurrency = pendingCountry === "GE" ? "GEL" : "USD"
-    const isGEAddress = pendingCountry === "GE"
     setGeoLoading(true)
     try {
-      // Re-resolve cart from admin market prices for the new currency (no FX)
       await repriceCart(correctCurrency)
       setCurrency(correctCurrency as "GEL" | "USD")
       setCheckoutCurrency(correctCurrency)
-      setIsGE(isGEAddress)
       setShippingData(pendingShippingData)
       setShowGeoModal(false)
       setStep("payment")
     } catch {
-      // Still continue — checkout endpoint also re-resolves; warn via modal stay if needed
       setCurrency(correctCurrency as "GEL" | "USD")
       setCheckoutCurrency(correctCurrency)
-      setIsGE(isGEAddress)
       setShippingData(pendingShippingData)
       setShowGeoModal(false)
       setStep("payment")
@@ -924,19 +957,19 @@ export default function CheckoutPage(): React.ReactElement {
                   onNext={handleShippingNext}
                   onCountryChange={setShippingCountryDraft}
                   deliveryOptions={deliveryOptions}
-                  deliveryType={deliveryType}
-                  onDeliveryTypeChange={setDeliveryType}
+                  shippingSelections={shippingSelections}
+                  onShippingSelectionChange={handleShippingSelectionChange}
                   deliveryLoading={deliveryLoading}
+                  vendorGroups={vendorGroups}
                 />
               )}
-              {step === "payment"  && <PaymentForm  onNext={(data) => { setPaymentData(data); setStep("review") }}  onBack={() => setStep("shipping")} />}
-              {step === "review"   && (
+              {step === "payment" && <PaymentForm onNext={(data) => { setPaymentData(data); setStep("review") }} onBack={() => setStep("shipping")} />}
+              {step === "review" && (
                 <ReviewStep
                   shippingData={shippingData}
                   checkoutCurrency={checkoutCurrency}
                   paymentData={paymentData}
-                  deliveryType={deliveryType}
-                  onDeliveryTypeChange={setDeliveryType}
+                  shippingSelections={shippingSelections}
                   deliveryOptions={deliveryOptions}
                   onConfirm={(num, id) => { setConfirmedOrder(num); setConfirmedOrderId(id); setStep("confirmed") }}
                   onBack={() => setStep("payment")}

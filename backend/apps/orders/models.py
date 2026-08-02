@@ -148,6 +148,7 @@ class VendorShippingOption(models.Model):
     est_days_min = models.PositiveIntegerField(default=1)
     est_days_max = models.PositiveIntegerField(default=5)
     is_active = models.BooleanField(default=True)
+    is_express = models.BooleanField(default=False, help_text="Express/fast shipping. Only shown if all vendor items in the cart are ready to ship.")
     sort_order = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
@@ -186,9 +187,36 @@ class ProcessingOption(models.Model):
         return self.label
 
 
+class OrderShipment(models.Model):
+    SHIPMENT_STATUS_CHOICES = [
+        ("processing", "Processing"),
+        ("shipped", "Shipped"),
+        ("delivered", "Delivered"),
+    ]
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="shipments")
+    vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="order_shipments")
+    delivery_type = models.CharField(max_length=50)
+    delivery_label = models.CharField(max_length=100)
+    delivery_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    tracking_code = models.CharField(max_length=100, blank=True)
+    shipped_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=SHIPMENT_STATUS_CHOICES, default="processing")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "order_shipments"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        vendor_name = self.vendor.name if self.vendor else "Unknown"
+        return f"Shipment {self.pk} — {vendor_name} ({self.status})"
+
+
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="order_items")
+    shipment = models.ForeignKey(OrderShipment, on_delete=models.SET_NULL, null=True, blank=True, related_name="items")
     product_title = models.CharField(max_length=255)
     product_image = models.URLField(blank=True)
     artist_name = models.CharField(max_length=255, blank=True)

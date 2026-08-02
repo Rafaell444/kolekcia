@@ -12,13 +12,14 @@ class ProductFilter(django_filters.FilterSet):
     new        = django_filters.BooleanFilter(field_name="is_new")
     exclusive  = django_filters.BooleanFilter(field_name="is_exclusive")
     limited    = django_filters.BooleanFilter(field_name="is_limited")
+    ready_to_ship = django_filters.BooleanFilter(method="filter_ready_to_ship")
     material   = django_filters.CharFilter(method="filter_material")
     size       = django_filters.CharFilter(method="filter_size")
     tag        = django_filters.CharFilter(method="filter_tag")
 
     class Meta:
         model = Product
-        fields = ["category", "artist", "vendor", "min_price", "max_price", "sale", "new", "exclusive", "limited", "material", "size", "tag"]
+        fields = ["category", "artist", "vendor", "min_price", "max_price", "sale", "new", "exclusive", "limited", "ready_to_ship", "material", "size", "tag"]
 
     def filter_category(self, queryset, name, value):
         from django.db.models import Q
@@ -119,6 +120,22 @@ class ProductFilter(django_filters.FilterSet):
         for s in sizes:
             q |= Q(size_variants__label__iexact=s)
         return queryset.filter(q).distinct()
+
+    def filter_ready_to_ship(self, queryset, name, value):
+        if not value:
+            return queryset
+        from django.db.models import Exists, OuterRef
+        from .models import SizeVariant
+        return queryset.filter(
+            Exists(
+                SizeVariant.objects.filter(
+                    product_id=OuterRef("pk"),
+                    is_active=True,
+                    is_ready_to_ship=True,
+                    stock__gt=0,
+                )
+            )
+        )
 
     def filter_tag(self, queryset, name, value):
         # Accept comma-separated tag values; products must contain ANY of the given tags

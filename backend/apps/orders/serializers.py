@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
+from .models import Cart, CartItem, Order, OrderItem, OrderShipment, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
 from apps.products.serializers import ProductVariantSerializer, SizeVariantSerializer
 from apps.vendors.models import Vendor
 
@@ -76,7 +76,7 @@ class ProcessingOptionSerializer(serializers.ModelSerializer):
 class VendorShippingOptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorShippingOption
-        fields = ("id", "market", "label", "price", "est_days_min", "est_days_max", "is_active", "sort_order")
+        fields = ("id", "market", "label", "price", "est_days_min", "est_days_max", "is_active", "is_express", "sort_order")
 
 
 class CartSerializer(serializers.ModelSerializer):
@@ -103,6 +103,23 @@ class CartSerializer(serializers.ModelSerializer):
             return "0.00"
         if promo.owner_id:
             amount = promo.calculate_product_discount(product_subtotal_from_cart(obj))
+        elif promo.is_scoped:
+            items_with_products = []
+            for item in obj.items.select_related(
+                "variant__product", "size_variant__product"
+            ):
+                product = (
+                    item.size_variant.product if item.size_variant_id
+                    else item.variant.product if item.variant_id
+                    else None
+                )
+                if product:
+                    unit = Decimal(item.unit_price or 0)
+                    if unit == 0:
+                        from apps.orders.pricing import resolve_unit_price
+                        unit = resolve_unit_price(item.variant, item.size_variant, item.currency)
+                    items_with_products.append((product, unit * item.quantity))
+            amount = promo.calculate_scoped_discount(items_with_products)
         else:
             amount = promo.calculate_discount(Decimal(obj.subtotal))
         return str(amount.quantize(Decimal("0.01")))
@@ -115,7 +132,7 @@ class CartSerializer(serializers.ModelSerializer):
 
     def get_promo_products_only(self, obj):
         promo = obj.promo_code
-        return bool(promo and promo.owner_id)
+        return bool(promo and (promo.owner_id or promo.is_scoped))
 
 
 class AddToCartSerializer(serializers.Serializer):
@@ -135,12 +152,27 @@ class AddToCartSerializer(serializers.Serializer):
         return attrs
 
 
+class OrderShipmentSerializer(serializers.ModelSerializer):
+    vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True, default="")
+
+    class Meta:
+        model = OrderShipment
+        fields = (
+            "id", "vendor", "vendor_name", "delivery_type", "delivery_label",
+            "delivery_price", "tracking_code", "shipped_at", "status", "created_at",
+        )
+        read_only_fields = ("id", "created_at")
+
+
 class OrderItemSerializer(serializers.ModelSerializer):
     line_total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    vendor_id = serializers.IntegerField(source="vendor.id", read_only=True, allow_null=True)
+    vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True, default="")
+    shipment_id = serializers.IntegerField(source="shipment.id", read_only=True, allow_null=True)
 
     class Meta:
         model = OrderItem
-        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "gift_wrap_note", "gift_wrap_image_url", "processing_option", "processing_fee", "processing_label", "processing_days")
+        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "gift_wrap_note", "gift_wrap_image_url", "processing_option", "processing_fee", "processing_label", "processing_days", "vendor_id", "vendor_name", "shipment_id")
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
@@ -153,13 +185,14 @@ class OrderStatusHistorySerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    shipments = OrderShipmentSerializer(many=True, read_only=True)
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
     promo_code_str = serializers.CharField(source="promo_code.code", read_only=True, allow_null=True)
 
     class Meta:
         model = Order
         fields = (
-            "id", "order_number", "status", "items", "status_history",
+            "id", "order_number", "status", "items", "shipments", "status_history",
             "shipping_name", "shipping_line1", "shipping_line2",
             "shipping_city", "shipping_state", "shipping_zip", "shipping_country",
             "shipping_email", "shipping_phone",
@@ -181,7 +214,11 @@ class CheckoutSerializer(serializers.Serializer):
     shipping_phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
     promo_code = serializers.CharField(required=False, allow_blank=True)
     currency = serializers.CharField(max_length=10, required=False, default="USD")
-    delivery_type = serializers.CharField(max_length=20, required=False, default="standard")
+    delivery_type = serializers.CharField(max_length=50, required=False, default="standard")
+    # Per-vendor shipping: { "vendor_id": "vendor-{option_id}", ... }
+    shipping_selections = serializers.DictField(
+        child=serializers.CharField(), required=False, allow_empty=True, default=dict,
+    )
 
 
 class CustomOrderSerializer(serializers.ModelSerializer):

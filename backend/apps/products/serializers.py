@@ -86,7 +86,7 @@ class SizeVariantSerializer(serializers.ModelSerializer):
         fields = (
             "id", "sku", "label", "label_ka", "label_ru", "price_usd", "price_gel", "price_eur", "price_gbp",
             "sale_price_usd", "sale_price_gel",
-            "sort_order", "is_active", "stock", "image_ids", "images",
+            "sort_order", "is_active", "stock", "is_ready_to_ship", "image_ids", "images",
         )
 
 

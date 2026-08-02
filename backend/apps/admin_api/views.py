@@ -401,9 +401,8 @@ class AdminOrderUpdateView(APIView):
 
     def _get_order_qs(self, request):
         from apps.orders.models import Order
-        qs = Order.objects.prefetch_related("items__vendor", "status_history")
+        qs = Order.objects.prefetch_related("items__vendor", "shipments__vendor", "status_history")
         if not request.user.is_staff:
-            # Vendors can only see orders that contain at least one of their products
             vendor = request.user.vendor_profile
             qs = qs.filter(items__vendor=vendor).distinct()
         return qs
@@ -417,13 +416,60 @@ class AdminOrderUpdateView(APIView):
         return Response(OrderSerializer(order).data)
 
     def patch(self, request, pk):
-        from apps.orders.models import Order, OrderStatusHistory
+        from apps.orders.models import Order, OrderStatusHistory, OrderShipment
         from apps.orders.serializers import OrderSerializer
         try:
             order = self._get_order_qs(request).get(pk=pk)
         except Exception:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Per-shipment update: PATCH with shipment_id + tracking_code + status
+        shipment_id = request.data.get("shipment_id")
+        if shipment_id is not None:
+            try:
+                shipment = order.shipments.get(pk=int(shipment_id))
+            except (OrderShipment.DoesNotExist, ValueError, TypeError):
+                return Response({"detail": "Shipment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            shipment_tracking = request.data.get("tracking_code")
+            shipment_status = request.data.get("shipment_status")
+
+            if shipment_tracking is not None:
+                shipment.tracking_code = shipment_tracking
+            if shipment_status and shipment_status in ("processing", "shipped", "delivered"):
+                prev_shipment_status = shipment.status
+                shipment.status = shipment_status
+                if shipment_status == "shipped" and prev_shipment_status != "shipped":
+                    shipment.shipped_at = timezone.now()
+                    _send_shipment_email(order, shipment)
+
+            shipment.save()
+
+            log_action(request.user, "shipment_update", "OrderShipment", shipment.pk, {
+                "order_number": order.order_number,
+                "vendor": shipment.vendor.name if shipment.vendor else None,
+                "tracking_code": shipment.tracking_code,
+                "status": shipment.status,
+            })
+
+            # Auto-advance order status if all shipments are shipped/delivered
+            all_shipped = all(
+                s.status in ("shipped", "delivered") for s in order.shipments.all()
+            )
+            if all_shipped and order.status == "processing":
+                order.status = "shipped"
+                order.shipped_at = timezone.now()
+                order.save(update_fields=["status", "shipped_at"])
+                OrderStatusHistory.objects.create(
+                    order=order, status="shipped",
+                    note="All vendor shipments shipped.",
+                    changed_by=request.user,
+                )
+
+            order.refresh_from_db()
+            return Response(OrderSerializer(order).data)
+
+        # Legacy single-order update
         new_status = request.data.get("status")
         note = request.data.get("note", "")
         tracking = request.data.get("tracking_code")
@@ -468,9 +514,7 @@ class AdminOrderUpdateView(APIView):
 
         order.save()
 
-        # Send shipping confirmation email when status moves to "shipped"
         if new_status == "shipped" and prev_status != "shipped":
-            from django.utils import timezone
             order.shipped_at = timezone.now()
             order.save(update_fields=["shipped_at"])
             _send_shipping_email(order)
@@ -540,8 +584,51 @@ def _send_shipping_email(order):
             fail_silently=False,
         )
     except Exception as exc:
-        # Security fix #17: log email failures instead of silently swallowing
         logger.error("Shipping email failed for order %s to %s: %s", order.order_number, order.shipping_email, exc)
+
+
+def _send_shipment_email(order, shipment):
+    """Send per-vendor shipment notification when a shipment is marked shipped."""
+    try:
+        from django.core.mail import send_mail
+        from django.conf import settings as django_settings
+        from apps.emails.service import send_template_email, get_template
+        from apps.emails.order_context import build_shipment_email_context
+
+        vendor = shipment.vendor
+        context = build_shipment_email_context(order, shipment)
+
+        if get_template("order_shipped", vendor=vendor):
+            send_template_email(
+                "order_shipped",
+                order.shipping_email,
+                context,
+                vendor=vendor,
+            )
+            return
+
+        customer_name = context["customer_name"]
+        vendor_label = vendor.name if vendor else "your vendor"
+        tracking = shipment.tracking_code or ""
+        tracking_info = f"\nTracking number: {tracking}" if tracking else ""
+        body = (
+            f"Hi {customer_name},\n\n"
+            f"Items from {vendor_label} in your order {order.order_number} have shipped!{tracking_info}\n\n"
+            f"Thank you for shopping with Koleqcia!\n"
+            f"— The Koleqcia Team"
+        )
+        from_email = getattr(django_settings, "EMAIL_FROM_ORDERS", None) or getattr(
+            django_settings, "DEFAULT_FROM_EMAIL", "orders@koleqcia.com"
+        )
+        send_mail(
+            subject=f"Shipment from {vendor_label} — Order {order.order_number}",
+            message=body,
+            from_email=from_email,
+            recipient_list=[order.shipping_email],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        logger.error("Shipment email failed for order %s shipment %s: %s", order.order_number, shipment.pk, exc)
 
 
 # ── Products ──────────────────────────────────────────────────────────────────

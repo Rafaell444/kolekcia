@@ -28,6 +28,16 @@ class PromoCode(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Scope: empty M2M = applies to all
+    products = models.ManyToManyField(
+        "products.Product", blank=True, related_name="promo_codes",
+        help_text="Limit to these products. Leave empty for all products.",
+    )
+    categories = models.ManyToManyField(
+        "products.Category", blank=True, related_name="promo_codes",
+        help_text="Limit to products in these categories. Leave empty for all.",
+    )
+
     class Meta:
         db_table = "promo_codes"
 
@@ -62,6 +72,48 @@ class PromoCode(models.Model):
     def calculate_product_discount(self, product_subtotal):
         """Creator vouchers discount products only; same formula as percent/fixed."""
         return self.calculate_discount(product_subtotal)
+
+    @property
+    def is_scoped(self) -> bool:
+        return self.products.exists() or self.categories.exists()
+
+    def applies_to_item(self, product) -> bool:
+        """Check if this promo applies to a specific product.
+        Empty M2M = applies to all products."""
+        has_products = self.products.exists()
+        has_categories = self.categories.exists()
+        if not has_products and not has_categories:
+            return True
+        if has_products and self.products.filter(pk=product.pk).exists():
+            return True
+        if has_categories:
+            product_cat_ids = set()
+            if hasattr(product, "category_id") and product.category_id:
+                product_cat_ids.add(product.category_id)
+            if hasattr(product, "categories"):
+                product_cat_ids.update(product.categories.values_list("pk", flat=True))
+            if product_cat_ids and self.categories.filter(pk__in=product_cat_ids).exists():
+                return True
+        return False
+
+    def calculate_scoped_discount(self, cart_items_with_products):
+        """Calculate discount only for qualifying line items.
+
+        cart_items_with_products: iterable of (product, line_subtotal) tuples
+        where line_subtotal is unit_price * quantity for that item.
+        """
+        if not self.is_scoped:
+            total = sum(sub for _, sub in cart_items_with_products)
+            return self.calculate_discount(total)
+
+        qualifying_subtotal = Decimal("0")
+        for product, line_subtotal in cart_items_with_products:
+            if self.applies_to_item(product):
+                qualifying_subtotal += line_subtotal
+
+        if qualifying_subtotal <= 0:
+            return Decimal("0")
+        return self.calculate_discount(qualifying_subtotal)
 
     def __str__(self):
         return self.code

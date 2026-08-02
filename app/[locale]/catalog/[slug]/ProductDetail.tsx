@@ -322,9 +322,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   // New size variant system
   const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
   const hasSizeVariants = activeSizeVariants.length > 0
+  const svStock = (sv: unknown) => (sv as { stock?: number | null }).stock
+  const svReadyToShip = (sv: unknown) => (sv as { is_ready_to_ship?: boolean }).is_ready_to_ship === true
   const isSoldOut = selectedSizeVariant
-    ? (selectedSizeVariant as unknown as { stock?: number | null }).stock === 0
-    : activeSizeVariants.length > 0 && activeSizeVariants.every((sv) => (sv as unknown as { stock?: number | null }).stock === 0)
+    ? svStock(selectedSizeVariant) === 0 && !svReadyToShip(selectedSizeVariant)
+    : activeSizeVariants.length > 0 && activeSizeVariants.every((sv) => svStock(sv) === 0 && !svReadyToShip(sv))
+  const variantIsReadyToShip = selectedSizeVariant ? svReadyToShip(selectedSizeVariant) && (svStock(selectedSizeVariant) ?? 0) > 0 : false
 
   // Thumbnails always show the full product gallery
   const thumbMedia = (product.images ?? []).map((i) => ({
@@ -387,7 +390,9 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     // eslint-disable-next-line eqeqeq
     (variant) => variant.size?.id == selectedSize && variant.finish?.id == selectedFinish && variant.frame?.id == selectedFrame,
   )
-  const selectedStock = hasSizeVariants ? selectedSizeVariant?.stock : selectedLegacyVariant?.stock
+  const selectedStock = hasSizeVariants
+    ? (svReadyToShip(selectedSizeVariant) ? null : selectedSizeVariant?.stock)
+    : selectedLegacyVariant?.stock
   const maxQuantity = selectedStock == null ? null : Math.max(0, selectedStock)
 
   useEffect(() => {
@@ -773,8 +778,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               </button>
             )}
 
-            {/* Processing time selector — shown for any product with options configured */}
-            {processingOptions.length > 0 && (
+            {/* Processing time selector — hidden when variant is ready to ship (ships immediately) */}
+            {processingOptions.length > 0 && !variantIsReadyToShip && (
               <div>
                 <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2">Processing Time</p>
                 <div className="flex flex-col gap-2">
@@ -814,7 +819,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             )}
 
             {/* Processing time — fallback static display when no selectable options exist */}
-            {processingOptions.length === 0 && (isFigure || product.processing_time_label) && (
+            {processingOptions.length === 0 && !variantIsReadyToShip && (isFigure || product.processing_time_label) && (
               <div className="flex items-center gap-3 px-4 py-3 border border-dp-border rounded-sm bg-dp-bg-elevated/40">
                 <Clock size={15} className="text-dp-accent-cta shrink-0" />
                 <div>
@@ -987,7 +992,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               <p className="text-[12px] text-red-500 -mt-1">{addError}</p>
             )}
 
-            {(product as {is_ready_to_ship?: boolean}).is_ready_to_ship ? (
+            {variantIsReadyToShip ? (
               <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-sm">
                 <PackageCheck size={14} className="text-emerald-500 shrink-0" />
                 <p className="text-[12px] font-semibold text-emerald-500">Ready to ship — ships within 5–10 business days.</p>

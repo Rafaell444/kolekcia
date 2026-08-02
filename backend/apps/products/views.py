@@ -250,6 +250,9 @@ class ProductFilterOptionsView(generics.GenericAPIView):
             "sale": qs.filter(is_sale=True).exists(),
             "new": qs.filter(is_new=True).exists(),
             "exclusive": qs.filter(is_exclusive=True).exists(),
+            "ready_to_ship": SizeVariant.objects.filter(
+                product_id__in=product_ids, is_active=True, is_ready_to_ship=True, stock__gt=0,
+            ).exists(),
         }
 
         return Response({

@@ -205,6 +205,10 @@ class SizeVariant(models.Model):
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     stock = models.IntegerField(null=True, blank=True, default=None)
+    is_ready_to_ship = models.BooleanField(
+        default=False,
+        help_text="Pre-made unit in stock. When stock depletes to 0, product is still orderable (made to order).",
+    )
     images = models.ManyToManyField("ProductImage", blank=True, related_name="size_variants")
 
     class Meta:

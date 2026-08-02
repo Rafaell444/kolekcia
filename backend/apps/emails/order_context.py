@@ -192,6 +192,70 @@ def render_shipping_address_html(order) -> str:
     )
 
 
+def build_shipment_email_context(order, shipment) -> dict:
+    """Context for per-vendor shipment notification emails."""
+    currency = order.currency or "USD"
+    tracking = shipment.tracking_code or ""
+    tracking_info = f"Tracking number: {tracking}" if tracking else "We'll share tracking as soon as it's available."
+    vendor_name = shipment.vendor.name if shipment.vendor else "your vendor"
+
+    # Only include items from this shipment
+    shipment_items = order.items.filter(shipment=shipment)
+    items_plain = []
+    for item in shipment_items:
+        line = f"{item.product_title} × {item.quantity} — {_money(item.line_total, currency)}"
+        items_plain.append(line)
+
+    # Render items HTML for this shipment only
+    rows = []
+    for item in shipment_items:
+        img = absolute_media_url(item.product_image or "")
+        img_cell = (
+            f'<img src="{img}" alt="{item.product_title}" width="88" height="88" '
+            'style="display:block;width:88px;height:88px;object-fit:cover;border:1px solid #e5e5e7;border-radius:2px;background:#111113;">'
+            if img
+            else (
+                '<table role="presentation" width="88" height="88" cellpadding="0" cellspacing="0" border="0" '
+                'style="width:88px;height:88px;background:#111113;border:1px solid #e5e5e7;">'
+                '<tr><td align="center" valign="middle" style="font-family:Arial,Helvetica,sans-serif;'
+                'font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#ffffff;">Product</td></tr></table>'
+            )
+        )
+        unit = _money(item.price, currency)
+        line_total = _money(Decimal(item.price) * item.quantity, currency)
+        meta_bits = [item.size_label, item.finish_label, item.frame_label, item.artist_name]
+        meta = " · ".join(b for b in meta_bits if b)
+        rows.append(
+            f'<tr><td style="padding:14px 0;border-bottom:1px solid #e5e5e7;vertical-align:top;width:100px;">{img_cell}</td>'
+            f'<td style="padding:14px 12px;border-bottom:1px solid #e5e5e7;vertical-align:top;">'
+            f'<p style="margin:0;font-size:14px;font-weight:700;color:#111113;">{item.product_title}</p>'
+            f'<p style="margin:4px 0 0;font-size:12px;color:#aeaeb2;">{meta}</p>'
+            f'<p style="margin:8px 0 0;font-size:12px;color:#636366;">Qty {item.quantity} · {unit} each</p>'
+            f'</td>'
+            f'<td style="padding:14px 0;border-bottom:1px solid #e5e5e7;vertical-align:top;text-align:right;white-space:nowrap;">'
+            f'<span style="font-size:14px;font-weight:700;color:#111113;">{line_total}</span></td></tr>'
+        )
+    items_html = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 4px;">'
+        + "".join(rows) + "</table>"
+    )
+
+    return {
+        "customer_name": order.shipping_name or "there",
+        "order_number": order.order_number,
+        "vendor_name": vendor_name,
+        "total": _money(order.total, currency),
+        "currency": currency,
+        "items": "\n".join(items_plain),
+        "items_html": items_html,
+        "shipping_address_html": render_shipping_address_html(order),
+        "tracking_code": tracking or "—",
+        "tracking_info": tracking_info,
+        "delivery_label": shipment.delivery_label or "",
+        "delivery_price": _money(shipment.delivery_price, currency),
+    }
+
+
 def build_order_email_context(order) -> dict:
     """Context for order_confirmed / order_shipped templates."""
     currency = order.currency or "USD"
@@ -215,7 +279,7 @@ def build_order_email_context(order) -> dict:
             line += " | Gift wrap"
         items_plain.append(line)
 
-    return {
+    context = {
         "customer_name": order.shipping_name or "there",
         "order_number": order.order_number,
         "total": _money(order.total, currency),
@@ -231,3 +295,15 @@ def build_order_email_context(order) -> dict:
         "tracking_code": tracking or "—",
         "tracking_info": tracking_info,
     }
+
+    # Include per-vendor shipment info if available
+    shipments = list(order.shipments.select_related("vendor").all()) if hasattr(order, "shipments") else []
+    if shipments:
+        shipment_lines = []
+        for s in shipments:
+            vendor_label = s.vendor.name if s.vendor else "Unknown"
+            s_tracking = s.tracking_code or "pending"
+            shipment_lines.append(f"{vendor_label}: {s.delivery_label} — tracking: {s_tracking}")
+        context["shipments_info"] = "\n".join(shipment_lines)
+
+    return context

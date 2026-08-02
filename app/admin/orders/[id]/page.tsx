@@ -25,6 +25,22 @@ type OrderItem = {
   gift_wrap?: boolean
   gift_wrap_note?: string
   gift_wrap_image_url?: string
+  vendor_id?: number | null
+  vendor_name?: string | null
+  shipment_id?: number | null
+}
+
+type Shipment = {
+  id: number
+  vendor: number | null
+  vendor_name: string
+  delivery_type: string
+  delivery_label: string
+  delivery_price: string
+  tracking_code: string
+  shipped_at: string | null
+  status: string
+  created_at: string
 }
 
 type ProcessingOpt = {
@@ -61,6 +77,7 @@ type OrderDetail = {
   order_number: string
   status: OrderStatus
   items: OrderItem[]
+  shipments: Shipment[]
   status_history: StatusHistory[]
   shipping_name: string
   shipping_line1: string
@@ -73,6 +90,7 @@ type OrderDetail = {
   shipping_phone: string
   subtotal: string
   discount: string
+  delivery_price: string
   total: string
   currency: string
   promo_code_str: string | null
@@ -88,6 +106,126 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   cancelled:  { label: "Cancelled",  color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",             Icon: XCircle     },
 }
 
+const SHIPMENT_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  processing: { label: "Processing", color: "text-blue-400", bg: "bg-blue-400/10 border-blue-400/30" },
+  shipped:    { label: "Shipped",    color: "text-dp-accent-cta", bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30" },
+  delivered:  { label: "Delivered",  color: "text-dp-success", bg: "bg-dp-success/10 border-dp-success/30" },
+}
+
+function ShipmentCard({
+  shipment, order, onUpdate,
+}: {
+  shipment: Shipment; order: OrderDetail; onUpdate: (updated: OrderDetail) => void
+}) {
+  const [tracking, setTracking] = useState(shipment.tracking_code)
+  const [shipmentStatus, setShipmentStatus] = useState(shipment.status)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const items = order.items.filter((i) => i.shipment_id === shipment.id)
+  const cfg = SHIPMENT_STATUS_CONFIG[shipment.status] ?? SHIPMENT_STATUS_CONFIG.processing
+  const hasChanges = tracking !== shipment.tracking_code || shipmentStatus !== shipment.status
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const updated = await adminFetch<OrderDetail>(`/admin/orders/${order.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          shipment_id: shipment.id,
+          tracking_code: tracking,
+          shipment_status: shipmentStatus,
+        }),
+      })
+      onUpdate(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch { /* noop */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-dp-border flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Package size={14} className="text-dp-accent-cta" />
+          <h3 className="text-[12px] font-bold uppercase tracking-widest text-dp-text-primary">
+            {shipment.vendor_name || "Vendor"}
+          </h3>
+          <span className="text-[11px] text-dp-text-tertiary">· {shipment.delivery_label}</span>
+          <span className="text-[11px] text-dp-text-tertiary">· {formatAmount(parseFloat(shipment.delivery_price), order.currency as Currency)}</span>
+        </div>
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border text-[10px] font-bold uppercase tracking-widest ${cfg.color} ${cfg.bg}`}>
+          {cfg.label}
+        </span>
+      </div>
+
+      {items.length > 0 && (
+        <div className="px-4 py-2 border-b border-dp-border">
+          {items.map((item) => (
+            <div key={item.id} className="flex items-center gap-3 py-1.5">
+              <div className="w-8 h-10 shrink-0 rounded-sm overflow-hidden bg-dp-bg-elevated border border-dp-border">
+                {item.product_image && <img src={item.product_image} alt="" className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-dp-text-primary truncate">{item.product_title}</p>
+                <p className="text-[11px] text-dp-text-tertiary">×{item.quantity}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={(e) => void handleSave(e)} className="p-4 flex flex-col gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Status</label>
+            <select
+              value={shipmentStatus}
+              onChange={(e) => setShipmentStatus(e.target.value)}
+              className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary"
+            >
+              <option value="processing">Processing</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">
+              Tracking Number
+              {shipmentStatus === "shipped" && <span className="text-dp-accent-cta ml-1">— emailed to customer</span>}
+            </label>
+            <input
+              value={tracking}
+              onChange={(e) => setTracking(e.target.value)}
+              placeholder="e.g. GE123456789GE"
+              className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary"
+            />
+          </div>
+        </div>
+
+        {shipment.shipped_at && (
+          <p className="text-[11px] text-dp-text-tertiary">
+            Shipped: {new Date(shipment.shipped_at).toLocaleString()}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving || !hasChanges}
+            className="flex items-center gap-2 px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50"
+          >
+            <Save size={12} /> {saving ? "Saving…" : saved ? "Saved!" : "Update Shipment"}
+          </button>
+          {saved && <span className="text-[11px] text-dp-success">✓ Updated</span>}
+        </div>
+      </form>
+    </div>
+  )
+}
+
 export default function AdminOrderDetailPage(): React.ReactElement {
   const params = useParams()
   const orderId = params?.id as string
@@ -97,7 +235,6 @@ export default function AdminOrderDetailPage(): React.ReactElement {
 
   const [processingOpts, setProcessingOpts] = useState<ProcessingOpt[]>([])
 
-  // Status update state
   const [newStatus, setNewStatus] = useState<string>("")
   const [trackingCode, setTrackingCode] = useState("")
   const [note, setNote] = useState("")
@@ -106,6 +243,8 @@ export default function AdminOrderDetailPage(): React.ReactElement {
 
   const adminUser = typeof window !== "undefined" ? getAdminUser() : null
   const isVendor = Boolean(adminUser && !adminUser.is_staff && adminUser.vendor)
+
+  const hasShipments = (order?.shipments?.length ?? 0) > 0
 
   useEffect(() => {
     adminFetch<ProcessingOpt[]>("/admin/processing-options/")
@@ -190,8 +329,8 @@ export default function AdminOrderDetailPage(): React.ReactElement {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Line Items */}
         <div className="lg:col-span-2 flex flex-col gap-6">
+          {/* Line Items */}
           <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-dp-border">
               <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Line Items</h2>
@@ -210,6 +349,9 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                     <p className="text-[11px] text-dp-text-tertiary mt-1">
                       {[item.size_label, item.finish_label, item.frame_label].filter(Boolean).join(" · ")}
                     </p>
+                    {item.vendor_name && (
+                      <p className="text-[10px] text-dp-text-tertiary mt-0.5">Vendor: {item.vendor_name}</p>
+                    )}
                     {item.gift_wrap && (
                       <div className="mt-1.5 flex flex-col gap-1">
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-dp-accent-cta bg-dp-accent-cta/10 border border-dp-accent-cta/20 rounded-sm px-2 py-0.5 w-fit">
@@ -236,6 +378,28 @@ export default function AdminOrderDetailPage(): React.ReactElement {
               ))}
             </ul>
           </div>
+
+          {/* Per-Vendor Shipments */}
+          {hasShipments && (
+            <div className="flex flex-col gap-4">
+              <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary flex items-center gap-2">
+                <Truck size={14} className="text-dp-accent-cta" />
+                Vendor Shipments ({order.shipments.length})
+              </h2>
+              {order.shipments.map((shipment) => (
+                <ShipmentCard
+                  key={shipment.id}
+                  shipment={shipment}
+                  order={order}
+                  onUpdate={(updated) => {
+                    setOrder(updated)
+                    setNewStatus(updated.status)
+                    setTrackingCode(updated.tracking_code ?? "")
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Processing Timeline */}
           <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
@@ -282,8 +446,9 @@ export default function AdminOrderDetailPage(): React.ReactElement {
             </ul>
           </div>
 
-          {/* Status Update Panel */}
-          <form onSubmit={(e) => void handleUpdateStatus(e)} className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
+          {/* Legacy Status Update (for orders without shipments or whole-order actions) */}
+          {!hasShipments && (
+            <form onSubmit={(e) => void handleUpdateStatus(e)} className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-dp-border">
                 <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Update Order Status</h2>
               </div>
@@ -339,7 +504,7 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                 <div className="flex items-center gap-3">
                   <button
                     type="submit"
-                    disabled={saving || newStatus === order.status && trackingCode === (order.tracking_code ?? "")}
+                    disabled={saving || (newStatus === order.status && trackingCode === (order.tracking_code ?? ""))}
                     className="flex items-center gap-2 px-5 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50"
                   >
                     <Save size={13} /> {saving ? "Saving…" : saved ? "Saved!" : "Save Changes"}
@@ -348,6 +513,54 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                 </div>
               </div>
             </form>
+          )}
+
+          {/* For orders WITH shipments, show a simpler overall status control */}
+          {hasShipments && (
+            <form onSubmit={(e) => void handleUpdateStatus(e)} className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-dp-border">
+                <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Overall Order Status</h2>
+              </div>
+              <div className="p-4 flex flex-col gap-4">
+                <p className="text-[12px] text-dp-text-secondary">
+                  Use the shipment cards above to update tracking per vendor. The order status will auto-advance to &ldquo;Shipped&rdquo; when all vendor shipments are shipped.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Override Status</label>
+                    <select
+                      value={newStatus}
+                      onChange={(e) => setNewStatus(e.target.value)}
+                      className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary"
+                    >
+                      {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                        <option key={key} value={key}>{cfg.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Internal Note</label>
+                    <input
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="Optional…"
+                      className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={saving || newStatus === order.status}
+                    className="flex items-center gap-2 px-4 py-2 bg-dp-bg-elevated border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors disabled:opacity-50 hover:text-dp-text-primary"
+                  >
+                    <Save size={12} /> {saving ? "Saving…" : "Override Status"}
+                  </button>
+                  {saved && <span className="text-[11px] text-dp-success">✓ Updated</span>}
+                </div>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* Right column */}
@@ -358,6 +571,9 @@ export default function AdminOrderDetailPage(): React.ReactElement {
               <div className="flex justify-between"><dt className="text-dp-text-tertiary">Subtotal</dt><dd>{formatAmount(parseFloat(order.subtotal), order.currency as Currency)}</dd></div>
               {parseFloat(order.discount) > 0 && (
                 <div className="flex justify-between"><dt className="text-dp-text-tertiary">Discount{order.promo_code_str ? ` (${order.promo_code_str})` : ""}</dt><dd className="text-dp-success">-{formatAmount(parseFloat(order.discount), order.currency as Currency)}</dd></div>
+              )}
+              {parseFloat(order.delivery_price) > 0 && (
+                <div className="flex justify-between"><dt className="text-dp-text-tertiary">Shipping</dt><dd>{formatAmount(parseFloat(order.delivery_price), order.currency as Currency)}</dd></div>
               )}
               <div className="flex justify-between font-bold text-dp-text-primary pt-2 border-t border-dp-border">
                 <dt>Total</dt><dd>{formatAmount(parseFloat(order.total), order.currency as Currency)}</dd>
@@ -378,7 +594,7 @@ export default function AdminOrderDetailPage(): React.ReactElement {
             </p>
             <p className="text-[12px] text-dp-text-tertiary mt-2">{order.shipping_email}</p>
             {order.shipping_phone && <p className="text-[12px] text-dp-text-tertiary">{order.shipping_phone}</p>}
-            {order.tracking_code && (
+            {order.tracking_code && !hasShipments && (
               <div className="mt-3 pt-3 border-t border-dp-border">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1">Tracking</p>
                 <p className="text-[13px] font-bold text-dp-accent-cta font-mono">{order.tracking_code}</p>

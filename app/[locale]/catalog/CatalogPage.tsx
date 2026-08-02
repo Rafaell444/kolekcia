@@ -60,7 +60,7 @@ type FilterOptions = {
   themes: string[]
   artists: { handle: string; name: string }[]
   price_range: { min: number; max: number }
-  availability?: { limited: boolean; sale: boolean; new: boolean; exclusive: boolean }
+  availability?: { limited: boolean; sale: boolean; new: boolean; exclusive: boolean; ready_to_ship: boolean }
 }
 
 type FilterVisibilityKey = "category" | "price" | "size" | "theme" | "material" | "artist" | "availability"
@@ -85,6 +85,7 @@ type Filters = {
   isSale: boolean
   isNew: boolean
   isExclusive: boolean
+  isReadyToShip: boolean
   materials: string[]
   sizes: string[]
   themes: string[]
@@ -99,6 +100,7 @@ const DEFAULT_FILTERS: Filters = {
   isSale: false,
   isNew: false,
   isExclusive: false,
+  isReadyToShip: false,
   materials: [],
   sizes: [],
   themes: [],
@@ -270,7 +272,7 @@ function FilterSidebar({
 
   const absMin = Math.floor((filterOptions?.price_range.min ?? 0))
   const absMax = Math.ceil((filterOptions?.price_range.max ?? 250))
-  const availability = filterOptions?.availability ?? { limited: false, sale: false, new: false, exclusive: false }
+  const availability = filterOptions?.availability ?? { limited: false, sale: false, new: false, exclusive: false, ready_to_ship: false }
 
   const activeCount =
     (hideCategoryFilter ? 0 : filters.categories.length) +
@@ -278,6 +280,7 @@ function FilterSidebar({
     (filters.isSale ? 1 : 0) +
     (filters.isNew ? 1 : 0) +
     (filters.isExclusive ? 1 : 0) +
+    (filters.isReadyToShip ? 1 : 0) +
     (filters.priceMin > absMin ? 1 : 0) +
     (filters.priceMax < absMax ? 1 : 0) +
     filters.materials.length +
@@ -454,6 +457,7 @@ function FilterSidebar({
       <FilterGroup title="Availability">
         {(
           [
+            { key: "isReadyToShip", optionKey: "ready_to_ship", label: "Ready to Ship" },
             { key: "isLimited",   optionKey: "limited", label: "Limited Edition" },
             { key: "isSale",      optionKey: "sale", label: "On Sale" },
             { key: "isNew",       optionKey: "new", label: "New Arrivals" },
@@ -597,6 +601,7 @@ function CatalogPageInner(): React.ReactElement {
             isSale: d.availability?.sale ? prev.isSale : false,
             isNew: d.availability?.new ? prev.isNew : false,
             isExclusive: d.availability?.exclusive ? prev.isExclusive : false,
+            isReadyToShip: d.availability?.ready_to_ship ? prev.isReadyToShip : false,
           }))
         }
       })
@@ -648,6 +653,7 @@ function CatalogPageInner(): React.ReactElement {
     if (filters.isSale) params.set("sale", "true")
     if (filters.isNew) params.set("new", "true")
     if (filters.isExclusive) params.set("exclusive", "true")
+    if (filters.isReadyToShip) params.set("ready_to_ship", "true")
     if (filters.materials.length > 0) params.set("material", filters.materials.join(","))
     if (filters.sizes.length > 0) params.set("size", filters.sizes.join(","))
     if (filters.themes.length > 0) params.set("tag", filters.themes.join(","))
@@ -859,7 +865,7 @@ function CatalogPageInner(): React.ReactElement {
                     defaultSizeVariantId: p.default_size_variant_id ?? p.size_variants?.find((sv) => sv.is_active !== false)?.id ?? null,
                     priceIsLocalized: true,
                     hasMultipleVariants: activeVariants.length > 1,
-                    isSoldOut: activeVariants.length > 0 && activeVariants.every((sv) => (sv as {stock?: number | null}).stock === 0),
+                    isSoldOut: activeVariants.length > 0 && activeVariants.every((sv) => (sv as {stock?: number | null}).stock === 0 && !(sv as {is_ready_to_ship?: boolean}).is_ready_to_ship),
                   }} />
                 )})}
               </div>

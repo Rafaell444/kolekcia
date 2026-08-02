@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import Cart, CartItem, Order, OrderItem, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
+from .models import Cart, CartItem, Order, OrderItem, OrderShipment, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
 from .pricing import (
     normalize_currency,
     resolve_gift_wrap_price,
@@ -100,7 +100,7 @@ class CartItemView(APIView):
                 size_variant = SizeVariant.objects.select_for_update().select_related("product").get(pk=size_variant_id, is_active=True)
             except SizeVariant.DoesNotExist:
                 return Response({"detail": "Size variant not found."}, status=status.HTTP_404_NOT_FOUND)
-            if size_variant.stock is not None and size_variant.stock < quantity:
+            if not size_variant.is_ready_to_ship and size_variant.stock is not None and size_variant.stock < quantity:
                 return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
         elif variant_id:
             try:
@@ -220,8 +220,9 @@ class CartItemView(APIView):
             if requested_quantity <= 0:
                 item.delete()
             else:
+                is_rts = item.size_variant.is_ready_to_ship if item.size_variant_id else False
                 stock = item.size_variant.stock if item.size_variant_id else item.variant.stock
-                if stock is not None and requested_quantity > stock:
+                if not is_rts and stock is not None and requested_quantity > stock:
                     return Response(
                         {"detail": f"Only {stock} item(s) available."},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -273,6 +274,33 @@ class PromoApplyView(APIView):
         error = promo.validate(request.user, validate_base)
         if error:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+
+        if promo.is_scoped:
+            has_match = False
+            for item in cart.items.select_related(
+                "variant__product", "size_variant__product"
+            ):
+                product = (
+                    item.size_variant.product if item.size_variant_id
+                    else item.variant.product if item.variant_id
+                    else None
+                )
+                if product and promo.applies_to_item(product):
+                    has_match = True
+                    break
+            if not has_match:
+                scoped_names = []
+                prod_names = list(promo.products.values_list("title", flat=True)[:5])
+                cat_names = list(promo.categories.values_list("name", flat=True)[:5])
+                if prod_names:
+                    scoped_names.append(", ".join(prod_names))
+                if cat_names:
+                    scoped_names.append(", ".join(cat_names))
+                hint = " or ".join(scoped_names) if scoped_names else "specific products"
+                return Response(
+                    {"detail": f"This promo code only applies to: {hint}. Add qualifying items to your cart."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         cart.promo_code = promo
         cart.save(update_fields=["promo_code"])
@@ -392,7 +420,7 @@ class CheckoutView(APIView):
                     )
             elif item.size_variant_id:
                 sv = locked_size_variants.get(item.size_variant_id)
-                if sv and sv.stock is not None and sv.stock < item.quantity:
+                if sv and not sv.is_ready_to_ship and sv.stock is not None and sv.stock < item.quantity:
                     return Response(
                         {"detail": f"'{sv.product.title}' has insufficient stock."},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -403,34 +431,94 @@ class CheckoutView(APIView):
                 ProductVariant.objects.filter(pk=item.variant_id).update(stock=F("stock") - item.quantity)
             elif item.size_variant_id:
                 sv = locked_size_variants.get(item.size_variant_id)
-                if sv and sv.stock is not None:
-                    SizeVariant.objects.filter(pk=item.size_variant_id).update(stock=F("stock") - item.quantity)
+                if sv and sv.stock is not None and sv.stock > 0:
+                    new_stock = sv.stock - item.quantity
+                    if new_stock <= 0 and sv.is_ready_to_ship:
+                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
+                            stock=None, is_ready_to_ship=False,
+                        )
+                    else:
+                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
+                            stock=F("stock") - item.quantity,
+                        )
 
         # Resolve all money in checkout currency (admin market prices, no FX)
         currency = _normalize_currency(data.get("currency", "USD"))
         req_delivery_type = data.get("delivery_type", "standard")
+        shipping_selections = data.get("shipping_selections", {})
+
+        # Build vendor → items mapping for per-vendor shipping
+        vendor_item_map: dict[int | None, list] = {}
+        for item in items_to_process:
+            vid = (
+                item.size_variant.product.vendor_id if item.size_variant_id
+                else item.variant.product.vendor_id if item.variant_id
+                else None
+            )
+            vendor_item_map.setdefault(vid, []).append(item)
+
+        market = "GE" if currency == "GEL" else "OTHER"
+        # Resolve shipping: per-vendor selections take priority
+        shipment_specs: list[dict] = []  # vendor_id, option, items
         delivery_price = Decimal("0")
-        if req_delivery_type.startswith("vendor-"):
+
+        if shipping_selections:
+            # Per-vendor shipping mode
+            for vendor_id_str, option_slug in shipping_selections.items():
+                try:
+                    vendor_id = int(vendor_id_str)
+                except (TypeError, ValueError):
+                    return Response({"detail": f"Invalid vendor ID: {vendor_id_str}"}, status=status.HTTP_400_BAD_REQUEST)
+
+                if not option_slug.startswith("vendor-"):
+                    return Response({"detail": f"Invalid shipping option: {option_slug}"}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    option_id = int(option_slug.replace("vendor-", "", 1))
+                except (TypeError, ValueError):
+                    return Response({"detail": f"Invalid shipping option: {option_slug}"}, status=status.HTTP_400_BAD_REQUEST)
+
+                opt = VendorShippingOption.objects.filter(
+                    pk=option_id, vendor_id=vendor_id, market=market, is_active=True,
+                ).select_related("vendor").first()
+                if not opt:
+                    return Response({"detail": "The selected shipping option is not available."}, status=status.HTTP_400_BAD_REQUEST)
+
+                shipment_specs.append({
+                    "vendor_id": vendor_id,
+                    "option": opt,
+                    "items": vendor_item_map.get(vendor_id, []),
+                })
+                delivery_price += Decimal(opt.price)
+
+            # Assign any remaining vendor items without explicit selection
+            assigned_vendors = {s["vendor_id"] for s in shipment_specs}
+            for vid, vitems in vendor_item_map.items():
+                if vid is not None and vid not in assigned_vendors:
+                    return Response(
+                        {"detail": "Missing shipping selection for one or more vendors."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            req_delivery_type = "per-vendor"
+        elif req_delivery_type.startswith("vendor-"):
+            # Single vendor shipping (backward compat)
             try:
                 shipping_option_id = int(req_delivery_type.replace("vendor-", "", 1))
             except (TypeError, ValueError):
                 return Response({"detail": "Invalid shipping option."}, status=status.HTTP_400_BAD_REQUEST)
 
-            cart_vendor_ids = {
-                item.size_variant.product.vendor_id if item.size_variant_id else item.variant.product.vendor_id
-                for item in items_to_process
-            }
-            cart_vendor_ids.discard(None)
-            market = "GE" if currency == "GEL" else "OTHER"
+            cart_vendor_ids = {vid for vid in vendor_item_map if vid is not None}
             opt = VendorShippingOption.objects.filter(
-                pk=shipping_option_id,
-                vendor_id__in=cart_vendor_ids,
-                market=market,
-                is_active=True,
-            ).first()
+                pk=shipping_option_id, vendor_id__in=cart_vendor_ids, market=market, is_active=True,
+            ).select_related("vendor").first()
             if not opt:
                 return Response({"detail": "The selected shipping option is not available for this order."}, status=status.HTTP_400_BAD_REQUEST)
             delivery_price = Decimal(opt.price)
+            # Create a single shipment for backward compat
+            shipment_specs.append({
+                "vendor_id": opt.vendor_id,
+                "option": opt,
+                "items": items_to_process,
+            })
         else:
             try:
                 opt = DeliveryOption.objects.filter(slug=req_delivery_type, is_active=True).first()
@@ -473,6 +561,19 @@ class CheckoutView(APIView):
             if promo.owner_id:
                 # Creator voucher: one shared % off products only
                 discount = promo.calculate_product_discount(product_subtotal)
+            elif promo.is_scoped:
+                # Scoped promo: only discount qualifying items
+                items_with_products = []
+                for line in priced_lines:
+                    item = line["item"]
+                    product = (
+                        item.size_variant.product if item.size_variant_id
+                        else item.variant.product if item.variant_id
+                        else None
+                    )
+                    if product:
+                        items_with_products.append((product, line["unit_price"] * item.quantity))
+                discount = promo.calculate_scoped_discount(items_with_products)
             else:
                 # Regular promo applies to products + extras (not shipping)
                 discount = promo.calculate_discount(product_subtotal + gift_wrap_total + processing_fee_total)
@@ -504,8 +605,31 @@ class CheckoutView(APIView):
             status="processing",
         )
 
+        # Create per-vendor shipments
+        shipment_map: dict[int | None, OrderShipment] = {}
+        for spec in shipment_specs:
+            shipment = OrderShipment.objects.create(
+                order=order,
+                vendor_id=spec["vendor_id"],
+                delivery_type=f"vendor-{spec['option'].pk}",
+                delivery_label=spec["option"].label,
+                delivery_price=Decimal(spec["option"].price),
+                status="processing",
+            )
+            shipment_map[spec["vendor_id"]] = shipment
+
+        # Build cart_item → shipment lookup
+        def _get_shipment_for_item(cart_item):
+            vid = (
+                cart_item.size_variant.product.vendor_id if cart_item.size_variant_id
+                else cart_item.variant.product.vendor_id if cart_item.variant_id
+                else None
+            )
+            return shipment_map.get(vid)
+
         for line in priced_lines:
             item = line["item"]
+            item_shipment = _get_shipment_for_item(item)
             if item.size_variant_id:
                 sv = item.size_variant
                 product = sv.product
@@ -519,6 +643,7 @@ class CheckoutView(APIView):
                 OrderItem.objects.create(
                     order=order,
                     vendor=product.vendor,
+                    shipment=item_shipment,
                     product_title=product.title,
                     product_image=_absolute_product_image(image_url, request),
                     artist_name=product.artist.name if product.artist else "",
@@ -544,6 +669,7 @@ class CheckoutView(APIView):
                 OrderItem.objects.create(
                     order=order,
                     vendor=variant.product.vendor,
+                    shipment=item_shipment,
                     product_title=variant.product.title,
                     product_image=_absolute_product_image(image_url, request),
                     artist_name=variant.product.artist.name if variant.product.artist else "",
@@ -629,7 +755,7 @@ class OrderListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related("items", "status_history")
+        return Order.objects.filter(user=self.request.user).prefetch_related("items__vendor", "shipments__vendor", "status_history")
 
 
 class OrderDetailView(generics.RetrieveAPIView):
@@ -637,7 +763,7 @@ class OrderDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related("items", "status_history")
+        return Order.objects.filter(user=self.request.user).prefetch_related("items__vendor", "shipments__vendor", "status_history")
 
 
 class DeliveryOptionListView(APIView):
@@ -661,15 +787,28 @@ class CartShippingOptionListView(APIView):
         if not cart:
             return Response([])
 
-        vendor_ids = set(
-            cart.items.filter(size_variant__product__vendor__isnull=False)
-            .values_list("size_variant__product__vendor_id", flat=True)
-        )
-        vendor_ids.update(
-            cart.items.filter(variant__product__vendor__isnull=False)
-            .values_list("variant__product__vendor_id", flat=True)
-        )
-        vendor_ids.discard(None)
+        # Build vendor_id → set of product_ids in cart, and track ready-to-ship per vendor
+        vendor_products: dict[int, set[int]] = {}
+        vendor_all_ready: dict[int, bool] = {}
+        for item in cart.items.select_related(
+            "size_variant__product", "variant__product"
+        ):
+            product = (
+                item.size_variant.product if item.size_variant_id
+                else item.variant.product if item.variant_id
+                else None
+            )
+            if product and product.vendor_id:
+                vendor_products.setdefault(product.vendor_id, set()).add(product.pk)
+                item_ready = (
+                    item.size_variant.is_ready_to_ship and (item.size_variant.stock or 0) > 0
+                ) if item.size_variant_id else False
+                if product.vendor_id not in vendor_all_ready:
+                    vendor_all_ready[product.vendor_id] = item_ready
+                else:
+                    vendor_all_ready[product.vendor_id] = vendor_all_ready[product.vendor_id] and item_ready
+
+        vendor_ids = set(vendor_products.keys())
         if not vendor_ids:
             return Response([])
 
@@ -677,13 +816,19 @@ class CartShippingOptionListView(APIView):
             vendor_id__in=vendor_ids,
             market=market,
             is_active=True,
-        ).select_related("vendor").order_by("sort_order", "price", "id")
+        ).select_related("vendor").order_by("vendor_id", "sort_order", "price", "id")
 
-        data = [
-            {
+        data = []
+        for opt in options:
+            # Hide express options unless all that vendor's cart items are ready to ship
+            if opt.is_express and not vendor_all_ready.get(opt.vendor_id, False):
+                continue
+
+            data.append({
                 "id": opt.id,
                 "slug": f"vendor-{opt.id}",
                 "label": opt.label,
+                "vendor_id": opt.vendor_id,
                 "vendor_name": opt.vendor.name if opt.vendor_id else "",
                 "price": str(opt.price),
                 "price_gel": str(opt.price if market == "GE" else 0),
@@ -691,9 +836,8 @@ class CartShippingOptionListView(APIView):
                 "est_days_min": opt.est_days_min,
                 "est_days_max": opt.est_days_max,
                 "market": opt.market,
-            }
-            for opt in options
-        ]
+                "is_express": opt.is_express,
+            })
         return Response(data)
 
 
