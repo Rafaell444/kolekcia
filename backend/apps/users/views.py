@@ -178,6 +178,34 @@ class MeView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
 
+class AvatarUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        import os
+        import uuid
+        from apps.core.uploads import validate_image_upload, safe_image_extension
+
+        file = request.FILES.get("file")
+        error = validate_image_upload(file)
+        if error:
+            return error
+
+        ext = safe_image_extension(file)
+        filename = f"{uuid.uuid4().hex}{ext}"
+        save_dir = os.path.join(settings.MEDIA_ROOT, "users", "avatars")
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+
+        url = request.build_absolute_uri(f"{settings.MEDIA_URL}users/avatars/{filename}")
+        request.user.avatar = url
+        request.user.save(update_fields=["avatar"])
+        return Response(UserSerializer(request.user).data, status=status.HTTP_201_CREATED)
+
+
 class AddressListCreateView(generics.ListCreateAPIView):
     serializer_class = AddressSerializer
     permission_classes = [IsAuthenticated]

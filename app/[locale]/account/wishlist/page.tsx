@@ -18,6 +18,7 @@ type WishlistProduct = {
   artist_name: string
   base_price: string
   image_url: string
+  status?: "active" | "paused" | "sold"
 }
 
 type WishlistItem = {
@@ -69,6 +70,34 @@ export default function WishlistPage(): React.ReactElement {
             {items.map((item) => {
               const p = item.product
               const price = parseFloat(p.base_price) // kept for discount % calc
+              const available = (p.status ?? "active") === "active"
+              const body = (
+                <>
+                  <div className="aspect-poster relative bg-dp-bg-elevated overflow-hidden">
+                    {p.image_url && (
+                      <Image
+                        src={p.image_url}
+                        alt={p.title}
+                        fill
+                        className={`object-cover transition-transform duration-500 ${available ? "group-hover:scale-105" : "grayscale opacity-60"}`}
+                        sizes="(max-width: 640px) 50vw, 25vw"
+                      />
+                    )}
+                    {!available && (
+                      <div className="absolute inset-x-2 bottom-2 bg-dp-bg-surface/95 border border-dp-border px-2 py-1 text-center text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta">
+                        Not available now
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
+                    <p className="text-[13px] font-semibold text-dp-text-primary truncate mt-0.5">{p.title}</p>
+                    <p className="text-[14px] font-bold text-dp-text-primary mt-1">
+                      {available && !isNaN(price) ? formatPrice(price) : "Unavailable"}
+                    </p>
+                  </div>
+                </>
+              )
               return (
                 <div key={item.id} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover relative">
                   <button
@@ -78,26 +107,7 @@ export default function WishlistPage(): React.ReactElement {
                   >
                     <Trash2 size={12} />
                   </button>
-                  <Link href={`${lp}${productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })}`}>
-                    <div className="aspect-poster relative bg-dp-bg-elevated overflow-hidden">
-                      {p.image_url && (
-                        <Image
-                          src={p.image_url}
-                          alt={p.title}
-                          fill
-                          className="object-cover transition-transform duration-500 group-hover:scale-105"
-                          sizes="(max-width: 640px) 50vw, 25vw"
-                        />
-                      )}
-                    </div>
-                    <div className="p-3">
-                      <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
-                      <p className="text-[13px] font-semibold text-dp-text-primary truncate mt-0.5">{p.title}</p>
-                      <p className="text-[14px] font-bold text-dp-text-primary mt-1">
-                        {isNaN(price) ? "" : formatPrice(price)}
-                      </p>
-                    </div>
-                  </Link>
+                  {available ? <Link href={`${lp}${productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })}`}>{body}</Link> : <div aria-disabled>{body}</div>}
                 </div>
               )
             })}

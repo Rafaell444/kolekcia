@@ -12,6 +12,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ("email", "name", "password", "password2")
 
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("An account with this email already exists. Please sign in or reset your password.")
+        return email
+
     def validate(self, data):
         if data["password"] != data["password2"]:
             raise serializers.ValidationError({"password2": "Passwords do not match."})

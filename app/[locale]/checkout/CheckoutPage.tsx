@@ -11,6 +11,8 @@ import { useRequireAuth } from "@/hooks/useRequireAuth"
 import { useLocale } from "@/contexts/locale-context"
 import { CartItemExtras } from "@/components/cart/CartItemExtras"
 import { PromoCodeBox } from "@/components/cart/PromoCodeBox"
+import { useAuth } from "@/contexts/auth-context"
+import { CHECKOUT_COUNTRIES } from "@/lib/countries"
 
 type DeliveryOpt = {
   id: number
@@ -27,6 +29,7 @@ type DeliveryOpt = {
 }
 
 type Step = "shipping" | "payment" | "review" | "confirmed"
+type Address = { id: number; label: string; line1: string; line2: string; city: string; state: string; zip_code: string; country: string; is_default: boolean }
 
 function shippingPriceLabel(opt: DeliveryOpt, currency: string): string {
   const amount = parseFloat(opt.price ?? (currency === "GEL" ? opt.price_gel : opt.price_usd) ?? "0")
@@ -237,15 +240,65 @@ function ShippingForm({
   deliveryLoading: boolean
   vendorGroups: VendorGroup[]
 }) {
+  const { user } = useAuth()
+  const [addresses, setAddresses] = useState<Address[]>([])
+  const [selectedAddressId, setSelectedAddressId] = useState<number | "new">("new")
   const [f, setF] = useState({
     name: "", streetAddress: "", country: "US", state: "", zipCode: "",
-    email: "", phone: "",
+    email: user?.email ?? "", phone: "",
   })
   const set = (key: keyof typeof f) => (v: string) => {
     setF((p) => ({ ...p, [key]: v }))
     if (key === "country") onCountryChange(v)
   }
   const shippingCurrency = f.country === "GE" ? "GEL" : "USD"
+
+  useEffect(() => {
+    setF((prev) => ({ ...prev, email: user?.email ?? prev.email }))
+  }, [user?.email])
+
+  useEffect(() => {
+    let cancelled = false
+    authFetch<Address[]>("/auth/addresses/")
+      .then((d) => {
+        if (cancelled) return
+        const list = Array.isArray(d) ? d : (d as { results?: Address[] }).results ?? []
+        setAddresses(list)
+        const def = list.find((addr) => addr.is_default) ?? list[0]
+        if (def) applyAddress(def)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  function applyAddress(addr: Address) {
+    setSelectedAddressId(addr.id)
+    setF((prev) => ({
+      ...prev,
+      streetAddress: addr.line1,
+      country: addr.country,
+      state: addr.state || addr.city,
+      zipCode: addr.zip_code,
+    }))
+    onCountryChange(addr.country)
+  }
+
+  async function saveCheckoutAddress() {
+    if (selectedAddressId !== "new") return
+    await authFetch("/auth/addresses/", {
+      method: "POST",
+      body: JSON.stringify({
+        label: "Checkout",
+        line1: f.streetAddress,
+        line2: "",
+        city: f.state,
+        state: f.state,
+        zip_code: f.zipCode,
+        country: f.country,
+        is_default: addresses.length === 0,
+      }),
+    }).catch(() => {})
+  }
 
   const allVendorsHaveSelection = vendorGroups.length === 0 || vendorGroups.every(
     (g) => Boolean(shippingSelections[String(g.vendorId)])
@@ -254,16 +307,18 @@ function ShippingForm({
 
   return (
     <form
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault()
-        if (valid) onNext({
+        if (!valid) return
+        await saveCheckoutAddress()
+        onNext({
           shipping_name: f.name,
           shipping_line1: f.streetAddress,
           shipping_city: f.state,
           shipping_state: f.state,
           shipping_zip: f.zipCode,
           shipping_country: f.country,
-          shipping_email: f.email,
+          shipping_email: user?.email ?? f.email,
           shipping_phone: f.phone,
         }, f.country)
       }}
@@ -271,6 +326,24 @@ function ShippingForm({
       aria-label="Shipping information"
     >
       <h2 className="font-display text-3xl text-dp-text-primary">Shipping Information</h2>
+
+      {addresses.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">Saved addresses</p>
+          {addresses.map((addr) => (
+            <label key={addr.id} className={`flex items-start gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${selectedAddressId === addr.id ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
+              <input type="radio" className="mt-1 accent-dp-accent-cta" checked={selectedAddressId === addr.id} onChange={() => applyAddress(addr)} />
+              <span className="text-[12px] text-dp-text-secondary">
+                <strong className="text-dp-text-primary">{addr.label}</strong> · {addr.line1}, {addr.city || addr.state} {addr.zip_code}, {addr.country}
+              </span>
+            </label>
+          ))}
+          <label className={`flex items-center gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${selectedAddressId === "new" ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
+            <input type="radio" className="accent-dp-accent-cta" checked={selectedAddressId === "new"} onChange={() => setSelectedAddressId("new")} />
+            <span className="text-[13px] font-semibold text-dp-text-primary">Add a new address</span>
+          </label>
+        </div>
+      )}
 
       <Field label="Full Name" id="name" autoComplete="name" placeholder="First and last name" value={f.name} onChange={set("name")} />
       <Field label="Street Address" id="streetAddress" autoComplete="street-address" placeholder="123 Main Street, Apt 4B" value={f.streetAddress} onChange={set("streetAddress")} />
@@ -286,14 +359,8 @@ function ShippingForm({
             onChange={(e) => set("country")(e.target.value)}
             className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover transition-colors"
           >
-            {[
-              ["GE","Georgia 🇬🇪"],
-              ["US","United States"], ["GB","United Kingdom"], ["DE","Germany"],
-              ["FR","France"], ["AU","Australia"], ["CA","Canada"],
-              ["SK","Slovakia"], ["CZ","Czech Republic"], ["PL","Poland"],
-              ["AT","Austria"], ["IT","Italy"], ["ES","Spain"],
-            ].map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
+            {CHECKOUT_COUNTRIES.map((country) => (
+              <option key={country.code} value={country.code}>{country.name}</option>
             ))}
           </select>
         </div>
@@ -301,7 +368,11 @@ function ShippingForm({
       </div>
 
       <Field label="ZIP / Postal Code" id="zipCode" autoComplete="postal-code" placeholder="e.g. 10001" value={f.zipCode} onChange={set("zipCode")} />
-      <Field label="Email Address" id="email" type="email" autoComplete="email" placeholder="you@example.com" value={f.email} onChange={set("email")} />
+      <div className="flex flex-col gap-1">
+        <label htmlFor="email" className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">Email Address *</label>
+        <input id="email" type="email" readOnly value={user?.email ?? f.email} className="px-3 py-2.5 bg-dp-bg-elevated/70 border border-dp-border rounded-sm text-[13px] text-dp-text-secondary cursor-not-allowed" />
+        <p className="text-[11px] text-dp-text-tertiary">Checkout uses the email registered on your profile.</p>
+      </div>
 
       <PerVendorShippingSelector
         groups={vendorGroups}

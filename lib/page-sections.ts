@@ -27,6 +27,23 @@ export async function fetchPageSections(page: string, locale = "en"): Promise<Pa
   }
 }
 
+function mergeLocalized(base: unknown, localized: unknown): unknown {
+  if (Array.isArray(base)) {
+    if (!Array.isArray(localized)) return base
+    return base.map((item, index) => mergeLocalized(item, localized[index]))
+  }
+  if (base && typeof base === "object") {
+    const source = localized && typeof localized === "object" && !Array.isArray(localized)
+      ? localized as Record<string, unknown>
+      : {}
+    return Object.fromEntries(
+      Object.entries(base as Record<string, unknown>).map(([key, value]) => [key, mergeLocalized(value, source[key])]),
+    )
+  }
+  if (typeof localized === "string") return localized.trim() ? localized : base
+  return localized ?? base
+}
+
 export function sectionContent<T extends Record<string, unknown>>(
   sections: PageSection[],
   key: string,
@@ -34,9 +51,8 @@ export function sectionContent<T extends Record<string, unknown>>(
 ): T | null {
   const s = sections.find((x) => x.section_key === key)
   if (!s) return null
-  if (locale === "ka" && s.content_ka && Object.keys(s.content_ka).length > 0) return s.content_ka as T
-  if (locale === "ru" && s.content_ru && Object.keys(s.content_ru).length > 0) return s.content_ru as T
-  if (locale === "ka" || locale === "ru") return null
+  if (locale === "ka" && s.content_ka && Object.keys(s.content_ka).length > 0) return mergeLocalized(s.content, s.content_ka) as T
+  if (locale === "ru" && s.content_ru && Object.keys(s.content_ru).length > 0) return mergeLocalized(s.content, s.content_ru) as T
   return (s.content as T) ?? null
 }
 

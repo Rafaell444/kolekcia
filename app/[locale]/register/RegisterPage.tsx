@@ -22,6 +22,15 @@ const PERKS = [
   "New member bonus",
 ]
 
+function friendlyAuthMessage(message: string): string {
+  const lower = message.toLowerCase()
+  if (lower.includes("already") || lower.includes("unique") || lower.includes("მოცემული email")) {
+    return "An account with this email already exists. Please sign in or reset your password."
+  }
+  if (lower.includes("password")) return message
+  return message || "Registration failed. Please try again."
+}
+
 export default function RegisterPage(): React.ReactElement {
   return (
     <Suspense fallback={null}>
@@ -95,7 +104,7 @@ function RegisterPageInner(): React.ReactElement {
       if (apiErr?.data) {
         const mapped: Record<string, string> = {}
         for (const [key, msgs] of Object.entries(apiErr.data)) {
-          mapped[key] = Array.isArray(msgs) ? msgs[0] : String(msgs)
+          mapped[key] = friendlyAuthMessage(Array.isArray(msgs) ? msgs[0] : String(msgs))
         }
         setErrors(mapped)
       } else {

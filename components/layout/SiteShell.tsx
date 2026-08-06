@@ -384,12 +384,21 @@ function AccountMenu() {
           role="menu"
         >
           <div className="px-4 py-3 border-b border-dp-border">
-            <p className="text-[12px] font-bold text-dp-text-primary">
-              {user ? (user.name || user.email) : t("nav.account")}
-            </p>
-            <p className="text-[11px] text-dp-text-tertiary mt-0.5">
-              {user ? user.email : "Sign in for exclusive perks"}
-            </p>
+            <div className="flex items-center gap-3">
+              {user?.avatar ? (
+                <Image src={user.avatar} alt={user.name || user.email} width={34} height={34} className="rounded-full border border-dp-border object-cover" />
+              ) : (
+                <span className="flex items-center justify-center w-8 h-8 rounded-full bg-dp-bg-elevated border border-dp-border text-dp-text-tertiary"><User size={14} /></span>
+              )}
+              <div className="min-w-0">
+                <p className="text-[12px] font-bold text-dp-text-primary truncate">
+                  {user ? (user.name || user.email) : t("nav.account")}
+                </p>
+                <p className="text-[11px] text-dp-text-tertiary mt-0.5 truncate">
+                  {user ? user.email : "Sign in for exclusive perks"}
+                </p>
+              </div>
+            </div>
           </div>
           {user ? (
             <>

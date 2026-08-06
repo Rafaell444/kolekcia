@@ -31,33 +31,6 @@ import { DEFAULT_LOCALE, isValidLocale } from "@/lib/i18n"
 
 // ─── Auction FAQ ─────────────────────────────────────────────
 
-const AUCTION_FAQS = [
-  {
-    q: "How do live auctions work?",
-    a: "Place a bid at or above the current highest bid. The auction runs until the countdown ends. The highest bidder when time expires wins the item.",
-  },
-  {
-    q: "Are bids binding?",
-    a: "Yes. Every bid you place is a commitment to purchase if you win. Please bid only amounts you are prepared to pay.",
-  },
-  {
-    q: "When do I pay if I win?",
-    a: "Winners receive checkout instructions by email and must complete payment within 48 hours of the auction ending.",
-  },
-  {
-    q: "What is the minimum bid increment?",
-    a: "Each new bid must be at least $1.00 higher than the current highest bid unless otherwise stated on the listing.",
-  },
-  {
-    q: "What happens if I don't pay in time?",
-    a: "Unpaid wins may be offered to the next highest bidder or relisted. Repeated non-payment can restrict your ability to bid.",
-  },
-  {
-    q: "How is shipping handled for auction wins?",
-    a: "Shipping is calculated at checkout after you win. We ship worldwide using tracked carriers; delivery times vary by destination.",
-  },
-]
-
 function AuctionFaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false)
   return (
@@ -129,6 +102,12 @@ type Address = {
   zip_code: string
   country: string
   is_default: boolean
+}
+
+type FaqItem = {
+  id: number
+  question: string
+  answer: string
 }
 
 // ─── Countdown ───────────────────────────────────────────────────────────────
@@ -683,11 +662,11 @@ export default function AuctionDetailPage(): React.ReactElement {
   const locale = isValidLocale(localeParam) ? localeParam : DEFAULT_LOCALE
 
   const { user } = useAuth()
-  const { formatPrice } = useLocale()
+  const { formatPrice, currentCur } = useLocale()
   const [auction, setAuction] = useState<ApiAuction | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [auctionFaqs, setAuctionFaqs] = useState(AUCTION_FAQS)
+  const [auctionFaqs, setAuctionFaqs] = useState<Array<{ q: string; a: string }>>([])
 
   // Bidding UI state
   const [bidInput, setBidInput] = useState("")
@@ -731,11 +710,9 @@ export default function AuctionDetailPage(): React.ReactElement {
   useEffect(() => { fetchAuction() }, [fetchAuction])
 
   useEffect(() => {
-    apiFetch<Array<{ id: number; question: string; answer: string }>>("/cms/faqs/?category=auction")
+    apiFetch<FaqItem[]>("/cms/faqs/?category=auction")
       .then((data) => {
-        if (Array.isArray(data) && data.length) {
-          setAuctionFaqs(data.map((f) => ({ q: f.question, a: f.answer })))
-        }
+        setAuctionFaqs(Array.isArray(data) ? data.map((f) => ({ q: f.question, a: f.answer })) : [])
       })
       .catch(() => {})
   }, [])
@@ -1000,7 +977,6 @@ export default function AuctionDetailPage(): React.ReactElement {
                       className="px-4 py-2 bg-dp-bg-elevated border border-dp-border text-dp-text-primary text-[13px] font-semibold rounded-sm hover:border-dp-accent-cta hover:text-dp-accent-cta transition-colors"
                     >
                       {formatPrice(currentBid + inc)}
-                      <span className="ml-1 text-[10px] text-dp-text-tertiary">+${inc}</span>
                     </button>
                   ))}
                 </div>
@@ -1008,7 +984,7 @@ export default function AuctionDetailPage(): React.ReactElement {
                 {/* Custom bid input */}
                 <div className="flex gap-2">
                   <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary text-sm font-semibold">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary text-sm font-semibold">{currentCur.symbol}</span>
                     <input
                       type="number"
                       value={bidInput}
@@ -1042,14 +1018,12 @@ export default function AuctionDetailPage(): React.ReactElement {
                 )}
 
                 <p className="text-[11px] text-dp-text-tertiary">
-                  Min increment: $1.00 · Bids are binding · Winner pays within 48h
+                  Min increment: {formatPrice(1)} · Bids are binding · Winner pays within 48h
                 </p>
                   </>
                 )}
               </div>
             )}
-
-            {isBiddable && <AuctionLiveChat auctionId={auction.id} isLive={isBiddable} />}
 
             {/* Bid history */}
             <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
@@ -1067,7 +1041,7 @@ export default function AuctionDetailPage(): React.ReactElement {
               {auction.recent_bids.length === 0 ? (
                 <p className="px-4 py-6 text-[13px] text-dp-text-tertiary">No bids yet — be the first!</p>
               ) : (
-                <ul>
+                <ul className="max-h-[320px] overflow-y-auto">
                   {auction.recent_bids.map((bid, i) => (
                     <BidRow
                       key={bid.id}
@@ -1079,23 +1053,27 @@ export default function AuctionDetailPage(): React.ReactElement {
                 </ul>
               )}
             </div>
+
+            {isBiddable && <AuctionLiveChat auctionId={auction.id} isLive={isBiddable} />}
           </div>
         </div>
       </div>
 
-      <section className="border-t border-dp-border bg-dp-bg-elevated py-12" aria-labelledby="auction-faq-heading">
-        <div className="dp-container max-w-3xl">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">FAQ</p>
-          <h2 id="auction-faq-heading" className="font-display text-3xl md:text-4xl text-dp-text-primary mb-6">
-            Auction Questions
-          </h2>
-          <div className="bg-dp-bg-surface border border-dp-border rounded-sm px-5 sm:px-6">
-            {auctionFaqs.map((faq) => (
-              <AuctionFaqItem key={faq.q} q={faq.q} a={faq.a} />
-            ))}
+      {auctionFaqs.length > 0 && (
+        <section className="border-t border-dp-border bg-dp-bg-elevated py-12" aria-labelledby="auction-faq-heading">
+          <div className="dp-container max-w-3xl">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta mb-3">FAQ</p>
+            <h2 id="auction-faq-heading" className="font-display text-3xl md:text-4xl text-dp-text-primary mb-6">
+              Auction Questions
+            </h2>
+            <div className="bg-dp-bg-surface border border-dp-border rounded-sm px-5 sm:px-6">
+              {auctionFaqs.map((faq) => (
+                <AuctionFaqItem key={faq.q} q={faq.q} a={faq.a} />
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </SiteShell>
   )
 }

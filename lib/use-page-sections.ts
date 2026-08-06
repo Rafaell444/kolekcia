@@ -14,7 +14,7 @@ export function usePageSections(page: string, locale: string, initialSections: P
 
   useEffect(() => {
     let cancelled = false
-    apiFetch<PageSection[]>(`/cms/pages/${page}/`)
+    apiFetch<PageSection[]>(`/cms/pages/${page}/?lang=${locale}`)
       .then((data) => {
         if (cancelled) return
         const next = Array.isArray(data) ? data : []

@@ -78,13 +78,13 @@ class PlaceBidView(APIView):
         current = auction.current_bid
         if amount <= current:
             return Response(
-                {"detail": f"Your bid must be higher than the current bid of ${current:.2f}."},
+                {"detail": f"Your bid must be higher than the current bid of {current:.2f}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         if amount < current + 1:
             return Response(
-                {"detail": f"Minimum bid increment is $1.00. Bid at least ${float(current) + 1:.2f}."},
+                {"detail": f"Minimum bid increment is 1.00. Bid at least {float(current) + 1:.2f}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

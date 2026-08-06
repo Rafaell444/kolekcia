@@ -2053,8 +2053,10 @@ export default function AdminProductsPage(): React.ReactElement {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
       })
-      const result = await res.json() as { created: number; errors: { row: number; error: string }[] }
-      alert(`Import complete: ${result.created} products created.${result.errors.length ? ` ${result.errors.length} errors.` : ""}`)
+      const result = await res.json().catch(() => ({})) as { created?: number; updated?: number; errors?: { row: number; error: string }[]; detail?: string }
+      if (!res.ok) throw new Error(result.detail ?? `Import failed (${res.status})`)
+      const errors = result.errors ?? []
+      alert(`Import complete: ${result.created ?? 0} created, ${result.updated ?? 0} updated.${errors.length ? ` ${errors.length} rows need attention.` : ""}`)
       // Refresh list
       adminFetch<AdminProduct[]>(listEndpoint)
         .then((d) => setProducts(Array.isArray(d) ? d : []))

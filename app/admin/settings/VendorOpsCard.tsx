@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react"
 import { adminFetch } from "@/lib/admin-auth"
-import { Save, Mail, Truck, Plus, Trash2 } from "lucide-react"
+import { Save, Truck, Plus, Trash2 } from "lucide-react"
 
 type VendorOps = {
   id: number
@@ -259,11 +259,8 @@ export function VendorOpsCard({ vendor, showProcessing }: { vendor: VendorOps; s
       await adminFetch(`/admin/vendors/${vendor.slug}/ops/`, {
         method: "PATCH",
         body: JSON.stringify({
-          payment_email: draft.payment_email,
           gift_wrap_price_gel: draft.gift_wrap_price_gel,
           gift_wrap_price_usd: draft.gift_wrap_price_usd,
-          shipping_email_subject: draft.shipping_email_subject,
-          shipping_email_body: draft.shipping_email_body,
         }),
       })
       setSaved(true)
@@ -279,32 +276,6 @@ export function VendorOpsCard({ vendor, showProcessing }: { vendor: VendorOps; s
         <p className="text-[11px] text-dp-text-tertiary mt-0.5">@{vendor.slug} · {vendor.catalog_category_slug || "vendor"}</p>
       </div>
       <div className="p-5 flex flex-col gap-6">
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Mail size={14} className="text-dp-accent-cta" />
-            <p className="text-[12px] font-bold uppercase tracking-widest text-dp-text-tertiary">Email & Notifications</p>
-          </div>
-          <div className="flex flex-col gap-3 max-w-xl">
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">Vendor email</label>
-              <input type="email" value={draft.payment_email} onChange={(e) => setDraft((d) => ({ ...d, payment_email: e.target.value }))}
-                className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-            </div>
-            <p className="text-[11px] text-dp-text-tertiary">Template: <strong className="text-dp-text-secondary">{draft.email_template_type ?? "Shipping confirmation"}</strong></p>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">Subject</label>
-              <input value={draft.shipping_email_subject} onChange={(e) => setDraft((d) => ({ ...d, shipping_email_subject: e.target.value }))}
-                className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">Body</label>
-              <textarea rows={5} value={draft.shipping_email_body} onChange={(e) => setDraft((d) => ({ ...d, shipping_email_body: e.target.value }))}
-                className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary resize-none" />
-              <p className="text-[11px] text-dp-text-tertiary">Placeholders: {"{{customer_name}}"}, {"{{order_number}}"}, {"{{tracking_code}}"}, {"{{tracking_info}}"}</p>
-            </div>
-          </div>
-        </div>
-
         <div>
           <p className="text-[12px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-3">Gift wrap price</p>
           <div className="grid grid-cols-2 gap-4 max-w-md">

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
 import Link from "next/link"
-import { Clock, Users, Trophy, Flame, CheckCircle2, Bell } from "lucide-react"
+import { Clock, Users, Trophy, Flame, CheckCircle2, Bell, ChevronLeft, ChevronRight } from "lucide-react"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
 
@@ -210,6 +210,8 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "ended", label: "Ended" },
 ]
 
+const AUCTIONS_PER_PAGE = 9
+
 // ─── Auction Subscribe ──────────────────────────────────────────────────────
 
 function AuctionSubscribeBox() {
@@ -282,6 +284,7 @@ export default function AuctionsPage(): React.ReactElement {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>("all")
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     let cancelled = false
@@ -315,6 +318,13 @@ export default function AuctionsPage(): React.ReactElement {
   })
 
   const liveCount = auctions.filter((a) => !a.is_ended && (a.is_biddable ?? a.is_live)).length
+  const pageCount = Math.max(1, Math.ceil(filtered.length / AUCTIONS_PER_PAGE))
+  const safePage = Math.min(page, pageCount)
+  const pagedAuctions = filtered.slice((safePage - 1) * AUCTIONS_PER_PAGE, safePage * AUCTIONS_PER_PAGE)
+
+  useEffect(() => {
+    setPage(1)
+  }, [filter])
 
   return (
     <SiteShell>
@@ -377,10 +387,53 @@ export default function AuctionsPage(): React.ReactElement {
                   </p>
                 </div>
               ) : (
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {filtered.map((a) => (
-                    <AuctionCard key={a.id} a={a} />
-                  ))}
+                <div className="flex flex-col gap-6">
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {pagedAuctions.map((a) => (
+                      <AuctionCard key={a.id} a={a} />
+                    ))}
+                  </div>
+
+                  {pageCount > 1 && (
+                    <nav className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" aria-label="Auction pagination">
+                      <p className="text-[12px] text-dp-text-tertiary text-center sm:text-left">
+                        Showing {(safePage - 1) * AUCTIONS_PER_PAGE + 1}-{Math.min(safePage * AUCTIONS_PER_PAGE, filtered.length)} of {filtered.length}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          disabled={safePage === 1}
+                          className="inline-flex items-center gap-1 px-3 py-2 border border-dp-border rounded-sm text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary disabled:opacity-40 disabled:hover:text-dp-text-secondary"
+                        >
+                          <ChevronLeft size={14} /> Prev
+                        </button>
+                        {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setPage(n)}
+                            aria-current={n === safePage ? "page" : undefined}
+                            className={`min-w-9 px-3 py-2 border rounded-sm text-[12px] font-bold transition-colors ${
+                              n === safePage
+                                ? "border-dp-accent-cta bg-dp-accent-cta text-white"
+                                : "border-dp-border text-dp-text-secondary hover:text-dp-text-primary"
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                          disabled={safePage === pageCount}
+                          className="inline-flex items-center gap-1 px-3 py-2 border border-dp-border rounded-sm text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary disabled:opacity-40 disabled:hover:text-dp-text-secondary"
+                        >
+                          Next <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </nav>
+                  )}
                 </div>
               )}
             </div>
@@ -395,7 +448,7 @@ export default function AuctionsPage(): React.ReactElement {
                 <ol className="flex flex-col gap-3">
                   {[
                     ["Browse Drops", "Exclusive pieces go live weekly."],
-                    ["Place Your Bid", "Any amount above the current bid (min +$1)."],
+                    ["Place Your Bid", "Any amount above the current bid (minimum increment 1)."],
                     ["Win & Earn XP", "Highest bid when timer ends wins. +500 XP."],
                     ["Receive Your Piece", "Signed & shipped within 5 business days."],
                   ].map(([title, body], i) => (

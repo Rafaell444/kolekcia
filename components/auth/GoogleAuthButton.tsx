@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useRef, useState } from "react"
+import { Globe2 } from "lucide-react"
 import { GoogleLogin } from "@react-oauth/google"
 
 type GoogleAuthButtonProps = {
@@ -15,7 +16,7 @@ export default function GoogleAuthButton({
   disabled = false,
   onSuccess,
   onError,
-}: GoogleAuthButtonProps): React.ReactElement | null {
+}: GoogleAuthButtonProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(360)
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
@@ -30,7 +31,18 @@ export default function GoogleAuthButton({
     return () => observer.disconnect()
   }, [])
 
-  if (!clientId) return null
+  if (!clientId) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="w-full flex items-center justify-center gap-2 py-3 border border-dp-border bg-dp-bg-elevated text-[12px] font-bold uppercase tracking-widest text-dp-text-tertiary rounded-sm opacity-70 cursor-not-allowed"
+        title="Google sign-in needs NEXT_PUBLIC_GOOGLE_CLIENT_ID in production."
+      >
+        <Globe2 size={14} /> Continue with Google
+      </button>
+    )
+  }
 
   return (
     <div

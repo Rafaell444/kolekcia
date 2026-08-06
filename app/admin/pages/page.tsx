@@ -6,6 +6,7 @@ import dynamic from "next/dynamic"
 import Link from "next/link"
 import { FileText, Home, Info, Phone, Save } from "lucide-react"
 import { adminFetch } from "@/lib/admin-auth"
+import AdminMediaUpload from "@/components/admin/AdminMediaUpload"
 
 const HeroAdminPanel = dynamic(() => import("@/app/admin/hero/HeroAdminPanel"), { ssr: false })
 const BannersAdminPanel = dynamic(() => import("@/app/admin/banners/BannersAdminPanel"), { ssr: false })
@@ -29,10 +30,12 @@ function emptyLike(value: unknown): unknown {
   return ""
 }
 
+const IMAGE_KEYS = new Set(["imageUrl", "image_url", "img", "thumb", "avatar", "coverUrl", "cover_url"])
+
 function StructuredFields({ value, path = [], onChange }: { value: unknown; path?: (string | number)[]; onChange: (path: (string | number)[], value: string) => void }) {
   if (Array.isArray(value)) return <div className="flex flex-col gap-3 pl-3 border-l border-dp-border">{value.map((item, i) => <StructuredFields key={i} value={item} path={[...path, i]} onChange={onChange} />)}</div>
   if (!value || typeof value !== "object") return null
-  return <div className="flex flex-col gap-3">{Object.entries(value as Record<string, unknown>).map(([key, item]) => <div key={key} className="flex flex-col gap-1"><label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">{key.replace(/([A-Z])/g, " $1")}</label>{item && typeof item === "object" ? <StructuredFields value={item} path={[...path, key]} onChange={onChange} /> : <input value={String(item ?? "")} onChange={(e) => onChange([...path, key], e.target.value)} className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary" />}</div>)}</div>
+  return <div className="flex flex-col gap-3">{Object.entries(value as Record<string, unknown>).map(([key, item]) => <div key={key} className="flex flex-col gap-1"><label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">{key.replace(/([A-Z])/g, " $1")}</label>{item && typeof item === "object" ? <StructuredFields value={item} path={[...path, key]} onChange={onChange} /> : key === "id" ? <input value={String(item ?? "Automatic")} readOnly className="w-full px-3 py-2 bg-dp-bg-elevated/60 border border-dp-border rounded-sm text-[12px] text-dp-text-tertiary cursor-not-allowed" /> : IMAGE_KEYS.has(key) ? <AdminMediaUpload label="Image" previewUrl={String(item ?? "")} folder="cms" accept="image/*" previewClassName="w-full h-36" onUploaded={(url) => onChange([...path, key], url)} /> : <input value={String(item ?? "")} onChange={(e) => onChange([...path, key], e.target.value)} className="w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary" />}</div>)}</div>
 }
 
 function SectionEditor({ section, onSaved }: { section: PageSection; onSaved: () => void }) {

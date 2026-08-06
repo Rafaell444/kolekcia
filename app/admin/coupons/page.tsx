@@ -7,11 +7,14 @@ import { adminFetch } from "@/lib/admin-auth"
 type Coupon = {
   id: string
   code: string
+  owner: string | null
+  owner_email: string | null
   discount_type: string
   discount_value: string
   min_order_value: string
   max_uses: number | null
   is_active: boolean
+  usage_count: number
   products: number[]
   categories: number[]
   product_names: string[]
@@ -156,6 +159,7 @@ export default function AdminCouponsPage(): React.ReactElement {
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [tab, setTab] = useState<"general" | "creators">("general")
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<CouponForm>(EMPTY_FORM)
@@ -274,6 +278,10 @@ export default function AdminCouponsPage(): React.ReactElement {
     return parts.length ? parts.join(", ") : "All"
   }
 
+  const generalCoupons = coupons.filter((c) => !c.owner && !c.owner_email)
+  const creatorCoupons = coupons.filter((c) => Boolean(c.owner || c.owner_email))
+  const visibleCoupons = tab === "general" ? generalCoupons : creatorCoupons
+
   return (
     <div className="p-4 sm:p-8 flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -284,10 +292,31 @@ export default function AdminCouponsPage(): React.ReactElement {
         <button
           type="button"
           onClick={openCreate}
+          disabled={tab === "creators"}
           className="flex items-center gap-2 px-4 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-bold uppercase tracking-widest rounded-sm transition-colors"
         >
-          <Plus size={14} /> New Coupon
+          <Plus size={14} /> New General Coupon
         </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 border-b border-dp-border">
+        {[
+          { id: "general" as const, label: "General", count: generalCoupons.length },
+          { id: "creators" as const, label: "Creator coupons", count: creatorCoupons.length },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setTab(item.id)}
+            className={`px-4 py-3 text-[12px] font-bold uppercase tracking-widest border-b-2 transition-colors ${
+              tab === item.id
+                ? "border-dp-accent-cta text-dp-text-primary"
+                : "border-transparent text-dp-text-tertiary hover:text-dp-text-primary"
+            }`}
+          >
+            {item.label} <span className="ml-1 text-dp-text-tertiary">({item.count})</span>
+          </button>
+        ))}
       </div>
 
       {error && (
@@ -304,6 +333,7 @@ export default function AdminCouponsPage(): React.ReactElement {
             <thead className="border-b border-dp-border">
               <tr className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">
                 <th className="text-left px-4 py-3">Code</th>
+                {tab === "creators" && <th className="text-left px-4 py-3">Creator</th>}
                 <th className="text-left px-4 py-3">Discount</th>
                 <th className="text-left px-4 py-3">Scope</th>
                 <th className="text-left px-4 py-3">Min Order</th>
@@ -313,13 +343,19 @@ export default function AdminCouponsPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody className="divide-y divide-dp-border text-[13px]">
-              {coupons.map((c) => (
+              {visibleCoupons.map((c) => (
                 <tr key={c.id} className="hover:bg-dp-bg-elevated transition-colors cursor-pointer" onClick={() => openEdit(c)}>
                   <td className="px-4 py-3 font-mono font-bold text-dp-text-primary">
                     <span className="inline-flex items-center gap-2">
                       <Tag size={12} className="text-dp-accent-cta" />{c.code}
                     </span>
                   </td>
+                  {tab === "creators" && (
+                    <td className="px-4 py-3 text-dp-text-secondary">
+                      <span className="block text-[12px]">{c.owner_email || "Creator account"}</span>
+                      <span className="block text-[11px] text-dp-text-tertiary">Uses: {c.usage_count ?? 0}</span>
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-dp-text-secondary">
                     {c.discount_type === "percent" ? `${c.discount_value}%` : `$${c.discount_value}`}
                   </td>
@@ -352,7 +388,11 @@ export default function AdminCouponsPage(): React.ReactElement {
               ))}
             </tbody>
           </table>
-          {coupons.length === 0 && <p className="text-center py-12 text-dp-text-tertiary">No coupons yet.</p>}
+          {visibleCoupons.length === 0 && (
+            <p className="text-center py-12 text-dp-text-tertiary">
+              {tab === "general" ? "No general coupons yet." : "No creator coupons yet."}
+            </p>
+          )}
         </div>
       )}
 

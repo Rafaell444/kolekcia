@@ -13,6 +13,17 @@ import { claimPendingReferral } from "@/lib/referral"
 import { useLocalePrefix } from "@/lib/use-localized-href"
 import { isValidLocale } from "@/lib/i18n"
 
+function friendlyLoginMessage(message?: string): string {
+  if (!message) return "We could not sign you in. Please check your email and password."
+  const lower = message.toLowerCase()
+  if (lower.includes("invalid") || lower.includes("credentials")) {
+    return "The email or password is incorrect. Please check it and try again."
+  }
+  if (lower.includes("deactivated")) return "This account is deactivated. Please contact support."
+  if (lower.includes("locked")) return "Too many failed attempts. Please try again later."
+  return message
+}
+
 function LoginPageInner(): React.ReactElement {
   const { login, loginWithGoogle } = useAuth()
   const { addItem } = useCart()
@@ -61,7 +72,7 @@ function LoginPageInner(): React.ReactElement {
       await finishAuthRedirect()
     } catch (err: unknown) {
       const apiErr = err as { data?: { detail?: string } }
-      setError(apiErr?.data?.detail ?? "Google sign-in failed. Please try again.")
+      setError(friendlyLoginMessage(apiErr?.data?.detail ?? "Google sign-in failed. Please try again."))
     } finally {
       setGoogleLoading(false)
     }
@@ -77,7 +88,7 @@ function LoginPageInner(): React.ReactElement {
       await finishAuthRedirect()
     } catch (err: unknown) {
       const apiErr = err as { data?: { detail?: string } }
-      setError(apiErr?.data?.detail ?? "Login failed. Please try again.")
+      setError(friendlyLoginMessage(apiErr?.data?.detail))
     } finally {
       setLoading(false)
     }

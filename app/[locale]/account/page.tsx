@@ -24,6 +24,8 @@ import InboxPanel from "@/components/messaging/InboxPanel"
 import { UnreadBadge } from "@/components/messaging/UnreadBadge"
 import { useInboxUnreadCount } from "@/hooks/use-inbox-unread"
 import CreatorPanel from "@/components/account/CreatorPanel"
+import { CHECKOUT_COUNTRIES, countryName } from "@/lib/countries"
+import { getAccessToken } from "@/lib/auth-storage"
 
 type CustomOrder = {
   id: string; vendor_name: string | null; product_type: string; status: string
@@ -62,24 +64,34 @@ type WishlistProduct = {
   artist_name: string
   base_price: string
   image_url: string
+  status?: "active" | "paused" | "sold"
 }
 type WishlistItem = { id: number; product: WishlistProduct; added_at: string }
 type Address = { id: number; label: string; line1: string; line2: string; city: string; state: string; zip_code: string; country: string; is_default: boolean }
 type XPLog = { id: number; action: string; xp_amount: number; created_at: string }
 type XPRule = { id: number; action_key: string; xp_amount: number; is_one_time: boolean }
 type ReferralStats = { code: string; total_invites: number; converted_invites: number }
+type CreatorSummary = {
+  is_creator: boolean
+  creator: {
+    voucher_code: string | null
+    available_balance: string
+    lifetime_earned: string
+  } | null
+  redemptions?: unknown[]
+}
 
 const ACCOUNT_TABS = [
   { id: "overview",      label: "Overview",       Icon: User },
   { id: "inbox",         label: "Inbox",          Icon: MessageSquare },
   { id: "orders",        label: "Orders",         Icon: Package },
-  { id: "creator",       label: "Creator",        Icon: Megaphone },
   { id: "custom",        label: "Custom Orders",  Icon: FileText },
   { id: "wishlist",      label: "Wishlist",       Icon: Heart },
   { id: "badges",        label: "Badges & XP",    Icon: Award },
   { id: "settings",      label: "Settings",       Icon: Settings },
   { id: "addresses",     label: "Addresses",      Icon: MapPin },
   { id: "payments",      label: "Payments",       Icon: CreditCard },
+  { id: "creator",       label: "Creator",        Icon: Megaphone },
 ]
 
 const ORDER_STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -135,6 +147,7 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
   const [orders, setOrders] = useState<Order[]>([])
   const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([])
   const [referral, setReferral] = useState<ReferralStats | null>(null)
+  const [creatorSummary, setCreatorSummary] = useState<CreatorSummary | null>(null)
   const [xpLog, setXpLog] = useState<XPLog[]>([])
   const [xpRules, setXpRules] = useState<XPRule[]>([])
 
@@ -143,6 +156,7 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
     authFetch<Order[] | PaginatedResponse<Order>>("/orders/").then((d) => { if (!cancelled) setOrders(parseList(d).slice(0, 3)) }).catch(() => {})
     authFetch<EarnedBadge[]>("/gamification/my-badges/").then((d) => { if (!cancelled) setEarnedBadges(d.slice(0, 6)) }).catch(() => {})
     authFetch<ReferralStats>("/referrals/me/").then((d) => { if (!cancelled) setReferral(d) }).catch(() => {})
+    authFetch<CreatorSummary>("/creators/me/").then((d) => { if (!cancelled) setCreatorSummary(d) }).catch(() => {})
     authFetch<XPLog[] | PaginatedResponse<XPLog>>("/gamification/xp-log/")
       .then((d) => { if (!cancelled) setXpLog(parseList(d).slice(0, 4)) })
       .catch(() => {})
@@ -158,7 +172,26 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
 
   return (
     <div className="flex flex-col gap-8">
-      <button
+      {creatorSummary?.is_creator && creatorSummary.creator && (
+        <div className="border border-dp-accent-gold/50 bg-dp-accent-gold/5 rounded-sm p-5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-gold mb-1 flex items-center gap-1.5">
+            <Megaphone size={12} /> Creator voucher
+          </p>
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <p className="font-mono text-2xl font-black text-dp-text-primary">{creatorSummary.creator.voucher_code || "Pending code"}</p>
+              <p className="text-[12px] text-dp-text-secondary mt-1">
+                Used by {creatorSummary.redemptions?.length ?? 0} customer{(creatorSummary.redemptions?.length ?? 0) === 1 ? "" : "s"} · Lifetime earned {creatorSummary.creator.lifetime_earned}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={onOpenCreator} className="px-4 py-2 bg-dp-text-primary text-white text-[11px] font-black uppercase tracking-widest rounded-sm">Earnings</button>
+              <button type="button" onClick={onOpenCreator} className="px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-black uppercase tracking-widest rounded-sm">Payout</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!creatorSummary?.is_creator && <button
         type="button"
         onClick={onOpenCreator}
         className="w-full text-left border border-dp-accent-cta/40 bg-dp-accent-cta/5 hover:bg-dp-accent-cta/10 rounded-sm p-5 transition-colors"
@@ -173,7 +206,7 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
         <span className="inline-flex mt-3 text-[11px] font-black uppercase tracking-widest text-dp-accent-cta">
           Open Creator tab →
         </span>
-      </button>
+      </button>}
 
       <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
         <div className="flex items-center justify-between mb-3">
@@ -283,8 +316,8 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
               {typeof window !== "undefined" ? `${window.location.origin}/?ref=${referral.code}` : `/?ref=${referral.code}`}
             </code>
           </div>
-          <p className="text-[12px] text-dp-text-tertiary mt-3">
-            Invites: {referral.total_invites} · Conversions: {referral.converted_invites}
+          <p className="inline-flex items-center gap-2 text-[13px] font-black text-dp-text-primary bg-dp-accent-gold/10 border border-dp-accent-gold/30 px-3 py-2 rounded-sm mt-3">
+            Invites: {referral.total_invites}
           </p>
         </div>
       )}
@@ -460,17 +493,26 @@ function WishlistTab() {
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
           {items.map((item) => {
             const p = item.product
+            const available = (p.status ?? "active") === "active"
+            const card = (
+              <>
+                <div className="aspect-poster relative bg-dp-bg-elevated">
+                  {p.image_url && <Image src={p.image_url} alt={p.title} fill className={`object-cover transition-transform duration-500 ${available ? "group-hover:scale-105" : "grayscale opacity-60"}`} sizes="(max-width: 640px) 50vw, 25vw" />}
+                  {!available && <div className="absolute inset-x-2 bottom-2 bg-dp-bg-surface/95 border border-dp-border px-2 py-1 text-center text-[10px] font-bold uppercase tracking-widest text-dp-accent-cta">Not available now</div>}
+                </div>
+                <div className="p-3">
+                  <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
+                  <p className="text-[13px] font-semibold text-dp-text-primary truncate">{p.title}</p>
+                  <p className="text-[14px] font-bold text-dp-text-primary mt-1">{available ? formatPrice(parseFloat(p.base_price)) : "Unavailable"}</p>
+                </div>
+              </>
+            )
             return (
-            <Link key={item.id} href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover">
-              <div className="aspect-poster relative bg-dp-bg-elevated">
-                {p.image_url && <Image src={p.image_url} alt={p.title} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 640px) 50vw, 25vw" />}
-              </div>
-              <div className="p-3">
-                <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
-                <p className="text-[13px] font-semibold text-dp-text-primary truncate">{p.title}</p>
-                <p className="text-[14px] font-bold text-dp-text-primary mt-1">{formatPrice(parseFloat(p.base_price))}</p>
-              </div>
-            </Link>
+            available ? (
+              <Link key={item.id} href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden dp-card-hover">{card}</Link>
+            ) : (
+              <div key={item.id} className="group bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden opacity-90" aria-disabled>{card}</div>
+            )
             )
           })}
           {items.length === 0 && (
@@ -784,7 +826,11 @@ function AddressesTab() {
             </div>
             <div>
               <label className={labelCls}>Country *</label>
-              <input required value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} placeholder="Country" className={inputCls} />
+              <select required value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} className={inputCls}>
+                {CHECKOUT_COUNTRIES.map((country) => (
+                  <option key={country.code} value={country.code}>{country.name}</option>
+                ))}
+              </select>
             </div>
             <div className="col-span-2 flex items-center gap-2">
               <input type="checkbox" id="is_default" checked={form.is_default} onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))} className="w-4 h-4 rounded" />
@@ -819,7 +865,7 @@ function AddressesTab() {
               <p className="text-[13px] text-dp-text-primary">{addr.line1}</p>
               {addr.line2 && <p className="text-[13px] text-dp-text-secondary">{addr.line2}</p>}
               <p className="text-[13px] text-dp-text-secondary">{addr.city}{addr.state ? `, ${addr.state}` : ""} {addr.zip_code}</p>
-              <p className="text-[13px] text-dp-text-secondary">{addr.country}</p>
+              <p className="text-[13px] text-dp-text-secondary">{countryName(addr.country)}</p>
               <div className="flex gap-2 mt-4 flex-wrap">
                 {!addr.is_default && (
                   <button onClick={() => makeDefault(addr.id)} className="flex items-center gap-1 px-3 py-1.5 border border-dp-accent-gold/50 rounded-sm text-[11px] font-bold text-dp-accent-gold hover:bg-dp-accent-gold/10 transition-colors">
@@ -859,6 +905,7 @@ function SettingsTab() {
   const [pwSuccess, setPwSuccess] = useState(false)
   const [savingInfo, setSavingInfo] = useState(false)
   const [savingPw, setSavingPw] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   async function handleSaveInfo(e: React.FormEvent) {
     e.preventDefault()
@@ -905,6 +952,30 @@ function SettingsTab() {
     }
   }
 
+  async function handleAvatarUpload(file: File) {
+    setUploadingAvatar(true)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const token = getAccessToken()
+      const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+      const res = await fetch(`${base}/auth/me/avatar/`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { detail?: string }
+        throw new Error(data.detail ?? "Avatar upload failed.")
+      }
+      await refreshUser()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Avatar upload failed.")
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
   const inputCls = "w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
   const labelCls = "block text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2"
 
@@ -930,6 +1001,22 @@ function SettingsTab() {
             <label className={labelCls}>Email Address</label>
             <input type="email" value={user?.email ?? ""} readOnly className={`${inputCls} opacity-60 cursor-not-allowed`} />
             <p className="text-[11px] text-dp-text-tertiary mt-1">Email cannot be changed. Contact support if needed.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Avatar image</label>
+            <div className="flex items-center gap-4">
+              {user?.avatar ? (
+                <Image src={user.avatar} alt={user.name || user.email} width={56} height={56} className="rounded-full border border-dp-border object-cover" />
+              ) : (
+                <div className="w-14 h-14 rounded-full bg-dp-bg-elevated border border-dp-border flex items-center justify-center text-dp-text-tertiary">
+                  <User size={20} />
+                </div>
+              )}
+              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-dp-border rounded-sm text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
+                <Plus size={13} /> {uploadingAvatar ? "Uploading..." : "Upload image"}
+                <input type="file" accept="image/*" className="sr-only" disabled={uploadingAvatar} onChange={(e) => e.target.files?.[0] && void handleAvatarUpload(e.target.files[0])} />
+              </label>
+            </div>
           </div>
           <div>
             <label className={labelCls}>Phone</label>
@@ -1218,10 +1305,10 @@ export default function AccountPage(): React.ReactElement {
         <aside className="hidden md:flex flex-col w-52 shrink-0 gap-1" aria-label="Account navigation">
           {ACCOUNT_TABS.map(({ id, label, Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-sm text-[13px] font-medium text-left transition-colors w-full ${activeTab === id ? "bg-dp-bg-elevated text-dp-text-primary" : "text-dp-text-secondary hover:bg-dp-bg-elevated hover:text-dp-text-primary"}`}
+              className={`flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-sm text-[13px] font-medium text-left transition-colors w-full ${id === "creator" ? "mt-5 border border-dp-accent-gold/40 bg-dp-accent-gold/5 text-dp-text-primary hover:border-dp-accent-gold/70" : activeTab === id ? "bg-dp-bg-elevated text-dp-text-primary" : "text-dp-text-secondary hover:bg-dp-bg-elevated hover:text-dp-text-primary"}`}
               aria-current={activeTab === id ? "page" : undefined}>
               <span className="flex items-center gap-2.5 min-w-0">
-                <Icon size={14} className={activeTab === id ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
+                <Icon size={14} className={id === "creator" ? "text-dp-accent-gold" : activeTab === id ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
                 {label}
               </span>
               {id === "inbox" && <UnreadBadge count={inboxUnread} />}

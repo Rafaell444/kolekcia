@@ -322,7 +322,7 @@ export default function AdminCreatorsPage(): React.ReactElement {
   const hasFxData = ledger.some((r) => r.original_currency)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="p-4 sm:p-8 flex flex-col gap-6">
       <div className="flex items-center gap-3">
         <Megaphone size={22} className="text-dp-accent-cta" />
         <div>

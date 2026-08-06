@@ -433,15 +433,24 @@ class AdminOrderUpdateView(APIView):
 
             shipment_tracking = request.data.get("tracking_code")
             shipment_status = request.data.get("shipment_status")
+            prev_shipment_status = shipment.status
+            prev_shipment_tracking = shipment.tracking_code
 
             if shipment_tracking is not None:
                 shipment.tracking_code = shipment_tracking
             if shipment_status and shipment_status in ("processing", "shipped", "delivered"):
-                prev_shipment_status = shipment.status
                 shipment.status = shipment_status
-                if shipment_status == "shipped" and prev_shipment_status != "shipped":
+            should_send_shipment_email = (
+                shipment.status == "shipped"
+                and (
+                    prev_shipment_status != "shipped"
+                    or (not prev_shipment_tracking and bool(shipment.tracking_code))
+                )
+            )
+            if should_send_shipment_email:
+                if not shipment.shipped_at:
                     shipment.shipped_at = timezone.now()
-                    _send_shipment_email(order, shipment)
+                _send_shipment_email(order, shipment)
 
             shipment.save()
 
@@ -475,6 +484,7 @@ class AdminOrderUpdateView(APIView):
         tracking = request.data.get("tracking_code")
 
         prev_status = order.status
+        prev_tracking = order.tracking_code
 
         if new_status and new_status != prev_status:
             order.status = new_status
@@ -514,8 +524,16 @@ class AdminOrderUpdateView(APIView):
 
         order.save()
 
-        if new_status == "shipped" and prev_status != "shipped":
-            order.shipped_at = timezone.now()
+        should_send_shipping_email = (
+            order.status == "shipped"
+            and (
+                prev_status != "shipped"
+                or (not prev_tracking and bool(order.tracking_code))
+            )
+        )
+        if should_send_shipping_email:
+            if not order.shipped_at:
+                order.shipped_at = timezone.now()
             order.save(update_fields=["shipped_at"])
             _send_shipping_email(order)
 
@@ -1666,17 +1684,17 @@ class AdminProductExportView(APIView):
         ws = wb.active
         ws.title = "Products"
         headers = [
-            "id", "title", "description", "material",
+            "id", "title", "title_ka", "title_ru", "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
             "base_price_usd", "price_gel", "price_eur", "price_gbp",
             "categories", "allow_custom_size",
-            "status", "is_limited", "is_sale", "is_new", "is_exclusive",
-            "tags", "vendor_slug",
+            "status", "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship",
+            "tags", "tags_ka", "tags_ru", "product_details", "product_details_ka", "product_details_ru", "vendor_slug",
             "image_url_1", "image_url_2", "image_url_3",
-            "size_1_label", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
-            "size_2_label", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
-            "size_3_label", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
-            "size_4_label", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
-            "size_5_label", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
+            "size_1_label", "size_1_label_ka", "size_1_label_ru", "size_1_sku", "size_1_stock", "size_1_ready_to_ship", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
+            "size_2_label", "size_2_label_ka", "size_2_label_ru", "size_2_sku", "size_2_stock", "size_2_ready_to_ship", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
+            "size_3_label", "size_3_label_ka", "size_3_label_ru", "size_3_sku", "size_3_stock", "size_3_ready_to_ship", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
+            "size_4_label", "size_4_label_ka", "size_4_label_ru", "size_4_sku", "size_4_stock", "size_4_ready_to_ship", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
+            "size_5_label", "size_5_label_ka", "size_5_label_ru", "size_5_sku", "size_5_stock", "size_5_ready_to_ship", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
         ]
         ws.append(headers)
 
@@ -1689,15 +1707,15 @@ class AdminProductExportView(APIView):
                 images.append("")
             svs = list(
                 p.size_variants.filter(is_active=True).values_list(
-                    "label", "price_usd", "price_gel", "sale_price_usd", "sale_price_gel"
+                    "label", "label_ka", "label_ru", "sku", "stock", "is_ready_to_ship", "price_usd", "price_gel", "sale_price_usd", "sale_price_gel"
                 )
             )[:5]
             while len(svs) < 5:
-                svs.append(("", "", "", "", ""))
+                svs.append(("", "", "", "", "", "", "", "", "", ""))
             flat_svs = []
-            for lbl, pr_usd, pr_gel, sale_usd, sale_gel in svs:
+            for lbl, lbl_ka, lbl_ru, sku, stock, ready, pr_usd, pr_gel, sale_usd, sale_gel in svs:
                 flat_svs.extend([
-                    lbl,
+                    lbl, lbl_ka or "", lbl_ru or "", sku or "", stock if stock is not None else "", "yes" if ready else "no",
                     str(pr_usd) if pr_usd is not None else "",
                     str(pr_gel) if pr_gel is not None else "",
                     str(sale_usd) if sale_usd is not None else "",
@@ -1705,7 +1723,9 @@ class AdminProductExportView(APIView):
                 ])
             rp = p.regional_prices or {}
             row = [
-                p.id, p.title, p.description, p.material,
+                p.id, p.title, getattr(p, "title_ka", "") or "", getattr(p, "title_ru", "") or "",
+                p.description, getattr(p, "description_ka", "") or "", getattr(p, "description_ru", "") or "",
+                p.material, getattr(p, "material_ka", "") or "", getattr(p, "material_ru", "") or "",
                 str(p.base_price),
                 str(rp.get("GEL", {}).get("price", "") or ""),
                 str(rp.get("EUR", {}).get("price", "") or ""),
@@ -1717,7 +1737,14 @@ class AdminProductExportView(APIView):
                 "yes" if p.is_sale else "no",
                 "yes" if p.is_new else "no",
                 "yes" if p.is_exclusive else "no",
+                "yes" if p.is_featured else "no",
+                "yes" if p.is_ready_to_ship else "no",
                 ",".join(p.tags or []),
+                ",".join(getattr(p, "tags_ka", None) or []),
+                ",".join(getattr(p, "tags_ru", None) or []),
+                "|".join(p.product_details or []),
+                "|".join(getattr(p, "product_details_ka", None) or []),
+                "|".join(getattr(p, "product_details_ru", None) or []),
                 p.vendor.slug if p.vendor else "",
             ] + images + flat_svs
             ws.append(row)
@@ -1749,31 +1776,31 @@ class AdminProductImportView(APIView):
         ws = wb.active
         ws.title = "Products"
         headers = [
-            "title", "description", "material",
+            "id", "title", "title_ka", "title_ru", "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
             "base_price_usd", "price_gel", "price_eur", "price_gbp",
             "categories", "allow_custom_size",
-            "status", "is_limited", "is_sale", "is_new", "is_exclusive",
-            "tags", "vendor_slug",
+            "status", "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship",
+            "tags", "tags_ka", "tags_ru", "product_details", "product_details_ka", "product_details_ru", "vendor_slug",
             "image_url_1", "image_url_2", "image_url_3",
-            "size_1_label", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
-            "size_2_label", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
-            "size_3_label", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
-            "size_4_label", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
-            "size_5_label", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
+            "size_1_label", "size_1_label_ka", "size_1_label_ru", "size_1_sku", "size_1_stock", "size_1_ready_to_ship", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
+            "size_2_label", "size_2_label_ka", "size_2_label_ru", "size_2_sku", "size_2_stock", "size_2_ready_to_ship", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
+            "size_3_label", "size_3_label_ka", "size_3_label_ru", "size_3_sku", "size_3_stock", "size_3_ready_to_ship", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
+            "size_4_label", "size_4_label_ka", "size_4_label_ru", "size_4_sku", "size_4_stock", "size_4_ready_to_ship", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
+            "size_5_label", "size_5_label_ka", "size_5_label_ru", "size_5_sku", "size_5_stock", "size_5_ready_to_ship", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
         ]
         ws.append(headers)
         ws.append([
-            "Example Product", "A beautiful piece.", "Canvas",
+            "", "Example Product", "", "", "A beautiful piece.", "", "", "Metal", "", "",
             "49.99", "135.00", "46.00", "39.50",
             "figures", "no",
-            "active", "no", "yes", "yes", "no",
-            "art,modern", "example-vendor",
+            "active", "no", "yes", "yes", "no", "no", "yes",
+            "art,modern", "", "", "Premium print|Magnetic mount included", "", "", "example-vendor",
             "https://example.com/img1.jpg", "", "",
-            "S", "39.99", "108.00", "34.99", "95.00",
-            "M", "49.99", "135.00", "44.99", "120.00",
-            "L", "59.99", "162.00", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
+            "S", "", "", "", "10", "yes", "39.99", "108.00", "34.99", "95.00",
+            "M", "", "", "", "", "no", "49.99", "135.00", "44.99", "120.00",
+            "L", "", "", "", "", "no", "59.99", "162.00", "", "",
+            "", "", "", "", "", "", "", "", "", "",
+            "", "", "", "", "", "", "", "", "", "",
         ])
         from io import BytesIO
         buf = BytesIO()
@@ -1812,6 +1839,7 @@ class AdminProductImportView(APIView):
         headers = [str(h).strip().lower() if h else "" for h in rows[0]]
         data_rows = rows[1:]
         created_count = 0
+        updated_count = 0
         errors = []
 
         def cell(row, name):
@@ -1823,6 +1851,12 @@ class AdminProductImportView(APIView):
 
         def yn(val):
             return str(val).strip().lower() in ("yes", "true", "1")
+
+        def csv_list(val):
+            return [t.strip() for t in str(val or "").split(",") if t.strip()]
+
+        def pipe_list(val):
+            return [t.strip() for t in str(val or "").split("|") if t.strip()]
 
         for i, row in enumerate(data_rows, start=2):
             title = cell(row, "title")
@@ -1837,8 +1871,7 @@ class AdminProductImportView(APIView):
                     if v:
                         regional_prices[cur] = {"price": str(v)}
 
-                tags_raw = cell(row, "tags") or ""
-                tags = [t.strip() for t in str(tags_raw).split(",") if str(t).strip()]
+                tags = csv_list(cell(row, "tags"))
 
                 vendor_slug = cell(row, "vendor_slug")
                 vendor = Vendor.objects.filter(slug=vendor_slug).first() if vendor_slug else None
@@ -1850,22 +1883,53 @@ class AdminProductImportView(APIView):
                 cats = list(Category.objects.filter(slug__in=cat_slugs))
                 primary_cat = cats[0] if cats else None
 
-                product = Product.objects.create(
-                    title=str(title),
-                    description=str(cell(row, "description") or ""),
-                    material=str(cell(row, "material") or ""),
-                    base_price=base_price,
-                    regional_prices=regional_prices,
-                    allow_custom_size=yn(cell(row, "allow_custom_size")),
-                    status=str(cell(row, "status") or "active"),
-                    is_limited=yn(cell(row, "is_limited")),
-                    is_sale=yn(cell(row, "is_sale")),
-                    is_new=yn(cell(row, "is_new")),
-                    is_exclusive=yn(cell(row, "is_exclusive")),
-                    tags=tags,
-                    category=primary_cat,
-                    vendor=vendor,
-                )
+                product_id = cell(row, "id")
+                product = None
+                if product_id:
+                    qs = Product.objects.filter(pk=product_id)
+                    if not request.user.is_staff and hasattr(request.user, "vendor_profile"):
+                        qs = qs.filter(vendor=request.user.vendor_profile)
+                    product = qs.first()
+
+                payload = {
+                    "title": str(title),
+                    "title_ka": str(cell(row, "title_ka") or ""),
+                    "title_ru": str(cell(row, "title_ru") or ""),
+                    "description": str(cell(row, "description") or ""),
+                    "description_ka": str(cell(row, "description_ka") or ""),
+                    "description_ru": str(cell(row, "description_ru") or ""),
+                    "material": str(cell(row, "material") or ""),
+                    "material_ka": str(cell(row, "material_ka") or ""),
+                    "material_ru": str(cell(row, "material_ru") or ""),
+                    "base_price": base_price,
+                    "regional_prices": regional_prices,
+                    "allow_custom_size": yn(cell(row, "allow_custom_size")),
+                    "status": str(cell(row, "status") or "active"),
+                    "is_limited": yn(cell(row, "is_limited")),
+                    "is_sale": yn(cell(row, "is_sale")),
+                    "is_new": yn(cell(row, "is_new")),
+                    "is_exclusive": yn(cell(row, "is_exclusive")),
+                    "is_featured": yn(cell(row, "is_featured")),
+                    "is_ready_to_ship": yn(cell(row, "is_ready_to_ship")),
+                    "tags": tags,
+                    "tags_ka": csv_list(cell(row, "tags_ka")),
+                    "tags_ru": csv_list(cell(row, "tags_ru")),
+                    "product_details": pipe_list(cell(row, "product_details")),
+                    "product_details_ka": pipe_list(cell(row, "product_details_ka")),
+                    "product_details_ru": pipe_list(cell(row, "product_details_ru")),
+                    "category": primary_cat,
+                    "vendor": vendor,
+                }
+                if product:
+                    for field, value in payload.items():
+                        setattr(product, field, value)
+                    product.save()
+                    updated_count += 1
+                    product.images.all().delete()
+                    product.size_variants.all().delete()
+                else:
+                    product = Product.objects.create(**payload)
+                    created_count += 1
                 if cats:
                     product.categories.set(cats)
 
@@ -1880,6 +1944,11 @@ class AdminProductImportView(APIView):
 
                 for n in range(1, 6):
                     lbl = cell(row, f"size_{n}_label")
+                    lbl_ka = cell(row, f"size_{n}_label_ka")
+                    lbl_ru = cell(row, f"size_{n}_label_ru")
+                    sku = cell(row, f"size_{n}_sku")
+                    stock = cell(row, f"size_{n}_stock")
+                    ready = yn(cell(row, f"size_{n}_ready_to_ship"))
                     pr_usd = cell(row, f"size_{n}_price_usd") or cell(row, f"size_{n}_price")
                     pr_gel = cell(row, f"size_{n}_price_gel")
                     sale_usd = cell(row, f"size_{n}_sale_usd")
@@ -1889,6 +1958,11 @@ class AdminProductImportView(APIView):
                             SizeVariant.objects.create(
                                 product=product,
                                 label=str(lbl),
+                                label_ka=str(lbl_ka or ""),
+                                label_ru=str(lbl_ru or ""),
+                                sku=str(sku).strip() or None,
+                                stock=int(stock) if stock not in (None, "") else None,
+                                is_ready_to_ship=ready,
                                 price_usd=D(str(pr_usd)),
                                 price_gel=D(str(pr_gel)) if pr_gel else None,
                                 sale_price_usd=D(str(sale_usd)) if sale_usd else None,
@@ -1897,12 +1971,10 @@ class AdminProductImportView(APIView):
                             )
                         except Exception:
                             pass
-
-                created_count += 1
             except Exception as e:
                 errors.append({"row": i, "error": str(e)})
 
-        return Response({"created": created_count, "errors": errors}, status=status.HTTP_200_OK)
+        return Response({"created": created_count, "updated": updated_count, "errors": errors}, status=status.HTTP_200_OK)
 
 
 # ── Catalog filter visibility ─────────────────────────────────────────────────
