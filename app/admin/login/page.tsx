@@ -51,21 +51,23 @@ export default function AdminLoginPage(): React.ReactElement {
   }
 
   return (
-    <div className="min-h-screen bg-dp-bg-base flex items-center justify-center px-4">
+    <div className="min-h-screen bg-dp-bg-base flex items-center justify-center px-3 py-6 sm:px-4 sm:py-10">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 rounded-sm border-2 flex items-center justify-center bg-dp-bg-surface border-dp-border">
+        <div className="flex flex-col items-center text-center gap-3 mb-6 sm:mb-10 sm:flex-row sm:text-left">
+          <div className="w-10 h-10 rounded-sm border-2 flex items-center justify-center bg-dp-bg-surface border-dp-border shrink-0">
             <Zap size={18} className="text-dp-accent-cta" />
           </div>
-          <div>
-            <p className="font-display text-2xl text-dp-text-primary tracking-wider">KOLEQCIA</p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-dp-accent-cta">Vendor & Admin Portal</p>
+          <div className="min-w-0">
+            <p className="font-display text-2xl sm:text-3xl text-dp-text-primary tracking-wider leading-none">KOLEQCIA</p>
+            <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em] text-dp-accent-cta mt-1">
+              Vendor & Admin Portal
+            </p>
           </div>
         </div>
 
-        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-8">
-          <h1 className="font-display text-3xl text-dp-text-primary mb-1">Sign in</h1>
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5 sm:p-8 shadow-sm">
+          <h1 className="font-display text-3xl sm:text-4xl text-dp-text-primary mb-1">Sign in</h1>
           <p className="text-[13px] text-dp-text-tertiary mb-7">For staff and vendor accounts only.</p>
 
           {error && (
@@ -118,7 +120,7 @@ export default function AdminLoginPage(): React.ReactElement {
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center justify-center gap-2 w-full py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors mt-1"
+              className="flex items-center justify-center gap-2 w-full min-h-12 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[12px] sm:text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors mt-1"
             >
               {loading ? (
                 <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -130,11 +132,11 @@ export default function AdminLoginPage(): React.ReactElement {
           </form>
 
           <div className="mt-6 pt-5 border-t border-dp-border">
-            <div className="mb-5 rounded-sm border border-dp-border bg-dp-bg-elevated p-4">
+            <div className="mb-5 rounded-sm border border-dp-border bg-dp-bg-elevated p-3 sm:p-4">
               <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-dp-text-tertiary">
                 Temporary login credentials
               </p>
-              <div className="space-y-2">
+              <div className="grid gap-2">
                 {DEMO_ACCOUNTS.map((account) => (
                   <button
                     key={account.email}
@@ -144,10 +146,11 @@ export default function AdminLoginPage(): React.ReactElement {
                       setPassword(account.password)
                       setError("")
                     }}
-                    className="w-full rounded-sm border border-dp-border bg-dp-bg-surface px-3 py-2 text-left text-[11px] text-dp-text-secondary transition-colors hover:border-dp-border-hover hover:text-dp-text-primary"
+                    className="w-full rounded-sm border border-dp-border bg-dp-bg-surface px-3 py-2.5 text-left text-[11px] text-dp-text-secondary transition-colors hover:border-dp-border-hover hover:text-dp-text-primary"
                   >
                     <span className="block font-bold uppercase tracking-wider text-dp-text-primary">{account.label}</span>
-                    <span className="block">{account.email} / {account.password}</span>
+                    <span className="block break-all sm:break-normal">{account.email}</span>
+                    <span className="block text-dp-text-tertiary">{account.password}</span>
                   </button>
                 ))}
               </div>

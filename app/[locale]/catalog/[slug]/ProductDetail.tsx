@@ -17,7 +17,7 @@ import {
   ChevronLeft, ShoppingCart, Heart, Share2, Shield, Truck,
   RotateCcw, Check, Zap, ArrowRight, Award, Package,
   Sparkles, Clock, ChevronDown, ChevronUp, Loader2,
-  MessageSquare, X, Send, Layers, Box, Palette, Gift, Play, Upload, ImageIcon, PackageCheck,
+  MessageSquare, X, Send, Layers, Box, Palette, Gift, Play, Upload, ImageIcon, PackageCheck, ChevronRight,
 } from "lucide-react"
 import ProductCmsSections, { type ProductCmsContent } from "@/components/product/ProductCmsSections"
 import Breadcrumb from "@/components/seo/Breadcrumb"
@@ -356,6 +356,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     }
   }
 
+  function handleGalleryStep(direction: -1 | 1) {
+    if (thumbMedia.length <= 1) return
+    const nextIndex = (activeImage + direction + thumbMedia.length) % thumbMedia.length
+    handleThumbnailClick(nextIndex)
+  }
+
   // When variant changes, jump to its first assigned image (or back to 0)
   useEffect(() => {
     if (!selectedSizeVariantId) { setActiveImage(0); return }
@@ -595,18 +601,41 @@ export default function ProductDetail({ product, categoryContext }: { product: A
                   controls
                   playsInline
                   preload="metadata"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                 />
               ) : thumbMedia.length > 0 ? (
               <Image
                   src={thumbMedia[activeImage]?.src || ""}
                 alt={product.title}
                 fill
-                className="object-cover transition-opacity duration-300"
+                className="object-contain transition-opacity duration-300"
                 sizes="(max-width: 1024px) 100vw, 50vw"
                 priority={activeImage === 0}
               />
               ) : null}
+              {thumbMedia.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleGalleryStep(-1)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-black/45 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/70 focus:outline-none focus:ring-2 focus:ring-dp-accent-cta"
+                    aria-label="Previous product image"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGalleryStep(1)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-black/45 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/70 focus:outline-none focus:ring-2 focus:ring-dp-accent-cta"
+                    aria-label="Next product image"
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 rounded-full bg-black/55 px-3 py-1 text-[11px] font-bold text-white shadow-lg backdrop-blur-sm">
+                    {activeImage + 1} / {thumbMedia.length}
+                  </div>
+                </>
+              )}
               <div className="absolute top-4 left-4 flex flex-col gap-2">
                 {product.is_limited   && <span className="badge-limited">Limited</span>}
                 {product.is_sale && discount && <span className="badge-sale">-{discount}%</span>}

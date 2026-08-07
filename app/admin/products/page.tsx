@@ -463,7 +463,10 @@ function SortableMediaItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="relative group w-20 h-16 rounded-sm overflow-hidden border border-dp-border bg-dp-bg-elevated flex items-center justify-center shrink-0"
+      {...attributes}
+      {...listeners}
+      className="relative group w-20 h-16 rounded-sm overflow-hidden border border-dp-border bg-dp-bg-elevated flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
+      aria-label="Drag image to reorder"
     >
       {item.media_type === "video" ? (
         <>
@@ -476,30 +479,28 @@ function SortableMediaItem({
       <span className="absolute bottom-0.5 left-0.5 text-[7px] text-white bg-black/50 px-0.5 rounded">{index + 1}</span>
       {/* Drag handle */}
       <div
-        {...attributes}
-        {...listeners}
-        className="absolute top-0.5 left-0.5 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing p-0.5 bg-black/40 rounded transition-opacity z-10"
+        className="absolute top-0.5 left-0.5 opacity-0 group-hover:opacity-100 pointer-events-none p-0.5 bg-black/40 rounded transition-opacity z-10"
         aria-label="Drag to reorder"
       >
         <GripVertical size={10} className="text-white" />
       </div>
       {/* Delete */}
       {item.id && (
-        <button type="button" onClick={onDelete}
+        <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onDelete}
           className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Delete">
           <X size={8} className="text-white" />
         </button>
       )}
       {/* Assign to variant */}
       {onSetVariant && (
-        <button type="button" onClick={onSetVariant}
+        <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onSetVariant}
           className="absolute bottom-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-dp-accent-cta rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Assign to variant">
           <Check size={8} className="text-white" />
         </button>
       )}
       {/* Set thumbnail */}
       {onSetThumbnail && item.media_type !== "video" && (
-        <button type="button" onClick={onSetThumbnail}
+        <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onSetThumbnail}
           className="absolute bottom-0.5 left-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-dp-bg-surface border border-dp-border rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Set thumbnail">
           <Crop size={7} className="text-dp-text-secondary" />
         </button>
