@@ -125,10 +125,6 @@ class Auction(SEOModelMixin):
             "title": "{name} | აუქციონი | Koleqcia",
             "description": "მიიღე მონაწილეობა {name} აუქციონში Koleqcia-ზე.",
         },
-        "ru": {
-            "title": "{name} | Аукцион | Koleqcia",
-            "description": "Участвуйте в аукционе {name} на Koleqcia.",
-        },
     }
 
     def save(self, *args, **kwargs):

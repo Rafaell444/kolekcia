@@ -16,11 +16,6 @@ VENDOR_SEO_DATA = {
             "გააფორმე შენი ოთახი MangaMoon-ის ხის პოსტერებით. საუკეთესო კედლის "
             "დეკორაცია და საჩუქარი შეყვარებულისთვის. შეუკვეთე ონლაინ."
         ),
-        "meta_title_ru": "Аниме Постеры и Деревянное Панно на Стену | MangaMoon",
-        "meta_description_ru": (
-            "Деревянный декор на стену и аниме постеры от MangaMoon. Идеальный декор "
-            "для игровой комнаты и отличный подарок любителю аниме."
-        ),
     },
     "figure-studio": {
         "name": "Sculpi",
@@ -35,17 +30,12 @@ VENDOR_SEO_DATA = {
             "ეძებ ორიგინალურ საჩუქარს? აღმოაჩინე Sculpi-ს ფიგურები. საუკეთესო "
             "საჩუქარი ძმისთვის და გეიმერებისთვის. დამზადებულია საქართველოში."
         ),
-        "meta_title_ru": "Аниме и Игровые Фигурки Ручной Работы | Sculpi",
-        "meta_description_ru": (
-            "Уникальные фигурки из игр, фильмов и сериалов от Sculpi. Лучший необычный "
-            "подарок для геймера. Выбирайте эксклюзивный игровой декор ручной работы!"
-        ),
     },
 }
 
 
 class Command(BaseCommand):
-    help = "Populate MangaMoon and Sculpi vendor SEO fields in en/ka/ru."
+    help = "Populate MangaMoon and Sculpi vendor SEO fields in English and Georgian."
 
     def handle(self, *args, **options):
         for old_slug, data in VENDOR_SEO_DATA.items():
@@ -67,12 +57,10 @@ class Command(BaseCommand):
             vendor.meta_description_en = data["meta_description_en"]
             vendor.meta_title_ka = data["meta_title_ka"]
             vendor.meta_description_ka = data["meta_description_ka"]
-            vendor.meta_title_ru = data["meta_title_ru"]
-            vendor.meta_description_ru = data["meta_description_ru"]
             vendor.save()
 
             self.stdout.write(self.style.SUCCESS(
-                f"  {data['name']} ({data['slug']}): SEO fields updated for en/ka/ru."
+                f"  {data['name']} ({data['slug']}): SEO fields updated for en/ka."
             ))
 
         self.stdout.write(self.style.SUCCESS("\nDone."))

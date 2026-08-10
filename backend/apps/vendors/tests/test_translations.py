@@ -21,29 +21,32 @@ class VendorTranslationTests(TestCase):
             self.vendor,
             {
                 "name_ka": "ქართული მაღაზია",
-                "name_ru": "Русский магазин",
                 "description_ka": "ქართული აღწერა",
-                "description_ru": "Русское описание",
             },
         )
         self.vendor.refresh_from_db()
 
         self.assertEqual(self.vendor.name_ka, "ქართული მაღაზია")
-        self.assertEqual(self.vendor.name_ru, "Русский магазин")
         self.assertEqual(self.vendor.description_ka, "ქართული აღწერა")
-        self.assertEqual(self.vendor.description_ru, "Русское описание")
 
     def test_public_endpoint_uses_requested_locale(self):
         self.vendor.name_ka = "ქართული მაღაზია"
         self.vendor.description_ka = "ქართული აღწერა"
-        self.vendor.name_ru = "Русский магазин"
-        self.vendor.description_ru = "Русское описание"
         self.vendor.save()
 
         ka_data = self.client.get("/api/vendors/public/?lang=ka").json()[0]
-        ru_data = self.client.get("/api/vendors/public/?lang=ru").json()[0]
 
         self.assertEqual(ka_data["name"], "ქართული მაღაზია")
         self.assertEqual(ka_data["description"], "ქართული აღწერა")
-        self.assertEqual(ru_data["name"], "Русский магазин")
-        self.assertEqual(ru_data["description"], "Русское описание")
+
+    def test_missing_georgian_and_retired_locale_fall_back_to_english(self):
+        self.vendor.name_ka = ""
+        self.vendor.description_ka = ""
+        self.vendor.save()
+
+        ka_data = self.client.get("/api/vendors/public/?lang=ka").json()[0]
+        retired_locale_data = self.client.get("/api/vendors/public/?lang=ru").json()[0]
+
+        self.assertEqual(ka_data["name"], "English Store")
+        self.assertEqual(ka_data["description"], "English description")
+        self.assertEqual(retired_locale_data["name"], "English Store")

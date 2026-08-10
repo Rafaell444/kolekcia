@@ -39,9 +39,9 @@ def get_vendor_for_request(request):
 
 def _apply_vendor_fields(vendor, data, staff=False):
     fields = (
-        "name", "name_ka", "name_ru",
+        "name", "name_ka",
         "logo_url", "banner_url",
-        "description", "description_ka", "description_ru",
+        "description", "description_ka",
         "payment_email", "merchant_id",
         "gift_wrap_price_gel", "gift_wrap_price_usd",
         "shipping_email_subject", "shipping_email_body",

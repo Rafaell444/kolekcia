@@ -58,7 +58,6 @@ class AuctionSerializer(serializers.ModelSerializer):
             "title",
             "title_en",
             "title_ka",
-            "title_ru",
             "artist_name",
             "image_url",
             "effective_image",
@@ -151,7 +150,6 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
             "title",
             "title_en",
             "title_ka",
-            "title_ru",
             "artist_name",
             "image_url",
             "starting_bid",
@@ -181,7 +179,6 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
             auction.title = product.title
             auction.title_en = getattr(product, "title_en", "") or product.title
             auction.title_ka = getattr(product, "title_ka", "") or ""
-            auction.title_ru = getattr(product, "title_ru", "") or ""
             if product.artist:
                 auction.artist_name = product.artist.name
             img = product.images.first()
@@ -208,7 +205,6 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
                 instance.title = product.title
                 instance.title_en = getattr(product, "title_en", "") or product.title
                 instance.title_ka = getattr(product, "title_ka", "") or ""
-                instance.title_ru = getattr(product, "title_ru", "") or ""
                 if product.artist:
                     instance.artist_name = product.artist.name
             else:
@@ -220,7 +216,6 @@ class AuctionWriteSerializer(serializers.ModelSerializer):
             instance.title = product.title
             instance.title_en = getattr(product, "title_en", "") or product.title
             instance.title_ka = getattr(product, "title_ka", "") or ""
-            instance.title_ru = getattr(product, "title_ru", "") or ""
         elif not getattr(instance, "title_en", ""):
             instance.title_en = instance.title
         if validated_data.get("winner_payment_status") == Auction.PAYMENT_PAID and not instance.paid_at:

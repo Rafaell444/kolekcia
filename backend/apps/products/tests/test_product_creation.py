@@ -58,23 +58,18 @@ class ProductCreationTests(TestCase):
         product = Product.objects.create(
             title="Poster",
             title_ka="პოსტერი",
-            title_ru="Постер",
             base_price="25.00",
             material="Aluminium",
             material_ka="ალუმინი",
-            material_ru="Алюминий",
             tags=["anime"],
             tags_ka=["ანიმე"],
-            tags_ru=["аниме"],
             processing_time_label="2 days",
             processing_time_label_ka="2 დღე",
-            processing_time_label_ru="2 дня",
         )
         variant = SizeVariant.objects.create(
             product=product,
             label="Medium",
             label_ka="საშუალო",
-            label_ru="Средний",
             price_usd="25.00",
             stock=12,
         )
@@ -83,8 +78,8 @@ class ProductCreationTests(TestCase):
         variant_data = SizeVariantSerializer(variant).data
 
         self.assertEqual(product_data["material_ka"], "ალუმინი")
-        self.assertEqual(product_data["tags_ru"], ["аниме"])
+        self.assertEqual(product_data["tags_ka"], ["ანიმე"])
         self.assertEqual(product_data["processing_time_label_ka"], "2 დღე")
-        self.assertEqual(variant_data["label_ru"], "Средний")
+        self.assertEqual(variant_data["label_ka"], "საშუალო")
         self.assertEqual(variant_data["stock"], 12)
         self.assertTrue(variant_data["sku"])

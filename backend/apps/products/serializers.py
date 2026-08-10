@@ -10,7 +10,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ("id", "name", "name_ka", "name_ru", "slug", "image_url", "count", "seo")
+        fields = ("id", "name", "name_ka", "slug", "image_url", "count", "seo")
 
     def get_seo(self, obj):
         return build_seo_dict(obj, og_image=obj.image_url or "")
@@ -33,7 +33,7 @@ class ArtistSerializer(serializers.ModelSerializer):
     class Meta:
         model = Artist
         fields = (
-            "id", "name", "name_ka", "name_ru", "handle", "avatar_url", "cover_url", "bio", "bio_ka", "bio_ru",
+            "id", "name", "name_ka", "handle", "avatar_url", "cover_url", "bio", "bio_ka",
             "designs", "followers", "level", "badge", "verified",
             "vendor_id", "vendor_slug", "vendor_name",
         )
@@ -42,19 +42,19 @@ class ArtistSerializer(serializers.ModelSerializer):
 class PosterSizeSerializer(serializers.ModelSerializer):
     class Meta:
         model = PosterSize
-        fields = ("id", "label", "label_ka", "label_ru", "surcharge")
+        fields = ("id", "label", "label_ka", "surcharge")
 
 
 class PosterFinishSerializer(serializers.ModelSerializer):
     class Meta:
         model = PosterFinish
-        fields = ("id", "label", "label_ka", "label_ru", "surcharge")
+        fields = ("id", "label", "label_ka", "surcharge")
 
 
 class PosterFrameSerializer(serializers.ModelSerializer):
     class Meta:
         model = PosterFrame
-        fields = ("id", "label", "label_ka", "label_ru", "surcharge")
+        fields = ("id", "label", "label_ka", "surcharge")
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
@@ -84,7 +84,7 @@ class SizeVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = SizeVariant
         fields = (
-            "id", "sku", "label", "label_ka", "label_ru", "price_usd", "price_gel", "price_eur", "price_gbp",
+            "id", "sku", "label", "label_ka", "price_usd", "price_gel", "price_eur", "price_gbp",
             "sale_price_usd", "sale_price_gel",
             "sort_order", "is_active", "stock", "is_ready_to_ship", "image_ids", "images",
         )
@@ -116,12 +116,12 @@ class ProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = (
-            "id", "slug", "title", "title_ka", "title_ru", "artist_name", "category_slug", "category_slugs", "image_url",
+            "id", "slug", "title", "title_ka", "artist_name", "category_slug", "category_slugs", "image_url",
             "vendor_slug", "vendor_name",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags", "tags_ka", "tags_ru",
-            "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
-            "processing_time_label", "processing_time_label_ka", "processing_time_label_ru",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags", "tags_ka",
+            "description", "description_ka", "material", "material_ka",
+            "processing_time_label", "processing_time_label_ka",
             "default_variant_id", "default_size_variant_id", "size_variants",
         )
 
@@ -195,15 +195,15 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = (
-            "id", "slug", "title", "title_ka", "title_ru", "artist", "artist_name",
+            "id", "slug", "title", "title_ka", "artist", "artist_name",
             "category", "category_slug", "category_name", "categories_data", "category_slugs",
             "vendor_id", "vendor_slug", "vendor_name", "images", "variants", "size_variants",
             "base_price", "original_price", "regional_prices", "rating", "review_count",
-            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags", "tags_ka", "tags_ru",
-            "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
-            "processing_time_label", "processing_time_label_ka", "processing_time_label_ru",
+            "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship", "allow_custom_size", "status", "tags", "tags_ka",
+            "description", "description_ka", "material", "material_ka",
+            "processing_time_label", "processing_time_label_ka",
             "processing_options", "processing_option_ids",
-            "product_details", "product_details_ka", "product_details_ru", "created_at",
+            "product_details", "product_details_ka", "created_at",
             "category_slug_input", "categories_input", "artist_handle", "image_url", "vendor_slug_input",
             "seo", "breadcrumbs",
         )
@@ -238,7 +238,6 @@ class ProductDetailSerializer(serializers.ModelSerializer):
                 "slug": option.slug,
                 "label": option.label,
                 "label_ka": getattr(option, "label_ka", "") or "",
-                "label_ru": getattr(option, "label_ru", "") or "",
                 "est_days_min": option.est_days_min,
                 "est_days_max": option.est_days_max,
                 "price_usd": str(option.price_usd),

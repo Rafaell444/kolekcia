@@ -24,13 +24,6 @@ class Category(SEOModelMixin):
                 "იდეალური საჩუქარი გეიმერებისთვის, დამზადებულია საქართველოში."
             ),
         },
-        "ru": {
-            "title": "{name}, Игровой Декор и Необычные Подарки",
-            "description": (
-                "Выбирайте {name} в Koleqcia. Уникальный аниме декор для игровой комнаты "
-                "и необычные подарки ручной работы. Сделано в Грузии."
-            ),
-        },
     }
 
     name = models.CharField(max_length=100)
@@ -114,10 +107,6 @@ class Product(SEOModelMixin):
         "ka": {
             "title": "{name} - {category_name} | {vendor_name}",
             "description": "შეიძინე {name} ონლაინ. საუკეთესო {category_name} შენი ოთახისთვის. უნიკალური საჩუქარი, დამზადებულია საქართველოში {vendor_name}-ის მიერ.",
-        },
-        "ru": {
-            "title": "{name} - {category_name} | {vendor_name}",
-            "description": "Закажите {name} онлайн. Идеальный {category_name} и необычный подарок ручной работы. Сделано в Грузии брендом {vendor_name}.",
         },
     }
 

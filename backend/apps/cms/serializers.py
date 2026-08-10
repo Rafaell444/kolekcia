@@ -14,19 +14,19 @@ class HeroSlideSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = HeroSlide
-        fields = ("id", "type", "image_url", "video_url", "video_poster_url", "headline", "headline_ka", "headline_ru", "subline", "subline_ka", "subline_ru", "cta", "cta_ka", "cta_ru", "cta_href", "accent", "order", "is_active")
+        fields = ("id", "type", "image_url", "video_url", "video_poster_url", "headline", "headline_ka", "subline", "subline_ka", "cta", "cta_ka", "cta_href", "accent", "order", "is_active")
 
 
 class BannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Banner
-        fields = ("id", "title", "title_ka", "title_ru", "subtitle", "subtitle_ka", "subtitle_ru", "cta", "cta_ka", "cta_ru", "cta_href", "image_url", "is_active", "starts_at", "ends_at")
+        fields = ("id", "title", "title_ka", "subtitle", "subtitle_ka", "cta", "cta_ka", "cta_href", "image_url", "is_active", "starts_at", "ends_at")
 
 
 class FAQSerializer(serializers.ModelSerializer):
     class Meta:
         model = FAQ
-        fields = ("id", "question", "question_ka", "question_ru", "answer", "answer_ka", "answer_ru", "category", "category_ka", "category_ru", "order")
+        fields = ("id", "question", "question_ka", "answer", "answer_ka", "category", "category_ka", "order")
 
 
 class SiteSettingsSerializer(serializers.ModelSerializer):
@@ -38,13 +38,13 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
 class AnnouncementBarSerializer(serializers.ModelSerializer):
     class Meta:
         model = AnnouncementBar
-        fields = ("id", "messages", "messages_ka", "messages_ru", "is_active")
+        fields = ("id", "messages", "messages_ka", "is_active")
 
 
 class PageSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PageSection
-        fields = ("id", "page", "section_key", "title", "title_ka", "title_ru", "content", "content_ka", "content_ru", "sort_order", "is_active", "updated_at")
+        fields = ("id", "page", "section_key", "title", "title_ka", "content", "content_ka", "sort_order", "is_active", "updated_at")
 
 
 class HomepageReviewSerializer(serializers.ModelSerializer):
@@ -67,8 +67,8 @@ class TrustBarItemSerializer(serializers.ModelSerializer):
         model = TrustBarItem
         fields = (
             "id", "key",
-            "title", "title_ka", "title_ru",
-            "description", "description_ka", "description_ru",
+            "title", "title_ka",
+            "description", "description_ka",
             "icon", "logos", "sort_order", "is_active",
         )
 

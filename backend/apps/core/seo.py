@@ -13,7 +13,6 @@ class SEOModelMixin(models.Model):
         SEO_TEMPLATES = {
             "en": {"title": "...", "description": "..."},
             "ka": {"title": "...", "description": "..."},
-            "ru": {"title": "...", "description": "..."},
         }
 
     Format strings use {name}, {category_name}, {vendor_name} placeholders.

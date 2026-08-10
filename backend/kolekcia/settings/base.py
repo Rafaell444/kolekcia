@@ -161,14 +161,12 @@ USE_TZ = True
 LANGUAGES = [
     ("en", "English"),
     ("ka", "Georgian"),
-    ("ru", "Russian"),
 ]
 
 MODELTRANSLATION_DEFAULT_LANGUAGE = "en"
-MODELTRANSLATION_LANGUAGES = ("en", "ka", "ru")
-# Public locale APIs must never silently replace missing Georgian or Russian
-# content with English. Empty translations stay empty until an admin fills them.
-MODELTRANSLATION_ENABLE_FALLBACKS = False
+MODELTRANSLATION_LANGUAGES = ("en", "ka")
+# Georgian storefront content falls back to English until a translation is added.
+MODELTRANSLATION_ENABLE_FALLBACKS = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

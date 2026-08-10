@@ -18,7 +18,7 @@ class APILocaleMiddleware:
             accept = request.META.get("HTTP_ACCEPT_LANGUAGE", "")
             if accept:
                 lang = accept.split(",")[0].strip()[:2]
-        if lang and lang in ("en", "ka", "ru"):
+        if lang and lang in ("en", "ka"):
             translation.activate(lang)
         else:
             translation.activate("en")

@@ -1415,14 +1415,11 @@ class AdminBlogPostSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "title_ka",
-            "title_ru",
             "slug",
             "excerpt",
             "excerpt_ka",
-            "excerpt_ru",
             "content",
             "content_ka",
-            "content_ru",
             "content_blocks",
             "cover_image_url",
             "is_published",
@@ -1684,17 +1681,17 @@ class AdminProductExportView(APIView):
         ws = wb.active
         ws.title = "Products"
         headers = [
-            "id", "title", "title_ka", "title_ru", "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
+            "id", "title", "title_ka", "description", "description_ka", "material", "material_ka",
             "base_price_usd", "price_gel", "price_eur", "price_gbp",
             "categories", "allow_custom_size",
             "status", "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship",
-            "tags", "tags_ka", "tags_ru", "product_details", "product_details_ka", "product_details_ru", "vendor_slug",
+            "tags", "tags_ka", "product_details", "product_details_ka", "vendor_slug",
             "image_url_1", "image_url_2", "image_url_3",
-            "size_1_label", "size_1_label_ka", "size_1_label_ru", "size_1_sku", "size_1_stock", "size_1_ready_to_ship", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
-            "size_2_label", "size_2_label_ka", "size_2_label_ru", "size_2_sku", "size_2_stock", "size_2_ready_to_ship", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
-            "size_3_label", "size_3_label_ka", "size_3_label_ru", "size_3_sku", "size_3_stock", "size_3_ready_to_ship", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
-            "size_4_label", "size_4_label_ka", "size_4_label_ru", "size_4_sku", "size_4_stock", "size_4_ready_to_ship", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
-            "size_5_label", "size_5_label_ka", "size_5_label_ru", "size_5_sku", "size_5_stock", "size_5_ready_to_ship", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
+            "size_1_label", "size_1_label_ka", "size_1_sku", "size_1_stock", "size_1_ready_to_ship", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
+            "size_2_label", "size_2_label_ka", "size_2_sku", "size_2_stock", "size_2_ready_to_ship", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
+            "size_3_label", "size_3_label_ka", "size_3_sku", "size_3_stock", "size_3_ready_to_ship", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
+            "size_4_label", "size_4_label_ka", "size_4_sku", "size_4_stock", "size_4_ready_to_ship", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
+            "size_5_label", "size_5_label_ka", "size_5_sku", "size_5_stock", "size_5_ready_to_ship", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
         ]
         ws.append(headers)
 
@@ -1707,15 +1704,15 @@ class AdminProductExportView(APIView):
                 images.append("")
             svs = list(
                 p.size_variants.filter(is_active=True).values_list(
-                    "label", "label_ka", "label_ru", "sku", "stock", "is_ready_to_ship", "price_usd", "price_gel", "sale_price_usd", "sale_price_gel"
+                    "label", "label_ka", "sku", "stock", "is_ready_to_ship", "price_usd", "price_gel", "sale_price_usd", "sale_price_gel"
                 )
             )[:5]
             while len(svs) < 5:
-                svs.append(("", "", "", "", "", "", "", "", "", ""))
+                svs.append(("", "", "", "", "", "", "", "", ""))
             flat_svs = []
-            for lbl, lbl_ka, lbl_ru, sku, stock, ready, pr_usd, pr_gel, sale_usd, sale_gel in svs:
+            for lbl, lbl_ka, sku, stock, ready, pr_usd, pr_gel, sale_usd, sale_gel in svs:
                 flat_svs.extend([
-                    lbl, lbl_ka or "", lbl_ru or "", sku or "", stock if stock is not None else "", "yes" if ready else "no",
+                    lbl, lbl_ka or "", sku or "", stock if stock is not None else "", "yes" if ready else "no",
                     str(pr_usd) if pr_usd is not None else "",
                     str(pr_gel) if pr_gel is not None else "",
                     str(sale_usd) if sale_usd is not None else "",
@@ -1723,9 +1720,9 @@ class AdminProductExportView(APIView):
                 ])
             rp = p.regional_prices or {}
             row = [
-                p.id, p.title, getattr(p, "title_ka", "") or "", getattr(p, "title_ru", "") or "",
-                p.description, getattr(p, "description_ka", "") or "", getattr(p, "description_ru", "") or "",
-                p.material, getattr(p, "material_ka", "") or "", getattr(p, "material_ru", "") or "",
+                p.id, p.title, getattr(p, "title_ka", "") or "",
+                p.description, getattr(p, "description_ka", "") or "",
+                p.material, getattr(p, "material_ka", "") or "",
                 str(p.base_price),
                 str(rp.get("GEL", {}).get("price", "") or ""),
                 str(rp.get("EUR", {}).get("price", "") or ""),
@@ -1741,10 +1738,8 @@ class AdminProductExportView(APIView):
                 "yes" if p.is_ready_to_ship else "no",
                 ",".join(p.tags or []),
                 ",".join(getattr(p, "tags_ka", None) or []),
-                ",".join(getattr(p, "tags_ru", None) or []),
                 "|".join(p.product_details or []),
                 "|".join(getattr(p, "product_details_ka", None) or []),
-                "|".join(getattr(p, "product_details_ru", None) or []),
                 p.vendor.slug if p.vendor else "",
             ] + images + flat_svs
             ws.append(row)
@@ -1776,32 +1771,38 @@ class AdminProductImportView(APIView):
         ws = wb.active
         ws.title = "Products"
         headers = [
-            "id", "title", "title_ka", "title_ru", "description", "description_ka", "description_ru", "material", "material_ka", "material_ru",
+            "id", "title", "title_ka", "description", "description_ka", "material", "material_ka",
             "base_price_usd", "price_gel", "price_eur", "price_gbp",
             "categories", "allow_custom_size",
             "status", "is_limited", "is_sale", "is_new", "is_exclusive", "is_featured", "is_ready_to_ship",
-            "tags", "tags_ka", "tags_ru", "product_details", "product_details_ka", "product_details_ru", "vendor_slug",
+            "tags", "tags_ka", "product_details", "product_details_ka", "vendor_slug",
             "image_url_1", "image_url_2", "image_url_3",
-            "size_1_label", "size_1_label_ka", "size_1_label_ru", "size_1_sku", "size_1_stock", "size_1_ready_to_ship", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
-            "size_2_label", "size_2_label_ka", "size_2_label_ru", "size_2_sku", "size_2_stock", "size_2_ready_to_ship", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
-            "size_3_label", "size_3_label_ka", "size_3_label_ru", "size_3_sku", "size_3_stock", "size_3_ready_to_ship", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
-            "size_4_label", "size_4_label_ka", "size_4_label_ru", "size_4_sku", "size_4_stock", "size_4_ready_to_ship", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
-            "size_5_label", "size_5_label_ka", "size_5_label_ru", "size_5_sku", "size_5_stock", "size_5_ready_to_ship", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
+            "size_1_label", "size_1_label_ka", "size_1_sku", "size_1_stock", "size_1_ready_to_ship", "size_1_price_usd", "size_1_price_gel", "size_1_sale_usd", "size_1_sale_gel",
+            "size_2_label", "size_2_label_ka", "size_2_sku", "size_2_stock", "size_2_ready_to_ship", "size_2_price_usd", "size_2_price_gel", "size_2_sale_usd", "size_2_sale_gel",
+            "size_3_label", "size_3_label_ka", "size_3_sku", "size_3_stock", "size_3_ready_to_ship", "size_3_price_usd", "size_3_price_gel", "size_3_sale_usd", "size_3_sale_gel",
+            "size_4_label", "size_4_label_ka", "size_4_sku", "size_4_stock", "size_4_ready_to_ship", "size_4_price_usd", "size_4_price_gel", "size_4_sale_usd", "size_4_sale_gel",
+            "size_5_label", "size_5_label_ka", "size_5_sku", "size_5_stock", "size_5_ready_to_ship", "size_5_price_usd", "size_5_price_gel", "size_5_sale_usd", "size_5_sale_gel",
         ]
         ws.append(headers)
-        ws.append([
-            "", "Example Product", "", "", "A beautiful piece.", "", "", "Metal", "", "",
-            "49.99", "135.00", "46.00", "39.50",
-            "figures", "no",
-            "active", "no", "yes", "yes", "no", "no", "yes",
-            "art,modern", "", "", "Premium print|Magnetic mount included", "", "", "example-vendor",
-            "https://example.com/img1.jpg", "", "",
-            "S", "", "", "", "10", "yes", "39.99", "108.00", "34.99", "95.00",
-            "M", "", "", "", "", "no", "49.99", "135.00", "44.99", "120.00",
-            "L", "", "", "", "", "no", "59.99", "162.00", "", "",
-            "", "", "", "", "", "", "", "", "", "",
-            "", "", "", "", "", "", "", "", "", "",
-        ])
+        example = {
+            "title": "Example Product",
+            "description": "A beautiful piece.",
+            "material": "Metal",
+            "base_price_usd": "49.99",
+            "price_gel": "135.00",
+            "categories": "figures",
+            "status": "active",
+            "tags": "art,modern",
+            "product_details": "Premium print|Magnetic mount included",
+            "vendor_slug": "example-vendor",
+            "image_url_1": "https://example.com/img1.jpg",
+            "size_1_label": "S",
+            "size_1_stock": "10",
+            "size_1_ready_to_ship": "yes",
+            "size_1_price_usd": "39.99",
+            "size_1_price_gel": "108.00",
+        }
+        ws.append([example.get(header, "") for header in headers])
         from io import BytesIO
         buf = BytesIO()
         wb.save(buf)
@@ -1894,13 +1895,10 @@ class AdminProductImportView(APIView):
                 payload = {
                     "title": str(title),
                     "title_ka": str(cell(row, "title_ka") or ""),
-                    "title_ru": str(cell(row, "title_ru") or ""),
                     "description": str(cell(row, "description") or ""),
                     "description_ka": str(cell(row, "description_ka") or ""),
-                    "description_ru": str(cell(row, "description_ru") or ""),
                     "material": str(cell(row, "material") or ""),
                     "material_ka": str(cell(row, "material_ka") or ""),
-                    "material_ru": str(cell(row, "material_ru") or ""),
                     "base_price": base_price,
                     "regional_prices": regional_prices,
                     "allow_custom_size": yn(cell(row, "allow_custom_size")),
@@ -1913,10 +1911,8 @@ class AdminProductImportView(APIView):
                     "is_ready_to_ship": yn(cell(row, "is_ready_to_ship")),
                     "tags": tags,
                     "tags_ka": csv_list(cell(row, "tags_ka")),
-                    "tags_ru": csv_list(cell(row, "tags_ru")),
                     "product_details": pipe_list(cell(row, "product_details")),
                     "product_details_ka": pipe_list(cell(row, "product_details_ka")),
-                    "product_details_ru": pipe_list(cell(row, "product_details_ru")),
                     "category": primary_cat,
                     "vendor": vendor,
                 }
@@ -1945,7 +1941,6 @@ class AdminProductImportView(APIView):
                 for n in range(1, 6):
                     lbl = cell(row, f"size_{n}_label")
                     lbl_ka = cell(row, f"size_{n}_label_ka")
-                    lbl_ru = cell(row, f"size_{n}_label_ru")
                     sku = cell(row, f"size_{n}_sku")
                     stock = cell(row, f"size_{n}_stock")
                     ready = yn(cell(row, f"size_{n}_ready_to_ship"))
@@ -1959,7 +1954,6 @@ class AdminProductImportView(APIView):
                                 product=product,
                                 label=str(lbl),
                                 label_ka=str(lbl_ka or ""),
-                                label_ru=str(lbl_ru or ""),
                                 sku=str(sku).strip() or None,
                                 stock=int(stock) if stock not in (None, "") else None,
                                 is_ready_to_ship=ready,

@@ -46,10 +46,6 @@ class Vendor(SEOModelMixin):
             "title": "{name} | Koleqcia",
             "description": "აღმოაჩინე {name}-ის კოლექცია Koleqcia-ზე. ხელნაკეთი დეკორაცია საქართველოდან.",
         },
-        "ru": {
-            "title": "{name} | Koleqcia",
-            "description": "Коллекция {name} на Koleqcia. Декор ручной работы из Грузии.",
-        },
     }
 
     created_at = models.DateTimeField(auto_now_add=True)

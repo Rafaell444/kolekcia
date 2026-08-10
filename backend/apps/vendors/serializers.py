@@ -11,7 +11,7 @@ class VendorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vendor
         fields = (
-            "id", "name", "name_ka", "name_ru", "slug", "logo_url", "banner_url", "description", "description_ka", "description_ru", "payment_email", "merchant_id",
+            "id", "name", "name_ka", "slug", "logo_url", "banner_url", "description", "description_ka", "payment_email", "merchant_id",
             "gift_wrap_price_gel", "gift_wrap_price_usd",
             "shipping_email_subject", "shipping_email_body", "email_template_type",
             "catalog_category_slug",
@@ -28,7 +28,7 @@ class VendorPublicSerializer(serializers.ModelSerializer):
     """Minimal public info used on the custom order picker page."""
     class Meta:
         model = Vendor
-        fields = ("id", "name", "name_ka", "name_ru", "slug", "logo_url", "banner_url", "description", "description_ka", "description_ru", "catalog_category_slug", "custom_product_type", "custom_product_description", "custom_cover_url")
+        fields = ("id", "name", "name_ka", "slug", "logo_url", "banner_url", "description", "description_ka", "catalog_category_slug", "custom_product_type", "custom_product_description", "custom_cover_url")
 
 
 class VendorStorefrontSerializer(serializers.ModelSerializer):
@@ -37,7 +37,7 @@ class VendorStorefrontSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vendor
         fields = (
-            "name", "name_ka", "name_ru", "slug", "logo_url", "banner_url", "description", "description_ka", "description_ru",
+            "name", "name_ka", "slug", "logo_url", "banner_url", "description", "description_ka",
             "social_website", "social_instagram", "social_facebook", "social_twitter", "social_tiktok", "social_youtube",
             "seo",
         )
