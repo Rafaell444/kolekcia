@@ -15,13 +15,10 @@ type HeroSlide = {
   video_poster_url: string
   headline: string
   headline_ka?: string
-  headline_ru?: string
   subline: string
   subline_ka?: string
-  subline_ru?: string
   cta: string
   cta_ka?: string
-  cta_ru?: string
   cta_href: string
   order: number
   is_active: boolean
@@ -33,11 +30,11 @@ const EMPTY: Omit<HeroSlide, "id"> = {
   video_url: "",
   video_poster_url: "",
   headline: "",
-  headline_ka: "", headline_ru: "",
+  headline_ka: "",
   subline: "",
-  subline_ka: "", subline_ru: "",
+  subline_ka: "",
   cta: "Shop Now",
-  cta_ka: "", cta_ru: "",
+  cta_ka: "",
   cta_href: "/catalog",
   order: 0,
   is_active: true,
@@ -75,11 +72,11 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
       video_url: slide.video_url ?? "",
       video_poster_url: slide.video_poster_url ?? "",
       headline: slide.headline,
-      headline_ka: slide.headline_ka ?? "", headline_ru: slide.headline_ru ?? "",
+      headline_ka: slide.headline_ka ?? "",
       subline: slide.subline ?? "",
-      subline_ka: slide.subline_ka ?? "", subline_ru: slide.subline_ru ?? "",
+      subline_ka: slide.subline_ka ?? "",
       cta: slide.cta ?? "",
-      cta_ka: slide.cta_ka ?? "", cta_ru: slide.cta_ru ?? "",
+      cta_ka: slide.cta_ka ?? "",
       cta_href: slide.cta_href ?? "/catalog",
       order: slide.order,
       is_active: slide.is_active,
@@ -225,7 +222,7 @@ export default function HeroAdminPanel({ embedded = false }: { embedded?: boolea
               )}
               <input required value={form.headline} onChange={(e) => setForm((f) => ({ ...f, headline: e.target.value }))} placeholder="Headline" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
               <textarea value={form.subline} onChange={(e) => setForm((f) => ({ ...f, subline: e.target.value }))} placeholder="Subline" rows={2} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] resize-none" />
-              <TranslationFields value={form} onChange={setForm} inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "headline_ka", label: "Headline · Georgian" }, { key: "headline_ru", label: "Headline · Russian" }, { key: "subline_ka", label: "Subline · Georgian", multiline: true }, { key: "subline_ru", label: "Subline · Russian", multiline: true }, { key: "cta_ka", label: "CTA · Georgian" }, { key: "cta_ru", label: "CTA · Russian" }]} />
+              <TranslationFields value={form} onChange={setForm} inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "headline_ka", label: "Headline · Georgian" }, { key: "subline_ka", label: "Subline · Georgian", multiline: true }, { key: "cta_ka", label: "CTA · Georgian" }]} />
               <div className="grid grid-cols-2 gap-3">
                 <input value={form.cta} onChange={(e) => setForm((f) => ({ ...f, cta: e.target.value }))} placeholder="CTA label" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
                 <input value={form.cta_href} onChange={(e) => setForm((f) => ({ ...f, cta_href: e.target.value }))} placeholder="CTA link" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />

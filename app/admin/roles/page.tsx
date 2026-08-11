@@ -13,7 +13,7 @@ const ROLES = [
     permissions: Object.fromEntries(PERM_LABELS.map((p) => [p, true])) as Record<typeof PERM_LABELS[number], boolean>,
   },
   {
-    name: "Vendor 1 — Panel Studio",
+    name: "MangaMoon",
     description: "Wallpanels vendor (vendor1@kolekcia.com). Own products, orders, shipping, and store settings only.",
     permissions: {
       products: true, orders: true, customOrders: true, auctions: true, shipping: true,
@@ -22,7 +22,7 @@ const ROLES = [
     } as Record<typeof PERM_LABELS[number], boolean>,
   },
   {
-    name: "Vendor 2 — Figure Studio",
+    name: "Sculpi",
     description: "Figures vendor (vendor2@kolekcia.com). Same vendor-scoped access for the figures catalog.",
     permissions: {
       products: true, orders: true, customOrders: true, auctions: true, shipping: true,

@@ -8,8 +8,8 @@ import { setAdminTokens, setAdminUser, type AdminUser } from "@/lib/admin-auth"
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 const DEMO_ACCOUNTS = [
   { label: "Superadmin", email: "admin@kolekcia.com", password: "admin12345" },
-  { label: "Vendor 1", email: "vendor1@kolekcia.com", password: "vendor12345" },
-  { label: "Vendor 2", email: "vendor2@kolekcia.com", password: "vendor12345" },
+  { label: "MangaMoon", email: "vendor1@kolekcia.com", password: "vendor12345" },
+  { label: "Sculpi", email: "vendor2@kolekcia.com", password: "vendor12345" },
 ]
 
 export default function AdminLoginPage(): React.ReactElement {

@@ -15,16 +15,16 @@ ACCOUNTS = {
         {
             "email": "vendor1@kolekcia.com",
             "password": "vendor12345",
-            "name": "Panel Studio",
-            "slug": "panel-studio",
+            "name": "MangaMoon",
+            "slug": "mangamoon",
             "catalog_category_slug": "wallpanels",
             "custom_product_type": "3D Panel Poster",
         },
         {
             "email": "vendor2@kolekcia.com",
             "password": "vendor12345",
-            "name": "Figure Studio",
-            "slug": "figure-studio",
+            "name": "Sculpi",
+            "slug": "sculpi",
             "catalog_category_slug": "figures",
             "custom_product_type": "3D Figure",
         },
@@ -81,10 +81,10 @@ class Command(BaseCommand):
             user.save(update_fields=["password", "name", "role", "is_staff", "is_superuser", "is_active"])
 
             vendor, _ = Vendor.objects.update_or_create(
-                slug=cfg["slug"],
+                user=user,
                 defaults={
-                    "user": user,
                     "name": cfg["name"],
+                    "slug": cfg["slug"],
                     "catalog_category_slug": cfg["catalog_category_slug"],
                     "custom_product_type": cfg["custom_product_type"],
                 },

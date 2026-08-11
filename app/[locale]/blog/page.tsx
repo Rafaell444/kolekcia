@@ -5,6 +5,9 @@ import { BLOG_SEO } from "@/lib/seo-metadata"
 import { buildPageMetadata } from "@/lib/seo"
 import SiteShell from "@/components/layout/SiteShell"
 
+// Published posts must appear immediately after an admin enables them.
+export const dynamic = "force-dynamic"
+
 export async function generateMetadata({
   params,
 }: {
@@ -31,11 +34,12 @@ type BlogPost = {
 }
 
 async function getPosts(locale: string): Promise<BlogPost[]> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+  const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api").replace(/\/$/, "")
   try {
-    const res = await fetch(`${apiUrl}/blog/?lang=${locale}`, { next: { revalidate: 10 } })
+    const res = await fetch(`${apiUrl}/blog/?lang=${locale}`, { cache: "no-store" })
     if (!res.ok) return []
-    return (await res.json()) as BlogPost[]
+    const data = await res.json() as BlogPost[] | { results?: BlogPost[] }
+    return Array.isArray(data) ? data : (data.results ?? [])
   } catch {
     return []
   }

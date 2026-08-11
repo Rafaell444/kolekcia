@@ -1,6 +1,8 @@
 import os
 import random
 import uuid
+import hashlib
+import json
 from decimal import Decimal
 from django.conf import settings as django_settings
 from django.db import transaction
@@ -363,6 +365,16 @@ class CartRepriceView(APIView):
         return Response(CartSerializer(cart, context={"request": request}).data)
 
 
+def _vendor_allows_self_pickup(vendor) -> bool:
+    if not vendor:
+        return False
+    return not (
+        vendor.slug in ("sculpi", "figure-studio")
+        or vendor.catalog_category_slug == "figures"
+        or getattr(vendor.user, "email", "") == "vendor2@kolekcia.com"
+    )
+
+
 class CheckoutView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_classes = [CheckoutThrottle]
@@ -372,6 +384,25 @@ class CheckoutView(APIView):
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
+        if idempotency_key and (len(idempotency_key) > 64 or not all(c.isalnum() or c in "-_" for c in idempotency_key)):
+            return Response({"detail": "Invalid checkout idempotency key."}, status=status.HTTP_400_BAD_REQUEST)
+        request_fingerprint = hashlib.sha256(
+            json.dumps(data, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        if idempotency_key:
+            existing_order = Order.objects.filter(
+                user=request.user,
+                checkout_idempotency_key=idempotency_key,
+            ).first()
+            if existing_order:
+                if existing_order.checkout_request_fingerprint != request_fingerprint:
+                    return Response(
+                        {"detail": "This checkout key was already used with different order details."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                return Response(OrderSerializer(existing_order).data, status=status.HTTP_200_OK)
 
         cart = Cart.objects.prefetch_related(
             "items__variant__product__images",
@@ -470,6 +501,28 @@ class CheckoutView(APIView):
                 except (TypeError, ValueError):
                     return Response({"detail": f"Invalid vendor ID: {vendor_id_str}"}, status=status.HTTP_400_BAD_REQUEST)
 
+                if vendor_id not in vendor_item_map:
+                    return Response({"detail": "Invalid vendor shipping selection."}, status=status.HTTP_400_BAD_REQUEST)
+
+                if option_slug == f"pickup-{vendor_id}":
+                    from apps.vendors.models import Vendor
+
+                    pickup_vendor = Vendor.objects.select_related("user").filter(pk=vendor_id).first()
+                    if not _vendor_allows_self_pickup(pickup_vendor):
+                        return Response(
+                            {"detail": "Self-pickup is not available for this vendor."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    shipment_specs.append({
+                        "vendor_id": vendor_id,
+                        "option": None,
+                        "delivery_type": "self-pickup",
+                        "delivery_label": "I will take it myself",
+                        "delivery_price": Decimal("0"),
+                        "items": vendor_item_map.get(vendor_id, []),
+                    })
+                    continue
+
                 if not option_slug.startswith("vendor-"):
                     return Response({"detail": f"Invalid shipping option: {option_slug}"}, status=status.HTTP_400_BAD_REQUEST)
                 try:
@@ -486,6 +539,9 @@ class CheckoutView(APIView):
                 shipment_specs.append({
                     "vendor_id": vendor_id,
                     "option": opt,
+                    "delivery_type": f"vendor-{opt.pk}",
+                    "delivery_label": opt.label,
+                    "delivery_price": Decimal(opt.price),
                     "items": vendor_item_map.get(vendor_id, []),
                 })
                 delivery_price += Decimal(opt.price)
@@ -517,6 +573,9 @@ class CheckoutView(APIView):
             shipment_specs.append({
                 "vendor_id": opt.vendor_id,
                 "option": opt,
+                "delivery_type": f"vendor-{opt.pk}",
+                "delivery_label": opt.label,
+                "delivery_price": Decimal(opt.price),
                 "items": items_to_process,
             })
         else:
@@ -603,6 +662,8 @@ class CheckoutView(APIView):
             currency=currency,
             total=total,
             status="processing",
+            checkout_idempotency_key=idempotency_key or None,
+            checkout_request_fingerprint=request_fingerprint if idempotency_key else "",
         )
 
         # Create per-vendor shipments
@@ -611,9 +672,9 @@ class CheckoutView(APIView):
             shipment = OrderShipment.objects.create(
                 order=order,
                 vendor_id=spec["vendor_id"],
-                delivery_type=f"vendor-{spec['option'].pk}",
-                delivery_label=spec["option"].label,
-                delivery_price=Decimal(spec["option"].price),
+                delivery_type=spec["delivery_type"],
+                delivery_label=spec["delivery_label"],
+                delivery_price=spec["delivery_price"],
                 status="processing",
             )
             shipment_map[spec["vendor_id"]] = shipment
@@ -837,6 +898,29 @@ class CartShippingOptionListView(APIView):
                 "est_days_max": opt.est_days_max,
                 "market": opt.market,
                 "is_express": opt.is_express,
+                "is_pickup": False,
+            })
+
+        from apps.vendors.models import Vendor
+
+        vendors = Vendor.objects.select_related("user").filter(pk__in=vendor_ids)
+        for vendor in vendors:
+            if not _vendor_allows_self_pickup(vendor):
+                continue
+            data.append({
+                "id": -vendor.id,
+                "slug": f"pickup-{vendor.id}",
+                "label": "I will take it myself",
+                "vendor_id": vendor.id,
+                "vendor_name": vendor.name,
+                "price": "0.00",
+                "price_gel": "0.00",
+                "price_usd": "0.00",
+                "est_days_min": 0,
+                "est_days_max": 0,
+                "market": market,
+                "is_express": False,
+                "is_pickup": True,
             })
         return Response(data)
 

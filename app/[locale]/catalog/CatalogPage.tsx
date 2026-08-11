@@ -547,6 +547,7 @@ function CatalogPageInner(): React.ReactElement {
   useEffect(() => { setSearchInput(urlSearch) }, [urlSearch])
   const lockedCategory = CATEGORY_VENDOR_SLUGS.has(urlCategory) ? urlCategory : ""
   const hideCategoryFilter = Boolean(lockedCategory)
+  const isSculpiCatalog = lockedCategory === "figures" || urlCategory === "figures" || urlVendor === "sculpi" || urlVendor === "figure-studio"
 
   const [filters, setFilters]   = useState<Filters>(() => filtersForPage(lockedCategory))
   const [sort, setSort]         = useState("trending")
@@ -586,6 +587,7 @@ function CatalogPageInner(): React.ReactElement {
     let cancelled = false
     const params = new URLSearchParams({ currency })
     if (effectiveCategoryForFilters) params.set("category", effectiveCategoryForFilters)
+    if (urlVendor) params.set("vendor", urlVendor)
     apiFetch<FilterOptions>(`/products/filter-options/?${params.toString()}`)
       .then((d) => {
         if (!cancelled) {
@@ -607,16 +609,20 @@ function CatalogPageInner(): React.ReactElement {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [effectiveCategoryForFilters, currency])
+  }, [effectiveCategoryForFilters, currency, urlVendor])
 
   useEffect(() => {
     let cancelled = false
     const qs = effectiveCategoryForFilters ? `?category=${effectiveCategoryForFilters}` : ""
     apiFetch<FilterVisibility>(`/products/catalog-filter-config${qs}`)
-      .then((d) => { if (!cancelled && d) setFilterVisibility({ ...DEFAULT_FILTER_VISIBILITY, ...d }) })
+      .then((d) => {
+        if (!cancelled && d) {
+          setFilterVisibility({ ...DEFAULT_FILTER_VISIBILITY, ...d, material: isSculpiCatalog ? false : d.material })
+        }
+      })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [effectiveCategoryForFilters])
+  }, [effectiveCategoryForFilters, isSculpiCatalog])
 
   useEffect(() => {
     setFilters((prev) => {
@@ -654,14 +660,14 @@ function CatalogPageInner(): React.ReactElement {
     if (filters.isNew) params.set("new", "true")
     if (filters.isExclusive) params.set("exclusive", "true")
     if (filters.isReadyToShip) params.set("ready_to_ship", "true")
-    if (filters.materials.length > 0) params.set("material", filters.materials.join(","))
+    if (!isSculpiCatalog && filters.materials.length > 0) params.set("material", filters.materials.join(","))
     if (filters.sizes.length > 0) params.set("size", filters.sizes.join(","))
     if (filters.themes.length > 0) params.set("tag", filters.themes.join(","))
     if (filters.artistHandles.length > 0) params.set("artist", filters.artistHandles.join(","))
     params.set("sort", SORT_MAP[sort] ?? "featured")
     params.set("page", String(page))
     return params.toString()
-  }, [filters, sort, page, urlSearch, urlVendor, lockedCategory, filterOptions, currency])
+  }, [filters, sort, page, urlSearch, urlVendor, lockedCategory, filterOptions, currency, isSculpiCatalog])
 
   useEffect(() => {
     let cancelled = false

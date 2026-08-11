@@ -1130,6 +1130,7 @@ class AdminAuctionListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
         ctx["include_all_bids"] = True
+        ctx["include_bidder_private_data"] = True
         return ctx
 
     def get_queryset(self):
@@ -1149,11 +1150,18 @@ class AdminAuctionDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
         ctx["include_all_bids"] = True
+        ctx["include_bidder_private_data"] = True
         return ctx
 
     def get_queryset(self):
         from apps.auctions.models import Auction
         return Auction.objects.prefetch_related("bids__user").select_related("product", "vendor", "winner").all()
+
+    def perform_destroy(self, instance):
+        if instance.inventory_reserved and instance.winner_payment_status != instance.PAYMENT_PAID:
+            from apps.auctions.services import release_auction_inventory
+            release_auction_inventory(instance)
+        instance.delete()
 
 
 # ── CMS (Hero / Banners) ──────────────────────────────────────────────────────

@@ -6,6 +6,8 @@ const HANDLE_TO_CATEGORY: Record<string, string> = {
   alex_tanaka: "wallpanels",
   "figure-studio": "figures",
   "panel-studio": "wallpanels",
+  sculpi: "figures",
+  mangamoon: "wallpanels",
 }
 
 export default async function ArtistProfileRedirect({

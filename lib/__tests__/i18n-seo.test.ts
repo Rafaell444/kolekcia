@@ -19,11 +19,13 @@ describe("i18n", () => {
   it("builds localized paths", () => {
     expect(localizedPath("/catalog", "ka")).toBe("/ka/catalog")
     expect(localizedPath("catalog", "en")).toBe("/en/catalog")
+    expect(localizedPath("/en/catalog", "ka")).toBe("/ka/catalog")
     expect(localizedPath("/en/catalog", "ru")).toBe("/ru/catalog")
   })
 
   it("strips and detects locale prefixes", () => {
     expect(stripLocalePrefix("/ka/blog/hello")).toBe("/blog/hello")
+    expect(stripLocalePrefix("/ru/blog/hello")).toBe("/blog/hello")
     expect(stripLocalePrefix("/catalog")).toBe("/catalog")
     expect(getLocaleFromPath("/ru/about")).toBe("ru")
     expect(getLocaleFromPath("/about")).toBe(DEFAULT_LOCALE)
@@ -36,6 +38,7 @@ describe("seo", () => {
     expect(alt.canonical).toBe(`${SITE_URL}/en/catalog`)
     expect(alt.languages.en).toBe(`${SITE_URL}/en/catalog`)
     expect(alt.languages.ka).toBe(`${SITE_URL}/ka/catalog`)
+    expect(alt.languages.ru).toBe(`${SITE_URL}/ru/catalog`)
     expect(alt.languages["x-default"]).toBe(`${SITE_URL}/en/catalog`)
   })
 

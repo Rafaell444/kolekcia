@@ -8,9 +8,9 @@ import { parseList, type PaginatedResponse } from "@/lib/api"
 import AdminMediaUpload from "@/components/admin/AdminMediaUpload"
 import TranslationFields from "@/components/admin/TranslationFields"
 
-type Category = { id: number; name: string; name_ka?: string; name_ru?: string; slug: string; image_url: string; count: number }
+type Category = { id: number; name: string; name_ka?: string; slug: string; image_url: string; count: number }
 
-const EMPTY = { name: "", name_ka: "", name_ru: "", slug: "", image_url: "" }
+const EMPTY = { name: "", name_ka: "", slug: "", image_url: "" }
 
 function slugify(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
@@ -42,7 +42,7 @@ export default function AdminCategoriesPage(): React.ReactElement {
 
   function openEdit(c: Category) {
     setEditing(c)
-    setForm({ name: c.name, name_ka: c.name_ka ?? "", name_ru: c.name_ru ?? "", slug: c.slug, image_url: c.image_url ?? "" })
+    setForm({ name: c.name, name_ka: c.name_ka ?? "", slug: c.slug, image_url: c.image_url ?? "" })
     setShowModal(true)
   }
 
@@ -53,7 +53,6 @@ export default function AdminCategoriesPage(): React.ReactElement {
       const payload = {
         name: form.name.trim(),
         name_ka: form.name_ka.trim(),
-        name_ru: form.name_ru.trim(),
         slug: form.slug.trim() || slugify(form.name),
         image_url: form.image_url,
       }
@@ -123,7 +122,7 @@ export default function AdminCategoriesPage(): React.ReactElement {
             </div>
             <form onSubmit={save} className="p-5 flex flex-col gap-4">
               <input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value, slug: editing ? f.slug : slugify(e.target.value) }))} placeholder="Category name" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
-              <TranslationFields value={form} onChange={setForm} inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "name_ka", label: "Name · Georgian" }, { key: "name_ru", label: "Name · Russian" }]} />
+              <TranslationFields value={form} onChange={setForm} inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "name_ka", label: "Name · Georgian" }]} />
               <input required value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="slug" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] font-mono" />
               <AdminMediaUpload label="Cover image" previewUrl={form.image_url} folder="categories" onUploaded={(url) => setForm((f) => ({ ...f, image_url: url }))} previewClassName="w-full h-28" />
               <div className="flex gap-2">

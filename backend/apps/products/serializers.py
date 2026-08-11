@@ -305,6 +305,16 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         categories = self._resolve_categories(validated_data)
         artist = self._resolve_artist(validated_data)
         vendor = self._resolve_vendor(validated_data)
+        if vendor and (
+            vendor.slug in ("sculpi", "figure-studio")
+            or vendor.catalog_category_slug == "figures"
+        ):
+            validated_data.update({
+                "material": "",
+                "material_ka": "",
+                "product_details": [],
+                "product_details_ka": [],
+            })
         tags = validated_data.get("tags")
         if isinstance(tags, str):
             validated_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
@@ -345,6 +355,16 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             instance.artist = self._resolve_artist(validated_data)
         if "vendor_slug_input" in validated_data:
             instance.vendor = self._resolve_vendor(validated_data)
+        if instance.vendor and (
+            instance.vendor.slug in ("sculpi", "figure-studio")
+            or instance.vendor.catalog_category_slug == "figures"
+        ):
+            validated_data.update({
+                "material": "",
+                "material_ka": "",
+                "product_details": [],
+                "product_details_ka": [],
+            })
         tags = validated_data.get("tags")
         if isinstance(tags, str):
             validated_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]

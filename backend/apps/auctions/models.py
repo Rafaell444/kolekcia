@@ -26,12 +26,20 @@ class Auction(SEOModelMixin):
     ]
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="auctions", null=True, blank=True)
+    reserved_size_variant = models.ForeignKey(
+        "products.SizeVariant", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="reserved_for_auctions",
+    )
+    inventory_reserved = models.BooleanField(default=False)
+    inventory_was_last_ready_unit = models.BooleanField(default=False)
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="auctions")
     slug = models.SlugField(max_length=280, unique=True, blank=True)
     title = models.CharField(max_length=255)
     artist_name = models.CharField(max_length=255, blank=True)
     image_url = models.URLField(blank=True)
     starting_bid = models.DecimalField(max_digits=10, decimal_places=2)
+    shipping_price_gel = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    shipping_price_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     starts_at = models.DateTimeField(default=timezone.now)
     ends_at = models.DateTimeField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
@@ -41,6 +49,7 @@ class Auction(SEOModelMixin):
     winner_payment_status = models.CharField(
         max_length=20, choices=PAYMENT_STATUS_CHOICES, blank=True, default=""
     )
+    is_replacement_winner = models.BooleanField(default=False)
     paid_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -50,17 +59,19 @@ class Auction(SEOModelMixin):
 
     @property
     def current_bid(self):
-        latest = self.bids.order_by("-amount").first()
+        latest = self.bids.filter(is_disqualified=False).order_by("-amount").first()
         return latest.amount if latest else self.starting_bid
 
     @property
     def bid_count(self):
-        return self.bids.count()
+        return self.bids.filter(is_disqualified=False).count()
 
     @property
     def top_bidder(self):
-        latest = self.bids.order_by("-amount").first()
-        return latest.user.name or latest.user.email if latest else "—"
+        latest = self.bids.filter(is_disqualified=False).order_by("-amount").first()
+        if not latest:
+            return "-"
+        return latest.user.name or latest.user.email.split("@")[0]
 
     def is_upcoming(self):
         return self.starts_at > timezone.now()
@@ -82,15 +93,16 @@ class Auction(SEOModelMixin):
         if not self.is_ended() or self.status != self.STATUS_ACTIVE:
             return False
         newly_won = False
-        top_bid = self.bids.order_by("-amount").first()
+        top_bid = self.bids.filter(is_disqualified=False).order_by("-amount").first()
         if top_bid:
             newly_won = not self.winner_id
             self.winner = top_bid.user
             self.winning_amount = top_bid.amount
+            self.is_replacement_winner = False
             if not self.winner_payment_status:
                 self.winner_payment_status = self.PAYMENT_PENDING
         self.refresh_live_flag()
-        self.save(update_fields=["winner", "winning_amount", "winner_payment_status", "is_live"])
+        self.save(update_fields=["winner", "winning_amount", "winner_payment_status", "is_replacement_winner", "is_live"])
         if newly_won and self.winner_id:
             self._send_auction_won_email()
         return True
@@ -147,7 +159,13 @@ class AuctionBid(models.Model):
     auction = models.ForeignKey(Auction, on_delete=models.CASCADE, related_name="bids")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="bids")
     amount = models.DecimalField(max_digits=10, decimal_places=2)
+    submitted_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    submitted_currency = models.CharField(max_length=3, default="USD")
+    fx_rate_used = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     placed_at = models.DateTimeField(auto_now_add=True)
+    is_disqualified = models.BooleanField(default=False)
+    disqualified_at = models.DateTimeField(null=True, blank=True)
+    disqualification_reason = models.TextField(blank=True)
 
     class Meta:
         db_table = "auction_bids"
@@ -155,6 +173,33 @@ class AuctionBid(models.Model):
 
     def __str__(self):
         return f"{self.user.email} → {self.auction.title}: ${self.amount}"
+
+
+class AuctionBidderBan(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auction_bans")
+    vendor = models.ForeignKey(
+        "vendors.Vendor", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="auction_bans",
+    )
+    reason = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_auction_bans",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "auction_bidder_bans"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "vendor"), name="unique_auction_bidder_ban_scope"
+            ),
+        ]
+
+    def __str__(self):
+        scope = self.vendor.name if self.vendor_id else "platform"
+        return f"{self.user.email} ({scope})"
 
 
 class AuctionChatMessage(models.Model):

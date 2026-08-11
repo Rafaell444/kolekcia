@@ -20,6 +20,7 @@ _EVENT_FROM_CATEGORY = {
     "custom_order_shipped": "orders",
     "auction_new": "auctions",
     "auction_won": "auctions",
+    "auction_second_chance": "auctions",
 }
 
 _FROM_DISPLAY_NAMES = {

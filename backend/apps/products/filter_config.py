@@ -38,4 +38,7 @@ def resolve_catalog_filter_visibility(category: str = "") -> dict:
             vendor_cfg = CatalogFilterConfig.objects.filter(scope="vendor", vendor=vendor).first()
             merged = _apply_config(merged, vendor_cfg)
 
+    if category_slug == "figures":
+        merged["material"] = False
+
     return merged

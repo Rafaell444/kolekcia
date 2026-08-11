@@ -227,6 +227,36 @@ def auction_won_html() -> str:
         "color:" + INK + ';font-size:13px;">Payment link expires soon. Tap below to finish checkout.</p>'
     )
     return _shell(
+        preheader="You won {{auction_title}} - complete payment to claim it.",
+        eyebrow="You won",
+        title="Congratulations, {{winner_name}}!",
+        body_html=body,
+        cta_label="Pay & claim",
+        cta_url="{{payment_link}}",
+    )
+
+
+def auction_second_chance_html() -> str:
+    body = (
+        '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">'
+        'Hello {{winner_name}},</p>'
+        '<p style="margin:0 0 12px;">The original winning bidder did not complete the purchase for '
+        '<strong style="color:' + INK + ';">{{auction_title}}</strong>. As the next eligible bidder, '
+        'you now have the opportunity to purchase the item at your bid amount.</p>'
+        + _info_card([("Your bid", "{{winning_amount}}")])
+        + '<p style="margin:16px 0 0;">{{admin_note}}</p>'
+        + '<p style="margin:16px 0 0;padding:14px 16px;background:#fff8e8;border-left:3px solid ' + GOLD + ';'
+        'color:' + INK + ';font-size:13px;">Please complete payment promptly to secure the item.</p>'
+    )
+    return _shell(
+        preheader="You are now eligible to purchase {{auction_title}}.",
+        eyebrow="Auction update",
+        title="The item is now available to you.",
+        body_html=body,
+        cta_label="Complete purchase",
+        cta_url="{{payment_link}}",
+    )
+    return _shell(
         preheader="You won {{auction_title}} — complete payment to claim it.",
         eyebrow="You won",
         title="Congratulations, {{winner_name}}!",
@@ -281,6 +311,7 @@ _HTML_BUILDERS = {
     "custom_order_shipped": custom_order_shipped_html,
     "auction_new": auction_new_html,
     "auction_won": auction_won_html,
+    "auction_second_chance": auction_second_chance_html,
     "password_reset": password_reset_html,
     "newsletter_welcome": newsletter_welcome_html,
 }
@@ -298,6 +329,8 @@ _META = [
      ["auction_title", "starting_bid", "starts_at", "image_url", "auction_url"]),
     ("auction_won", "Auction Won", "You won {{auction_title}}!",
      ["winner_name", "auction_title", "winning_amount", "payment_link"]),
+    ("auction_second_chance", "Auction Replacement Winner", "You can now claim {{auction_title}}",
+     ["winner_name", "auction_title", "winning_amount", "admin_note", "payment_link"]),
     ("password_reset", "Password Reset", "Reset your Koleqcia password",
      ["reset_url", "user_name"]),
     ("newsletter_welcome", "Newsletter Welcome", "Your 25% Koleqcia code",

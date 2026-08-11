@@ -34,15 +34,15 @@ class Command(BaseCommand):
         canonical_specs = [
             {
                 "target_user_email": "vendor1@kolekcia.com",
-                "target_name": "Panel Studio",
-                "target_slug": "panel-studio",
-                "legacy_slug_candidates": ["kolekcia", "panel-studio"],
+                "target_name": "MangaMoon",
+                "target_slug": "mangamoon",
+                "legacy_slug_candidates": ["kolekcia", "panel-studio", "mangamoon"],
             },
             {
                 "target_user_email": "vendor2@kolekcia.com",
-                "target_name": "Figure Studio",
-                "target_slug": "figure-studio",
-                "legacy_slug_candidates": ["noir", "figure-studio"],
+                "target_name": "Sculpi",
+                "target_slug": "sculpi",
+                "legacy_slug_candidates": ["noir", "figure-studio", "sculpi"],
             },
         ]
 
@@ -81,8 +81,8 @@ class Command(BaseCommand):
         from apps.products.models import Product
         from apps.vendors.models import Vendor
 
-        panel_vendor = Vendor.objects.filter(slug="panel-studio").first()
-        figure_vendor = Vendor.objects.filter(slug="figure-studio").first()
+        panel_vendor = Vendor.objects.filter(slug="mangamoon").first()
+        figure_vendor = Vendor.objects.filter(slug="sculpi").first()
         updated = 0
 
         for product in Product.objects.select_related("artist", "category", "vendor"):
@@ -107,7 +107,7 @@ class Command(BaseCommand):
 
         changed = 0
         vendor_emails = []
-        for slug in ("panel-studio", "figure-studio"):
+        for slug in ("mangamoon", "sculpi"):
             v = Vendor.objects.select_related("user").filter(slug=slug).first()
             if v and v.user:
                 vendor_emails.append(v.user.email)
@@ -129,12 +129,12 @@ class Command(BaseCommand):
         from apps.vendors.models import Vendor
 
         tenant_specs = [
-            ("wallpanels", "Wallpanels", "panel-studio", "vendor1@kolekcia.com"),
-            ("figures", "Figures", "figure-studio", "vendor2@kolekcia.com"),
+            ("wallpanels", "Wallpanels", "mangamoon", "vendor1@kolekcia.com"),
+            ("figures", "Figures", "sculpi", "vendor2@kolekcia.com"),
         ]
 
         storefront_defaults = {
-            "panel-studio": {
+            "mangamoon": {
                 "catalog_category_slug": "wallpanels",
                 "logo_url": "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=200&h=200&fit=crop",
                 "banner_url": "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1600&h=600&fit=crop",
@@ -144,7 +144,7 @@ class Command(BaseCommand):
                 "social_tiktok": "https://tiktok.com",
                 "social_youtube": "https://youtube.com",
             },
-            "figure-studio": {
+            "sculpi": {
                 "catalog_category_slug": "figures",
                 "logo_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200&h=200&fit=crop",
                 "banner_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&h=600&fit=crop",
@@ -187,4 +187,3 @@ class Command(BaseCommand):
             tenant.save(update_fields=["name", "owner"])
             tenant.products.set(vendor.products.all())
         return touched
-

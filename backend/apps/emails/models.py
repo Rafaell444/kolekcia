@@ -9,6 +9,7 @@ class EmailTemplate(models.Model):
         ("custom_order_shipped", "Custom Order Shipped"),
         ("auction_new", "New Auction Notification"),
         ("auction_won", "Auction Won"),
+        ("auction_second_chance", "Auction Replacement Winner"),
         ("password_reset", "Password Reset"),
         ("welcome", "Welcome / Registration"),
         ("newsletter_welcome", "Newsletter Welcome"),

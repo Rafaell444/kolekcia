@@ -7,9 +7,9 @@ import FaqPage from "./FaqPage"
 
 type Faq = {
   id: number
-  question: string; question_ka?: string; question_ru?: string
-  answer: string; answer_ka?: string; answer_ru?: string
-  category: string; category_ka?: string; category_ru?: string
+  question: string; question_ka?: string
+  answer: string; answer_ka?: string
+  category: string; category_ka?: string
   order: number
 }
 
@@ -24,13 +24,13 @@ async function fetchFaqs(locale: string): Promise<Faq[]> {
     if (!res.ok) return []
     const data = await res.json() as Faq[]
     if (!Array.isArray(data)) return []
-    if (locale !== "ka" && locale !== "ru") return data
+    if (locale !== "ka") return data
     return data
       .map((faq) => ({
         ...faq,
-        question: faq[`question_${locale}`] ?? "",
-        answer: faq[`answer_${locale}`] ?? "",
-        category: faq[`category_${locale}`] ?? "",
+        question: faq.question_ka?.trim() || faq.question,
+        answer: faq.answer_ka?.trim() || faq.answer,
+        category: faq.category_ka?.trim() || faq.category,
       }))
       .filter((faq) => faq.question.trim() && faq.answer.trim())
   } catch {

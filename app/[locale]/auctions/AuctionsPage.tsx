@@ -18,7 +18,11 @@ type ApiAuction = {
   image_url: string
   effective_image: string | null
   starting_bid: string
+  starting_bid_usd?: string
+  starting_bid_gel?: string | null
   current_bid: string
+  current_bid_usd?: string
+  current_bid_gel?: string | null
   bid_count: number
   top_bidder: string
   starts_at: string
@@ -35,7 +39,29 @@ type LeaderboardEntry = {
   name: string
   wins: number
   total_spent: number
+  total_spent_usd?: number
+  total_spent_gel?: number | null
   bid_count?: number
+}
+
+type AuctionCurrency = "GEL" | "USD"
+
+function getAuctionCurrency(currencyCode: string): AuctionCurrency {
+  return currencyCode === "GEL" ? "GEL" : "USD"
+}
+
+function auctionAmount(usd: string | undefined, gel: string | null | undefined, currency: AuctionCurrency): number {
+  const raw = currency === "GEL" ? gel : usd
+  return raw == null ? Number.NaN : Number.parseFloat(raw)
+}
+
+function formatAuctionMoney(amount: number, currency: AuctionCurrency, fractionDigits = 2): string {
+  if (!Number.isFinite(amount)) return "—"
+  const formatted = amount.toLocaleString(undefined, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })
+  return currency === "GEL" ? `${formatted} ₾` : `$${formatted}`
 }
 
 // ─── Countdown hook ───────────────────────────────────────────────────────────
@@ -84,9 +110,10 @@ function CountdownChip({ endsAt, ended }: { endsAt: string; ended: boolean }) {
 // ─── Auction Card ────────────────────────────────────────────────────────────
 
 function AuctionCard({ a }: { a: ApiAuction }) {
-  const { formatPrice } = useLocale()
+  const { currentCur } = useLocale()
+  const auctionCurrency = getAuctionCurrency(currentCur.code)
   const img = a.effective_image || a.image_url || "/placeholder.svg"
-  const price = parseFloat(a.current_bid)
+  const price = auctionAmount(a.current_bid_usd ?? a.current_bid, a.current_bid_gel, auctionCurrency)
   const isBiddable = a.is_biddable ?? a.is_live
   const isUpcoming = a.is_upcoming ?? (!a.is_ended && !isBiddable)
 
@@ -138,7 +165,7 @@ function AuctionCard({ a }: { a: ApiAuction }) {
               {a.is_ended ? "Final Bid" : "Current Bid"}
             </p>
             <p className="font-display text-2xl text-dp-accent-gold leading-none">
-                {isNaN(price) ? "—" : formatPrice(price)}
+                {formatAuctionMoney(price, auctionCurrency)}
             </p>
           </div>
           <div className="text-right">
@@ -162,6 +189,8 @@ function AuctionCard({ a }: { a: ApiAuction }) {
 // ─── Global Leaderboard ───────────────────────────────────────────────────────
 
 function GlobalLeaderboard({ entries }: { entries: LeaderboardEntry[] }) {
+  const { currentCur } = useLocale()
+  const auctionCurrency = getAuctionCurrency(currentCur.code)
   const MEDAL = ["🥇", "🥈", "🥉"]
 
   return (
@@ -177,22 +206,27 @@ function GlobalLeaderboard({ entries }: { entries: LeaderboardEntry[] }) {
         </p>
       ) : (
         <ul className="divide-y divide-dp-border">
-          {entries.map((e) => (
-            <li key={e.rank} className="flex items-center gap-3 px-5 py-3 hover:bg-dp-bg-elevated transition-colors">
-              <span className="text-lg w-6 text-center leading-none shrink-0">
-                {e.rank <= 3 ? MEDAL[e.rank - 1] : <span className="font-display text-dp-text-tertiary text-[15px]">{e.rank}</span>}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-dp-text-primary truncate">{e.name}</p>
-                <p className="text-[11px] text-dp-text-tertiary">
-                  {e.wins > 0 ? `${e.wins} auction win${e.wins !== 1 ? "s" : ""}` : `${e.bid_count ?? 0} bids placed`}
-                </p>
-              </div>
-              <span className="text-[13px] font-bold text-dp-text-primary shrink-0">
-                ${e.total_spent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </span>
-            </li>
-          ))}
+          {entries.map((e) => {
+            const total = auctionCurrency === "GEL"
+              ? (e.total_spent_gel ?? Number.NaN)
+              : (e.total_spent_usd ?? e.total_spent)
+            return (
+              <li key={e.rank} className="flex items-center gap-3 px-5 py-3 hover:bg-dp-bg-elevated transition-colors">
+                <span className="text-lg w-6 text-center leading-none shrink-0">
+                  {e.rank <= 3 ? MEDAL[e.rank - 1] : <span className="font-display text-dp-text-tertiary text-[15px]">{e.rank}</span>}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-dp-text-primary truncate">{e.name}</p>
+                  <p className="text-[11px] text-dp-text-tertiary">
+                    {e.wins > 0 ? `${e.wins} auction win${e.wins !== 1 ? "s" : ""}` : `${e.bid_count ?? 0} bids placed`}
+                  </p>
+                </div>
+                <span className="text-[13px] font-bold text-dp-text-primary shrink-0">
+                  {formatAuctionMoney(total, auctionCurrency, 0)}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
@@ -343,6 +377,10 @@ export default function AuctionsPage(): React.ReactElement {
           <p className="text-dp-text-secondary text-[14px] max-w-xl">
             Bid on exclusive, one-of-a-kind pieces directly from artists. Every win earns 500 XP.
           </p>
+          <p className="mt-3 inline-flex items-center gap-2 border border-dp-accent-gold/40 bg-dp-accent-gold/10 px-3 py-2 text-[12px] font-semibold text-dp-text-primary rounded-sm">
+            <span aria-hidden="true">+</span>
+            Shipping is added after you win. Available delivery options are shown on each auction.
+          </p>
 
           {/* Filter tabs */}
           <div className="flex gap-1 mt-5 flex-wrap">
@@ -450,7 +488,7 @@ export default function AuctionsPage(): React.ReactElement {
                     ["Browse Drops", "Exclusive pieces go live weekly."],
                     ["Place Your Bid", "Any amount above the current bid (minimum increment 1)."],
                     ["Win & Earn XP", "Highest bid when timer ends wins. +500 XP."],
-                    ["Receive Your Piece", "Signed & shipped within 5 business days."],
+                    ["Choose Delivery", "After winning, choose from the delivery options available for that product."],
                   ].map(([title, body], i) => (
                     <li key={i} className="flex gap-3">
                       <span className="font-display text-2xl text-dp-bg-divider leading-none shrink-0 w-6">

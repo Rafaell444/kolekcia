@@ -26,6 +26,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
 import AuctionLiveChat from "@/components/auctions/AuctionLiveChat"
+import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 import Breadcrumb from "@/components/seo/Breadcrumb"
 import { DEFAULT_LOCALE, isValidLocale } from "@/lib/i18n"
 
@@ -59,6 +60,8 @@ type ApiBid = {
   id: number
   user_name: string
   amount: string
+  amount_usd?: string
+  amount_gel?: string | null
   placed_at: string
 }
 
@@ -70,7 +73,17 @@ type ApiAuction = {
   image_url: string
   effective_image: string | null
   starting_bid: string
+  starting_bid_usd?: string
+  starting_bid_gel?: string | null
   current_bid: string
+  current_bid_usd?: string
+  current_bid_gel?: string | null
+  minimum_bid_increment_usd?: string
+  minimum_bid_increment_gel?: string | null
+  usd_gel_rate?: string | null
+  shipping_price_gel: string
+  shipping_price_usd: string
+  vendor_slug?: string | null
   bid_count: number
   top_bidder: string
   starts_at: string
@@ -81,6 +94,22 @@ type ApiAuction = {
   is_upcoming?: boolean
   is_biddable?: boolean
   recent_bids: ApiBid[]
+}
+
+type AuctionCurrency = "GEL" | "USD"
+
+function getAuctionCurrency(currencyCode: string): AuctionCurrency {
+  return currencyCode === "GEL" ? "GEL" : "USD"
+}
+
+function auctionAmount(usd: string | undefined, gel: string | null | undefined, currency: AuctionCurrency): number {
+  const raw = currency === "GEL" ? gel : usd
+  return raw == null ? Number.NaN : Number.parseFloat(raw)
+}
+
+function formatAuctionMoney(amount: number, currency: AuctionCurrency): string {
+  if (!Number.isFinite(amount)) return "—"
+  return currency === "GEL" ? `${amount.toFixed(2)} ₾` : `$${amount.toFixed(2)}`
 }
 
 type PaymentMethod = {
@@ -147,12 +176,26 @@ function CountdownBlock({ label, value }: { label: string; value: number }) {
 // ─── Login Modal ──────────────────────────────────────────────────────────────
 
 function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const { login } = useAuth()
+  const { login, loginWithGoogle } = useAuth()
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+
+  async function handleGoogleSuccess(idToken: string) {
+    setError("")
+    setGoogleLoading(true)
+    try {
+      await loginWithGoogle(idToken, false)
+      onSuccess()
+    } catch {
+      setError("Google sign-in failed. Please try again.")
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -187,6 +230,20 @@ function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
           </LocalizedLink>
           .
         </p>
+
+        <div className="mb-4">
+          <GoogleAuthButton
+            mode="signin"
+            disabled={loading || googleLoading}
+            onSuccess={handleGoogleSuccess}
+            onError={setError}
+          />
+        </div>
+        <div className="relative flex items-center gap-3 mb-4">
+          <div className="flex-1 border-t border-dp-border" />
+          <span className="text-[10px] uppercase tracking-widest text-dp-text-tertiary">or use email</span>
+          <div className="flex-1 border-t border-dp-border" />
+        </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
@@ -246,7 +303,8 @@ type BidConfirmProps = {
 }
 
 function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmProps) {
-  const { formatPrice } = useLocale()
+  const { currentCur } = useLocale()
+  const auctionCurrency = getAuctionCurrency(currentCur.code)
   const [cards, setCards] = useState<PaymentMethod[]>([])
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedCard, setSelectedCard] = useState<number | null>(null)
@@ -340,7 +398,7 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
     try {
       const updated = await authFetch<ApiAuction>(`/auctions/${auction.slug || auction.id}/bid/`, {
         method: "POST",
-        body: JSON.stringify({ amount: amount }),
+        body: JSON.stringify({ amount, currency: auctionCurrency }),
       })
       onConfirmed(updated)
     } catch (err: unknown) {
@@ -388,7 +446,7 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
             </div>
             <div className="text-right shrink-0">
               <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Your Bid</p>
-              <p className="font-display text-2xl text-dp-accent-gold">{formatPrice(amount)}</p>
+              <p className="font-display text-2xl text-dp-accent-gold">{formatAuctionMoney(amount, auctionCurrency)}</p>
             </div>
           </div>
 
@@ -610,7 +668,7 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
               className="flex-1 flex items-center justify-center gap-2 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors"
             >
               {placing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
-              {placing ? "Placing…" : `Confirm ${formatPrice(amount)} Bid`}
+              {placing ? "Placing…" : `Confirm ${formatAuctionMoney(amount, auctionCurrency)} Bid`}
             </button>
           </div>
         </div>
@@ -622,8 +680,9 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
 // ─── Bid history row ──────────────────────────────────────────────────────────
 
 function BidRow({ bid, isTop, isNew }: { bid: ApiBid; isTop: boolean; isNew: boolean }) {
-  const { formatPrice } = useLocale()
-  const price = parseFloat(bid.amount)
+  const { currentCur } = useLocale()
+  const auctionCurrency = getAuctionCurrency(currentCur.code)
+  const price = auctionAmount(bid.amount_usd ?? bid.amount, bid.amount_gel, auctionCurrency)
   const ago = (() => {
     const diff = Date.now() - new Date(bid.placed_at).getTime()
     if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`
@@ -645,7 +704,7 @@ function BidRow({ bid, isTop, isNew }: { bid: ApiBid; isTop: boolean; isNew: boo
       </div>
       <div className="flex items-center gap-4">
         <span className={`text-[14px] font-bold ${isTop ? "text-dp-accent-gold" : "text-dp-text-primary"}`}>
-          {isNaN(price) ? "—" : formatPrice(price)}
+          {formatAuctionMoney(price, auctionCurrency)}
         </span>
         <span className="text-[11px] text-dp-text-tertiary w-14 text-right">{ago}</span>
       </div>
@@ -662,7 +721,8 @@ export default function AuctionDetailPage(): React.ReactElement {
   const locale = isValidLocale(localeParam) ? localeParam : DEFAULT_LOCALE
 
   const { user } = useAuth()
-  const { formatPrice, currentCur } = useLocale()
+  const { currentCur } = useLocale()
+  const auctionCurrency = getAuctionCurrency(currentCur.code)
   const [auction, setAuction] = useState<ApiAuction | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -729,7 +789,7 @@ export default function AuctionDetailPage(): React.ReactElement {
 
   function handleQuickBid(increment: number) {
     if (!auction) return
-    const current = parseFloat(auction.current_bid)
+    const current = auctionAmount(auction.current_bid_usd ?? auction.current_bid, auction.current_bid_gel, auctionCurrency)
     const val = current + increment
     setBidInput(val.toFixed(2))
     setBidError("")
@@ -748,13 +808,22 @@ export default function AuctionDetailPage(): React.ReactElement {
       return
     }
     const val = parseFloat(bidInput)
-    const current = parseFloat(auction.current_bid)
-    if (isNaN(val) || val <= current) {
-      setBidError(`Bid must be higher than the current bid of ${formatPrice(current)}.`)
+    const current = auctionAmount(auction.current_bid_usd ?? auction.current_bid, auction.current_bid_gel, auctionCurrency)
+    const minimumIncrement = auctionAmount(
+      auction.minimum_bid_increment_usd ?? "1.00",
+      auction.minimum_bid_increment_gel,
+      auctionCurrency,
+    )
+    if (!Number.isFinite(current) || !Number.isFinite(minimumIncrement)) {
+      setBidError("The official NBG exchange rate is temporarily unavailable. Please try again shortly.")
       return
     }
-    if (val < current + 1) {
-      setBidError(`Minimum increment is ${formatPrice(1)}. Enter at least ${formatPrice(current + 1)}.`)
+    if (isNaN(val) || val <= current) {
+      setBidError(`Bid must be higher than the current bid of ${formatAuctionMoney(current, auctionCurrency)}.`)
+      return
+    }
+    if (val < current + minimumIncrement) {
+      setBidError(`Minimum increment is ${formatAuctionMoney(minimumIncrement, auctionCurrency)}. Enter at least ${formatAuctionMoney(current + minimumIncrement, auctionCurrency)}.`)
       return
     }
     setBidError("")
@@ -773,7 +842,24 @@ export default function AuctionDetailPage(): React.ReactElement {
 
   const { d, h, m, s, done } = useCountdown(auction?.ends_at ?? new Date(0).toISOString())
   const startCountdown = useCountdown(auction?.starts_at ?? new Date(0).toISOString())
-  const currentBid = auction ? parseFloat(auction.current_bid) : 0
+  const currentBid = auction
+    ? auctionAmount(auction.current_bid_usd ?? auction.current_bid, auction.current_bid_gel, auctionCurrency)
+    : Number.NaN
+  const startingBid = auction
+    ? auctionAmount(auction.starting_bid_usd ?? auction.starting_bid, auction.starting_bid_gel, auctionCurrency)
+    : Number.NaN
+  const minimumBidIncrement = auction
+    ? auctionAmount(auction.minimum_bid_increment_usd ?? "1.00", auction.minimum_bid_increment_gel, auctionCurrency)
+    : Number.NaN
+  const usdGelRate = auction?.usd_gel_rate ? Number.parseFloat(auction.usd_gel_rate) : Number.NaN
+  const quickBidIncrements = [3, 5, 10].map((usdIncrement) => (
+    auctionCurrency === "GEL" ? usdIncrement * usdGelRate : usdIncrement
+  ))
+  const shippingPrice = auction
+    ? Number.parseFloat(auctionCurrency === "GEL" ? auction.shipping_price_gel : auction.shipping_price_usd)
+    : Number.NaN
+  const fxUnavailable = auctionCurrency === "GEL" && (!Number.isFinite(currentBid) || !Number.isFinite(minimumBidIncrement))
+  const isSculpiAuction = auction?.vendor_slug === "sculpi" || auction?.vendor_slug === "figure-studio"
   const img = auction?.effective_image || auction?.image_url || "/placeholder.svg"
   const urgent = !done && d === 0 && h === 0 && m < 10
 
@@ -891,7 +977,7 @@ export default function AuctionDetailPage(): React.ReactElement {
             <div className="flex flex-wrap gap-6 border-y border-dp-border py-4">
               <div>
                 <p className="text-[10px] text-dp-text-tertiary uppercase tracking-widest">Starting Bid</p>
-                <p className="font-semibold text-dp-text-secondary">{formatPrice(parseFloat(auction.starting_bid))}</p>
+                <p className="font-semibold text-dp-text-secondary">{formatAuctionMoney(startingBid, auctionCurrency)}</p>
               </div>
               <div>
                 <p className="text-[10px] text-dp-text-tertiary uppercase tracking-widest">Total Bids</p>
@@ -914,7 +1000,7 @@ export default function AuctionDetailPage(): React.ReactElement {
                   {auction.is_ended ? "Final Bid" : "Current Bid"}
                 </p>
                 <p className="font-display text-6xl text-dp-accent-gold leading-none">
-                  {formatPrice(currentBid)}
+                  {formatAuctionMoney(currentBid, auctionCurrency)}
                 </p>
               </div>
               {!auction.is_ended && isUpcoming && !startCountdown.done && (
@@ -970,13 +1056,14 @@ export default function AuctionDetailPage(): React.ReactElement {
                   <>
                 {/* Quick-bid buttons */}
                 <div className="flex flex-wrap gap-2">
-                  {[3, 5, 10].map((inc) => (
+                  {quickBidIncrements.map((inc, index) => (
                     <button
-                      key={inc}
+                      key={index}
                       onClick={() => handleQuickBid(inc)}
-                      className="px-4 py-2 bg-dp-bg-elevated border border-dp-border text-dp-text-primary text-[13px] font-semibold rounded-sm hover:border-dp-accent-cta hover:text-dp-accent-cta transition-colors"
+                      disabled={fxUnavailable}
+                      className="px-4 py-2 bg-dp-bg-elevated border border-dp-border text-dp-text-primary text-[13px] font-semibold rounded-sm hover:border-dp-accent-cta hover:text-dp-accent-cta transition-colors disabled:opacity-50"
                     >
-                      {formatPrice(currentBid + inc)}
+                      {formatAuctionMoney(currentBid + inc, auctionCurrency)}
                     </button>
                   ))}
                 </div>
@@ -984,20 +1071,22 @@ export default function AuctionDetailPage(): React.ReactElement {
                 {/* Custom bid input */}
                 <div className="flex gap-2">
                   <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary text-sm font-semibold">{currentCur.symbol}</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary text-sm font-semibold">{auctionCurrency === "GEL" ? "₾" : "$"}</span>
                     <input
                       type="number"
                       value={bidInput}
                       onChange={(e) => { setBidInput(e.target.value); setBidError("") }}
-                      placeholder={`${(currentBid + 1).toFixed(2)} or more`}
-                      min={currentBid + 1}
-                      step={1}
+                      placeholder={fxUnavailable ? "Rate unavailable" : `${(currentBid + minimumBidIncrement).toFixed(2)} or more`}
+                      min={fxUnavailable ? undefined : currentBid + minimumBidIncrement}
+                      step="0.01"
+                      disabled={fxUnavailable}
                       className="w-full pl-7 pr-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-dp-text-primary text-[14px] placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-accent-cta transition-colors"
                     />
                   </div>
                   <button
                     onClick={handlePlaceBid}
-                    className="flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors shrink-0"
+                    disabled={fxUnavailable}
+                    className="flex items-center gap-2 px-6 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors shrink-0 disabled:opacity-50"
                   >
                     <Zap size={15} />
                     {user ? "Place Bid" : "Log In to Bid"}
@@ -1018,12 +1107,32 @@ export default function AuctionDetailPage(): React.ReactElement {
                 )}
 
                 <p className="text-[11px] text-dp-text-tertiary">
-                  Min increment: {formatPrice(1)} · Bids are binding · Winner pays within 48h
+                  Min increment: {formatAuctionMoney(minimumBidIncrement, auctionCurrency)} · Bids are binding · Winner pays within 48h
                 </p>
                   </>
                 )}
               </div>
             )}
+
+            <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
+              <div className="flex items-start gap-3">
+                <MapPin size={18} className="text-dp-accent-cta mt-0.5 shrink-0" />
+                <div>
+                  <h2 className="font-display text-xl text-dp-text-primary">Shipping After You Win</h2>
+                  <p className="text-[13px] text-dp-text-secondary mt-1">
+                    Shipping is not included in the winning bid. It will be added after the auction is won.
+                  </p>
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 text-[13px]">
+                    <span className="font-semibold text-dp-text-primary">
+                      Delivery: {formatAuctionMoney(shippingPrice, auctionCurrency)}
+                    </span>
+                    {!isSculpiAuction && (
+                      <span className="font-semibold text-dp-text-primary">I will take it myself: Free</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Bid history */}
             <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">

@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next"
+import type { Metadata } from "next"
 import { type Locale } from "@/lib/i18n"
 import { COOKIES_SEO } from "@/lib/seo-metadata"
 import { buildPageMetadata } from "@/lib/seo"
@@ -19,7 +19,6 @@ export async function generateMetadata({
     locale,
   })
 }
-
 const CONTENT = {
   ka: {
     title: "ქუქი-ფაილები",

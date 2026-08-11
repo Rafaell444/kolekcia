@@ -1,12 +1,12 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import { ChevronRight, CreditCard, CheckCircle, Lock, Truck, ArrowLeft, MapPin, Package } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
-import { authFetch } from "@/lib/api"
+import { authFetch, getApiErrorMessage } from "@/lib/api"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
 import { useLocale } from "@/contexts/locale-context"
 import { CartItemExtras } from "@/components/cart/CartItemExtras"
@@ -26,6 +26,7 @@ type DeliveryOpt = {
   est_days_min: number
   est_days_max: number
   is_express?: boolean
+  is_pickup?: boolean
 }
 
 type Step = "shipping" | "payment" | "review" | "confirmed"
@@ -215,7 +216,9 @@ function PerVendorShippingSelector({
                     {opt.is_express && <span className="ml-1.5 text-[10px] font-bold text-dp-accent-cta">EXPRESS</span>}
                   </p>
                   {groups.length <= 1 && opt.vendor_name && <p className="text-[11px] text-dp-text-secondary">{opt.vendor_name}</p>}
-                  <p className="text-[11px] text-dp-text-tertiary">{opt.est_days_min}-{opt.est_days_max} business days</p>
+                  <p className="text-[11px] text-dp-text-tertiary">
+                    {opt.is_pickup ? "Collect it yourself after confirmation" : `${opt.est_days_min}-${opt.est_days_max} business days`}
+                  </p>
                 </div>
               </div>
               <span className="text-[13px] font-bold text-dp-text-primary">{shippingPriceLabel(opt, currency)}</span>
@@ -583,6 +586,13 @@ function ReviewStep({
   const { formatPrice } = useLocale()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const checkoutIdempotencyKey = useRef("")
+
+  if (!checkoutIdempotencyKey.current) {
+    checkoutIdempotencyKey.current = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
 
   const items = cart?.items ?? []
   const giftWrapTotal = items.reduce((sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0), 0)
@@ -609,9 +619,7 @@ function ReviewStep({
   const discount = parseFloat(cart?.discount || "0")
   const total = Math.max(0, productsTotal + giftWrapTotal + processingTotal - discount + deliveryPrice)
 
-  // Determine checkout payload: use per-vendor shipping_selections or single delivery_type
-  const hasMultipleVendors = Object.keys(shippingSelections).length > 1
-  const singleDeliveryType = Object.values(shippingSelections)[0] ?? "standard"
+  const hasVendorShippingSelection = Object.keys(shippingSelections).length > 0
 
   async function handlePlaceOrder() {
     setLoading(true)
@@ -635,23 +643,23 @@ function ReviewStep({
         currency: checkoutCurrency,
       }
 
-      if (hasMultipleVendors) {
+      if (hasVendorShippingSelection) {
         checkoutBody.shipping_selections = shippingSelections
         checkoutBody.delivery_type = "per-vendor"
       } else {
-        checkoutBody.delivery_type = singleDeliveryType
+        checkoutBody.delivery_type = "standard"
       }
 
       const order = await authFetch<OrderResponse>("/orders/checkout/", {
         method: "POST",
+        headers: { "Idempotency-Key": checkoutIdempotencyKey.current },
         body: JSON.stringify(checkoutBody),
       })
       await authFetch("/orders/cart/", { method: "DELETE" }).catch(() => {})
       await refresh()
       onConfirm(order.order_number, order.id)
     } catch (err: unknown) {
-      const apiErr = err as { data?: { detail?: string } }
-      setError(apiErr?.data?.detail ?? "Checkout failed. Please try again.")
+      setError(getApiErrorMessage(err, "Checkout failed. Please check your connection and try again."))
     } finally {
       setLoading(false)
     }

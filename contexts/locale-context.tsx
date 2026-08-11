@@ -93,7 +93,7 @@ const EU_COUNTRIES = new Set([
   "NL","PL","PT","RO","SE","SI","SK",
 ])
 
-/** Russian-speaking countries → Russian + keep local currency */
+/** Russian-speaking countries -> Russian + keep local currency */
 const RU_COUNTRIES = new Set(["RU","BY","KZ","AM","AZ","KG","TJ","TM","UZ","MD"])
 
 function detectLanguage(countryCode: string, browserLang: string): Language {

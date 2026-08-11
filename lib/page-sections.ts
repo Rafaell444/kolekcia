@@ -6,10 +6,8 @@ export type PageSection = {
   section_key: string
   title: string
   title_ka?: string | null
-  title_ru?: string | null
   content: Record<string, unknown>
   content_ka?: Record<string, unknown> | null
-  content_ru?: Record<string, unknown> | null
   sort_order: number
   is_active: boolean
 }
@@ -52,7 +50,6 @@ export function sectionContent<T extends Record<string, unknown>>(
   const s = sections.find((x) => x.section_key === key)
   if (!s) return null
   if (locale === "ka" && s.content_ka && Object.keys(s.content_ka).length > 0) return mergeLocalized(s.content, s.content_ka) as T
-  if (locale === "ru" && s.content_ru && Object.keys(s.content_ru).length > 0) return mergeLocalized(s.content, s.content_ru) as T
   return (s.content as T) ?? null
 }
 

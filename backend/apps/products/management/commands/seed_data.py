@@ -100,7 +100,7 @@ class Command(BaseCommand):
                 "Gold",
                 True,
                 "vendor2@kolekcia.com",
-                "figure-studio",
+                "sculpi",
             ),
             (
                 "Alex Tanaka",
@@ -114,7 +114,7 @@ class Command(BaseCommand):
                 "Gold",
                 True,
                 "vendor1@kolekcia.com",
-                "panel-studio",
+                "mangamoon",
             ),
         ]
         for name, handle, avatar, cover, bio, designs, followers, level, badge, verified, user_email, vendor_slug in artists_data:
@@ -310,8 +310,8 @@ class Command(BaseCommand):
     def _sync_product_vendors(self):
         from apps.vendors.models import Vendor
 
-        panel_vendor = Vendor.objects.filter(slug="panel-studio").first()
-        figure_vendor = Vendor.objects.filter(slug="figure-studio").first()
+        panel_vendor = Vendor.objects.filter(slug="mangamoon").first()
+        figure_vendor = Vendor.objects.filter(slug="sculpi").first()
         updated = 0
 
         for product in Product.objects.select_related("artist", "category", "vendor"):
@@ -336,8 +336,8 @@ class Command(BaseCommand):
         from apps.vendors.models import Vendor
 
         tenant_specs = [
-            ("wallpanels", "Wallpanels", "panel-studio", "vendor1@kolekcia.com"),
-            ("figures", "Figures", "figure-studio", "vendor2@kolekcia.com"),
+            ("wallpanels", "Wallpanels", "mangamoon", "vendor1@kolekcia.com"),
+            ("figures", "Figures", "sculpi", "vendor2@kolekcia.com"),
         ]
         for tenant_id, tenant_name, vendor_slug, owner_email in tenant_specs:
             owner = User.objects.filter(email=owner_email).first()

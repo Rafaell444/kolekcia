@@ -96,6 +96,8 @@ class Order(models.Model):
     processing_fee_total = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     currency = models.CharField(max_length=10, default="USD")
     total = models.DecimalField(max_digits=10, decimal_places=2)
+    checkout_idempotency_key = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    checkout_request_fingerprint = models.CharField(max_length=64, blank=True)
     tracking_code = models.CharField(max_length=100, blank=True)
     shipped_at = models.DateTimeField(null=True, blank=True)
     review_requested_at = models.DateTimeField(null=True, blank=True)

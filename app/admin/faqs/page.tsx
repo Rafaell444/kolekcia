@@ -5,9 +5,9 @@ import { Plus, Pencil, Trash2, X } from "lucide-react"
 import { adminFetch } from "@/lib/admin-auth"
 import TranslationFields from "@/components/admin/TranslationFields"
 
-type Faq = { id: number; question: string; question_ka?: string; question_ru?: string; answer: string; answer_ka?: string; answer_ru?: string; category: string; category_ka?: string; category_ru?: string; order: number }
+type Faq = { id: number; question: string; question_ka?: string; answer: string; answer_ka?: string; category: string; category_ka?: string; order: number }
 
-const EMPTY_FAQ: Omit<Faq, "id"> = { question: "", question_ka: "", question_ru: "", answer: "", answer_ka: "", answer_ru: "", category: "", category_ka: "", category_ru: "", order: 0 }
+const EMPTY_FAQ: Omit<Faq, "id"> = { question: "", question_ka: "", answer: "", answer_ka: "", category: "", category_ka: "", order: 0 }
 
 export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategory?: string }): React.ReactElement {
   const [faqs, setFaqs] = useState<Faq[]>([])
@@ -85,7 +85,7 @@ export default function AdminFaqsPage({ defaultCategory = "" }: { defaultCategor
           {error && <p className="px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-sm text-[12px] text-red-400">{error}</p>}
           <div><label className={labelCls}>Question</label><input required className={inputCls} value={form.question} onChange={(e) => setForm((f) => f ? { ...f, question: e.target.value } : f)} /></div>
           <div><label className={labelCls}>Answer</label><textarea required rows={4} className={inputCls} value={form.answer} onChange={(e) => setForm((f) => f ? { ...f, answer: e.target.value } : f)} /></div>
-          <TranslationFields value={form} onChange={setForm} inputClassName={inputCls} fields={[{ key: "question_ka", label: "Question · Georgian" }, { key: "question_ru", label: "Question · Russian" }, { key: "answer_ka", label: "Answer · Georgian", multiline: true }, { key: "answer_ru", label: "Answer · Russian", multiline: true }, { key: "category_ka", label: "Category · Georgian" }, { key: "category_ru", label: "Category · Russian" }]} />
+          <TranslationFields value={form} onChange={setForm} inputClassName={inputCls} fields={[{ key: "question_ka", label: "Question · Georgian" }, { key: "answer_ka", label: "Answer · Georgian", multiline: true }, { key: "category_ka", label: "Category · Georgian" }]} />
           {!defaultCategory && (
             <div><label className={labelCls}>Category (leave empty for main FAQ page)</label><input className={inputCls} placeholder="auction" value={form.category} onChange={(e) => setForm((f) => f ? { ...f, category: e.target.value } : f)} /></div>
           )}

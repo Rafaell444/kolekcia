@@ -22,7 +22,6 @@ type ContactHeroContent = {
   responseLabel?: string
   responseValue?: string
 }
-
 type ContactReasonsContent = { eyebrow?: string; cards?: ContactReason[] }
 type ContactFormIntroContent = { heading?: string; body?: string }
 type ContactSidebarContent = { promiseTitle?: string; promiseBody?: string; homeEyebrow?: string; address?: string }

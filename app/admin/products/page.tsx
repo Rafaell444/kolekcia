@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from "react"
 import Image from "next/image"
-import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, Video, Image as ImageIcon2, FolderPlus, GripVertical, Check, Crop, Tag } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, FolderPlus, GripVertical, Check, Crop, Tag } from "lucide-react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
 import TranslationFields from "@/components/admin/TranslationFields"
 import {
@@ -17,7 +17,6 @@ type SizeVariantItem = {
   sku?: string | null
   label: string
   label_ka?: string
-  label_ru?: string
   price_usd: string
   price_gel?: string | null
   price_eur?: string | null
@@ -32,7 +31,7 @@ type SizeVariantItem = {
 }
 
 type AdminProduct = {
-  id: number; title: string; title_ka?: string; title_ru?: string; artist_name: string; base_price: string
+  id: number; title: string; title_ka?: string; artist_name: string; base_price: string
   regional_prices?: Record<string, { price?: string; original?: string | null }>
   image_url?: string
   images: { id?: number; url: string; src?: string; media_type?: string }[]; is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean; is_featured?: boolean
@@ -41,21 +40,17 @@ type AdminProduct = {
   category_slugs?: string[]
   tags?: string[]
   tags_ka?: string[]
-  tags_ru?: string[]
   status?: "active" | "paused" | "sold"
   vendor_slug?: string | null
   vendor_name?: string | null
-  description?: string; description_ka?: string; description_ru?: string
+  description?: string; description_ka?: string
   material?: string
   material_ka?: string
-  material_ru?: string
   processing_time_label?: string
   processing_time_label_ka?: string
-  processing_time_label_ru?: string
   processing_options?: ProcessingOptionItem[]
   product_details?: string[]
   product_details_ka?: string[]
-  product_details_ru?: string[]
   size_variants?: SizeVariantItem[]
   variants?: Array<{
     id: number
@@ -72,7 +67,6 @@ type PendingVariant = {
   _key: string
   label: string
   labelKa: string
-  labelRu: string
   sku: string
   stock: string
   priceUsd: string
@@ -81,29 +75,50 @@ type PendingVariant = {
   salePriceGel: string
 }
 
+const SCULPI_VARIANT_DEFAULTS: PendingVariant[] = [
+  {
+    _key: "sculpi-default-1-6",
+    label: "1/6 Scale (30cm / 12 inch)",
+    labelKa: "1/6 Scale (30cm / 12 inch)",
+    sku: "",
+    stock: "",
+    priceUsd: "",
+    priceGel: "",
+    salePriceUsd: "",
+    salePriceGel: "",
+  },
+  {
+    _key: "sculpi-default-1-4",
+    label: "1/4 Scale (50cm /20 inch)",
+    labelKa: "1/4 Scale (50cm /20 inch)",
+    sku: "",
+    stock: "",
+    priceUsd: "",
+    priceGel: "",
+    salePriceUsd: "",
+    salePriceGel: "",
+  },
+]
+
 type ProductDraft = {
   title: string
-  title_ka: string; title_ru: string
+  title_ka: string
   categories: string
   tags: string
   tags_ka: string
-  tags_ru: string
   vendorSlug: string
   status: "active" | "paused" | "sold"
   isLimited: boolean; isSale: boolean; isNew: boolean; isExclusive: boolean; isFeatured: boolean; isReadyToShip: boolean
   allowCustomSize: boolean
   description: string
-  description_ka: string; description_ru: string
+  description_ka: string
   material: string
   material_ka: string
-  material_ru: string
   processingTimeLabel: string
   processingTimeLabel_ka: string
-  processingTimeLabel_ru: string
   processingOptionIds: number[]
   productDetails: string
   productDetails_ka: string
-  productDetails_ru: string
 }
 
 type ProcessingOptionItem = {
@@ -111,7 +126,6 @@ type ProcessingOptionItem = {
   slug?: string
   label: string
   label_ka?: string
-  label_ru?: string
   est_days_min: number
   est_days_max: number
   price_usd: string | number
@@ -121,7 +135,7 @@ type ProcessingOptionItem = {
   is_active?: boolean
 }
 
-type CategoryOption = { id: number; name: string; name_ka?: string; name_ru?: string; slug: string }
+type CategoryOption = { id: number; name: string; name_ka?: string; slug: string }
 
 type VendorOption = { id: number; name: string; slug: string }
 
@@ -195,16 +209,16 @@ function productCardPriceRanges(p: AdminProduct): { usd: string; gel: string } {
 
 const BLANK_DRAFT: ProductDraft = {
   title: "",
-  title_ka: "", title_ru: "",
-  categories: "", tags: "", tags_ka: "", tags_ru: "", vendorSlug: "",
+  title_ka: "",
+  categories: "", tags: "", tags_ka: "", vendorSlug: "",
   status: "active",
   isLimited: false, isSale: false, isNew: false, isExclusive: false, isFeatured: false, isReadyToShip: false,
   allowCustomSize: false,
   processingTimeLabel: "",
-  processingTimeLabel_ka: "", processingTimeLabel_ru: "",
+  processingTimeLabel_ka: "",
   processingOptionIds: [],
-  productDetails: "", productDetails_ka: "", productDetails_ru: "",
-  description: "", description_ka: "", description_ru: "", material: "", material_ka: "", material_ru: "",
+  productDetails: "", productDetails_ka: "",
+  description: "", description_ka: "", material: "", material_ka: "",
 }
 
 const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
@@ -215,6 +229,40 @@ const LABEL_CLS = "block text-[10px] font-bold uppercase tracking-widest text-dp
 // for the editor viewport and for canvas export so what you see is what you get.
 const POSTER_W = 5
 const POSTER_H = 7 // 1 : 1.4
+const THUMBNAIL_WIDTH = 1400
+const THUMBNAIL_HEIGHT = 1960
+
+type PendingMediaFile = {
+  _key: string
+  file: File
+  preview: string
+  media_type: string
+  width?: number
+  height?: number
+  croppedFromKey?: string
+}
+
+type ThumbnailEditorImage = {
+  id?: number
+  src: string
+  pendingKey?: string
+  width?: number
+  height?: number
+}
+
+type ThumbnailApplyResult = {
+  newImageId?: number
+  croppedFile?: File
+}
+
+function readImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const image = new window.Image()
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+    image.onerror = () => resolve({ width: 0, height: 0 })
+    image.src = src
+  })
+}
 
 function ThumbnailEditorModal({
   image,
@@ -222,9 +270,9 @@ function ThumbnailEditorModal({
   onApply,
   onClose,
 }: {
-  image: { id?: number; src: string }
+  image: ThumbnailEditorImage
   productId?: number
-  onApply: (newImageId?: number) => void
+  onApply: (result: ThumbnailApplyResult) => void
   onClose: () => void
 }) {
   const VP_W = 280
@@ -234,8 +282,19 @@ function ThumbnailEditorModal({
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState("")
+  const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(
+    image.width && image.height ? { width: image.width, height: image.height } : null,
+  )
   const isDragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
+
+  useEffect(() => {
+    if (sourceSize) return
+    const source = new window.Image()
+    source.onload = () => setSourceSize({ width: source.naturalWidth, height: source.naturalHeight })
+    source.src = image.src
+  }, [image.src, sourceSize])
 
   function clamp(val: number, lo: number, hi: number) { return Math.min(Math.max(val, lo), hi) }
 
@@ -274,8 +333,8 @@ function ThumbnailEditorModal({
   // Export the current view to a canvas at high resolution (5× the viewport)
   async function exportToBlob(): Promise<Blob> {
     const SCALE = 5
-    const cW = VP_W * SCALE
-    const cH = VP_H * SCALE
+    const cW = THUMBNAIL_WIDTH
+    const cH = THUMBNAIL_HEIGHT
     const canvas = document.createElement("canvas")
     canvas.width = cW
     canvas.height = cH
@@ -309,6 +368,7 @@ function ThumbnailEditorModal({
 
   async function handleApply() {
     setApplying(true)
+    setApplyError("")
     try {
       const blob = await exportToBlob()
       // If we have a product ID, upload the cropped image
@@ -326,13 +386,15 @@ function ThumbnailEditorModal({
         })
         if (resp.ok) {
           const data = await resp.json() as { id?: number }
-          onApply(data.id)
+          onApply({ newImageId: data.id })
           return
         }
+        throw new Error("The cropped thumbnail could not be uploaded.")
       }
-      onApply(undefined)
-    } catch {
-      onApply(undefined)
+      const filename = image.pendingKey ? `thumbnail-${image.pendingKey}.jpg` : "thumbnail.jpg"
+      onApply({ croppedFile: new File([blob], filename, { type: "image/jpeg" }) })
+    } catch (error) {
+      setApplyError(error instanceof Error ? error.message : "The thumbnail could not be created.")
     } finally {
       setApplying(false)
     }
@@ -409,6 +471,10 @@ function ThumbnailEditorModal({
                 className="w-6 h-6 flex items-center justify-center border border-dp-border rounded-sm text-dp-text-secondary hover:border-dp-border-hover text-lg leading-none">+</button>
             </div>
             <p className="text-[10px] text-dp-text-tertiary text-center mt-1">{Math.round(zoom * 100)}%</p>
+            <div className="mt-3 rounded-sm border border-dp-border bg-dp-bg-elevated px-3 py-2 text-[10px] text-dp-text-tertiary">
+              <p>Uploaded: {sourceSize ? `${sourceSize.width} × ${sourceSize.height} px` : "Reading dimensions…"}</p>
+              <p className="mt-1">Cropped thumbnail: {THUMBNAIL_WIDTH} × {THUMBNAIL_HEIGHT} px (5:7)</p>
+            </div>
           </div>
 
           {/* Right — previews at various card sizes */}
@@ -426,6 +492,7 @@ function ThumbnailEditorModal({
 
         {/* Footer */}
         <div className="flex gap-3 justify-end px-6 py-4 border-t border-dp-border">
+          {applyError && <p className="mr-auto self-center text-[11px] text-red-400">{applyError}</p>}
           <button type="button" onClick={onClose} disabled={applying}
             className="px-5 py-2.5 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm hover:border-dp-border-hover transition-colors disabled:opacity-50">
             Cancel
@@ -444,7 +511,7 @@ function SortableMediaItem({
   item, index, total,
   onDelete, onSetVariant, onSetThumbnail,
 }: {
-  item: { id?: number; src: string; media_type: string; name?: string }
+  item: { id?: number; sortId?: string; src: string; media_type: string; name?: string; width?: number; height?: number }
   index: number
   total: number
   onDelete: () => void
@@ -452,7 +519,7 @@ function SortableMediaItem({
   onSetThumbnail?: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id ?? `item-${index}`,
+    id: item.id ?? item.sortId ?? `item-${index}`,
   })
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -467,6 +534,7 @@ function SortableMediaItem({
       {...listeners}
       className="relative group w-20 h-16 rounded-sm overflow-hidden border border-dp-border bg-dp-bg-elevated flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
       aria-label="Drag image to reorder"
+      title={item.width && item.height ? `${item.name ?? "Image"} · ${item.width} × ${item.height} px` : item.name}
     >
       {item.media_type === "video" ? (
         <>
@@ -485,12 +553,10 @@ function SortableMediaItem({
         <GripVertical size={10} className="text-white" />
       </div>
       {/* Delete */}
-      {item.id && (
-        <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onDelete}
-          className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Delete">
-          <X size={8} className="text-white" />
-        </button>
-      )}
+      <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onDelete}
+        className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Delete">
+        <X size={8} className="text-white" />
+      </button>
       {/* Assign to variant */}
       {onSetVariant && (
         <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onSetVariant}
@@ -501,7 +567,7 @@ function SortableMediaItem({
       {/* Set thumbnail */}
       {onSetThumbnail && item.media_type !== "video" && (
         <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onSetThumbnail}
-          className="absolute bottom-0.5 left-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-dp-bg-surface border border-dp-border rounded-full flex items-center justify-center transition-opacity z-10" aria-label="Set thumbnail">
+          className="absolute bottom-0.5 left-0.5 opacity-100 sm:opacity-0 group-hover:opacity-100 w-5 h-5 bg-dp-bg-surface border border-dp-border rounded-full flex items-center justify-center transition-opacity z-20" aria-label="Crop thumbnail" title="Crop thumbnail">
           <Crop size={7} className="text-dp-text-secondary" />
         </button>
       )}
@@ -525,7 +591,6 @@ function ProcessingTimesModal({
   const [loading, setLoading] = useState(true)
   const [newLabel, setNewLabel] = useState("")
   const [newLabelKa, setNewLabelKa] = useState("")
-  const [newLabelRu, setNewLabelRu] = useState("")
   const [newMin, setNewMin] = useState("")
   const [newMax, setNewMax] = useState("")
   const [newPriceGel, setNewPriceGel] = useState("")
@@ -536,7 +601,6 @@ function ProcessingTimesModal({
   const [editId, setEditId] = useState<number | null>(null)
   const [editLabel, setEditLabel] = useState("")
   const [editLabelKa, setEditLabelKa] = useState("")
-  const [editLabelRu, setEditLabelRu] = useState("")
   const [editMin, setEditMin] = useState("")
   const [editMax, setEditMax] = useState("")
   const [editPriceGel, setEditPriceGel] = useState("")
@@ -573,7 +637,6 @@ function ProcessingTimesModal({
         body: JSON.stringify({
           label: newLabel.trim(),
           label_ka: newLabelKa.trim(),
-          label_ru: newLabelRu.trim(),
           est_days_min: min,
           est_days_max: max,
           price_gel: newIncluded ? 0 : (parseFloat(newPriceGel) || 0),
@@ -582,7 +645,7 @@ function ProcessingTimesModal({
           vendor_slug: newVendorSlug || undefined,
         }),
       })
-      setNewLabel(""); setNewLabelKa(""); setNewLabelRu(""); setNewMin(""); setNewMax(""); setNewPriceGel(""); setNewPriceUsd(""); setNewIncluded(false)
+      setNewLabel(""); setNewLabelKa(""); setNewMin(""); setNewMax(""); setNewPriceGel(""); setNewPriceUsd(""); setNewIncluded(false)
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add.")
@@ -603,7 +666,6 @@ function ProcessingTimesModal({
         body: JSON.stringify({
           label: editLabel.trim(),
           label_ka: editLabelKa.trim(),
-          label_ru: editLabelRu.trim(),
           est_days_min: min,
           est_days_max: max,
           price_gel: editIncluded ? 0 : (parseFloat(editPriceGel) || 0),
@@ -652,7 +714,6 @@ function ProcessingTimesModal({
                       <div className="flex gap-2 flex-wrap items-center">
                         <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className={INPUT_CLS + " flex-1 min-w-[140px]"} placeholder="Label" />
                         <input value={editLabelKa} onChange={(e) => setEditLabelKa(e.target.value)} className={INPUT_CLS + " flex-1 min-w-[140px]"} placeholder="Label (Georgian)" />
-                        <input value={editLabelRu} onChange={(e) => setEditLabelRu(e.target.value)} className={INPUT_CLS + " flex-1 min-w-[140px]"} placeholder="Label (Russian)" />
                         <input value={editMin} onChange={(e) => setEditMin(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Min" />
                         <span className="text-dp-text-tertiary text-[11px]">–</span>
                         <input value={editMax} onChange={(e) => setEditMax(e.target.value)} className={INPUT_CLS + " w-16"} type="number" placeholder="Max" />
@@ -695,7 +756,6 @@ function ProcessingTimesModal({
                         setEditId(opt.id)
                         setEditLabel(opt.label)
                         setEditLabelKa(opt.label_ka ?? "")
-                        setEditLabelRu(opt.label_ru ?? "")
                         setEditMin(String(opt.est_days_min))
                         setEditMax(String(opt.est_days_max))
                         setEditPriceGel(Number(opt.price_gel) > 0 ? String(opt.price_gel) : "")
@@ -735,7 +795,6 @@ function ProcessingTimesModal({
               <div className="flex gap-2 flex-wrap items-center">
                 <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (English)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
                 <input value={newLabelKa} onChange={(e) => setNewLabelKa(e.target.value)} placeholder="Label (Georgian)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
-                <input value={newLabelRu} onChange={(e) => setNewLabelRu(e.target.value)} placeholder="Label (Russian)" className={INPUT_CLS + " flex-1 min-w-[160px]"} />
                 <input value={newMin} onChange={(e) => setNewMin(e.target.value)} type="number" placeholder="Min days" className={INPUT_CLS + " w-24"} />
                 <input value={newMax} onChange={(e) => setNewMax(e.target.value)} type="number" placeholder="Max days" className={INPUT_CLS + " w-24"} />
               </div>
@@ -775,6 +834,7 @@ function ProductModal({
   editProduct,
   endpoint,
   isVendor,
+  vendorSlug,
   vendors,
 }: {
   onClose: () => void
@@ -782,17 +842,17 @@ function ProductModal({
   editProduct?: AdminProduct | null
   endpoint: string
   isVendor: boolean
+  vendorSlug: string
   vendors: VendorOption[]
 }) {
   const [draft, setDraft] = useState<ProductDraft>(
     editProduct
       ? {
           title: editProduct.title,
-          title_ka: editProduct.title_ka ?? "", title_ru: editProduct.title_ru ?? "",
+          title_ka: editProduct.title_ka ?? "",
           categories: editProduct.category_slugs?.join(",") ?? editProduct.category_slug ?? "",
           tags: Array.isArray(editProduct.tags) ? editProduct.tags.join(", ") : "",
           tags_ka: Array.isArray(editProduct.tags_ka) ? editProduct.tags_ka.join(", ") : "",
-          tags_ru: Array.isArray(editProduct.tags_ru) ? editProduct.tags_ru.join(", ") : "",
           vendorSlug: editProduct.vendor_slug ?? "",
           status: editProduct.status ?? "active",
           isLimited: editProduct.is_limited,
@@ -803,19 +863,16 @@ function ProductModal({
           isReadyToShip: (editProduct as {is_ready_to_ship?: boolean}).is_ready_to_ship ?? false,
           allowCustomSize: editProduct.allow_custom_size ?? false,
           description: editProduct.description ?? "",
-          description_ka: editProduct.description_ka ?? "", description_ru: editProduct.description_ru ?? "",
+          description_ka: editProduct.description_ka ?? "",
           material: editProduct.material ?? "",
           material_ka: editProduct.material_ka ?? "",
-          material_ru: editProduct.material_ru ?? "",
           processingTimeLabel: editProduct.processing_time_label ?? "",
           processingTimeLabel_ka: editProduct.processing_time_label_ka ?? "",
-          processingTimeLabel_ru: editProduct.processing_time_label_ru ?? "",
           processingOptionIds: editProduct.processing_options?.map((option) => option.id) ?? [],
           productDetails: editProduct.product_details?.join("\n") ?? "",
           productDetails_ka: editProduct.product_details_ka?.join("\n") ?? "",
-          productDetails_ru: editProduct.product_details_ru?.join("\n") ?? "",
         }
-      : BLANK_DRAFT
+      : { ...BLANK_DRAFT, vendorSlug }
   )
 
   // Existing saved media (from server)
@@ -823,28 +880,48 @@ function ProductModal({
     editProduct?.images?.map((i) => ({ id: i.id, src: i.src ?? i.url, media_type: i.media_type ?? "image" })) ?? []
   )
   // Pending files to upload on save (new product or additional files)
-  const [pendingFiles, setPendingFiles] = useState<{ file: File; preview: string; media_type: string }[]>([])
+  const [pendingFiles, setPendingFiles] = useState<PendingMediaFile[]>([])
   const mediaInputRef = useRef<HTMLInputElement>(null)
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
-  const [thumbnailEditorItem, setThumbnailEditorItem] = useState<{ id?: number; src: string } | null>(null)
+  const [thumbnailEditorItem, setThumbnailEditorItem] = useState<ThumbnailEditorImage | null>(null)
   const [showProcessingModal, setShowProcessingModal] = useState(false)
   const [showTagsModal, setShowTagsModal] = useState(false)
-  const [newTag, setNewTag] = useState({ en: "", ka: "", ru: "" })
+  const [newTag, setNewTag] = useState({ en: "", ka: "" })
 
   // Size variants - existing (saved) and pending (to be created on save)
   const [sizeVariants, setSizeVariants] = useState<SizeVariantItem[]>(editProduct?.size_variants ?? [])
-  const [pendingVariants, setPendingVariants] = useState<PendingVariant[]>([])
+  const [pendingVariants, setPendingVariants] = useState<PendingVariant[]>(
+    !editProduct && (vendorSlug === "sculpi" || vendorSlug === "figure-studio")
+      ? SCULPI_VARIANT_DEFAULTS.map((variant) => ({ ...variant }))
+      : []
+  )
   const [variantImagePickerOpen, setVariantImagePickerOpen] = useState<number | null>(null)
-  const emptyVariant = { label: "", labelKa: "", labelRu: "", sku: "", stock: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" }
+  const emptyVariant = { label: "", labelKa: "", sku: "", stock: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" }
   const newVarRef = useRef(emptyVariant)
   const [newVarDraft, setNewVarDraft] = useState(emptyVariant)
+  const [editingPendingVariantKey, setEditingPendingVariantKey] = useState<string | null>(null)
+  const activeVendorSlug = editProduct?.vendor_slug ?? (isVendor ? vendorSlug : draft.vendorSlug)
+  const isSculpiProduct = activeVendorSlug === "sculpi" || activeVendorSlug === "figure-studio"
+
+  useEffect(() => {
+    if (editProduct) return
+    setPendingVariants((current) => {
+      if (isSculpiProduct) {
+        return current.length > 0
+          ? current
+          : SCULPI_VARIANT_DEFAULTS.map((variant) => ({ ...variant }))
+      }
+      return current.filter((variant) => !variant._key.startsWith("sculpi-default-"))
+    })
+    setEditingPendingVariantKey(null)
+    setNewVarDraft(emptyVariant)
+  }, [editProduct, isSculpiProduct]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Categories
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [showNewCat, setShowNewCat] = useState(false)
   const [newCatName, setNewCatName] = useState("")
   const [newCatNameKa, setNewCatNameKa] = useState("")
-  const [newCatNameRu, setNewCatNameRu] = useState("")
   const [creatingCat, setCreatingCat] = useState(false)
   const [catError, setCatError] = useState("")
 
@@ -865,11 +942,10 @@ function ProductModal({
         setDraft((prev) => ({
           ...prev,
           title: p.title ?? prev.title,
-          title_ka: p.title_ka ?? prev.title_ka, title_ru: p.title_ru ?? prev.title_ru,
+          title_ka: p.title_ka ?? prev.title_ka,
           categories: p.category_slugs?.join(",") ?? prev.categories,
           tags: Array.isArray(p.tags) ? p.tags.join(", ") : prev.tags,
           tags_ka: Array.isArray(p.tags_ka) ? p.tags_ka.join(", ") : prev.tags_ka,
-          tags_ru: Array.isArray(p.tags_ru) ? p.tags_ru.join(", ") : prev.tags_ru,
           vendorSlug: p.vendor_slug ?? prev.vendorSlug,
           status: p.status ?? prev.status,
           isLimited: p.is_limited ?? prev.isLimited,
@@ -880,17 +956,14 @@ function ProductModal({
           isReadyToShip: (p as {is_ready_to_ship?: boolean}).is_ready_to_ship ?? prev.isReadyToShip,
           allowCustomSize: p.allow_custom_size ?? prev.allowCustomSize,
           description: p.description ?? prev.description,
-          description_ka: p.description_ka ?? prev.description_ka, description_ru: p.description_ru ?? prev.description_ru,
+          description_ka: p.description_ka ?? prev.description_ka,
           material: p.material ?? prev.material,
           material_ka: p.material_ka ?? prev.material_ka,
-          material_ru: p.material_ru ?? prev.material_ru,
           processingTimeLabel: p.processing_time_label ?? prev.processingTimeLabel,
           processingTimeLabel_ka: p.processing_time_label_ka ?? prev.processingTimeLabel_ka,
-          processingTimeLabel_ru: p.processing_time_label_ru ?? prev.processingTimeLabel_ru,
           processingOptionIds: p.processing_options?.map((option) => option.id) ?? prev.processingOptionIds,
           productDetails: p.product_details?.join("\n") ?? prev.productDetails,
           productDetails_ka: p.product_details_ka?.join("\n") ?? prev.productDetails_ka,
-          productDetails_ru: p.product_details_ru?.join("\n") ?? prev.productDetails_ru,
         }))
       })
       .catch(() => {})
@@ -942,13 +1015,12 @@ function ProductModal({
       const slug = newCatName.trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/[^a-z0-9-]/g, "")
       const cat = await adminFetch<CategoryOption>("/admin/categories/", {
         method: "POST",
-        body: JSON.stringify({ name: newCatName.trim(), name_ka: newCatNameKa.trim(), name_ru: newCatNameRu.trim(), slug }),
+        body: JSON.stringify({ name: newCatName.trim(), name_ka: newCatNameKa.trim(), slug }),
       })
       setCategories((prev) => [...prev, cat])
       toggleCategory(cat.slug)
       setNewCatName("")
       setNewCatNameKa("")
-      setNewCatNameRu("")
       setShowNewCat(false)
     } catch (err: unknown) {
       const e = err as { data?: { detail?: string; slug?: string[] } }
@@ -976,10 +1048,19 @@ function ProductModal({
     }
 
     // New product — queue for upload on save
-    const newItems = files.map((file) => {
+    const newItems = await Promise.all(files.map(async (file): Promise<PendingMediaFile> => {
       const isVideo = file.type.startsWith("video/")
-      return { file, preview: isVideo ? "" : URL.createObjectURL(file), media_type: isVideo ? "video" : "image" }
-    })
+      const preview = isVideo ? "" : URL.createObjectURL(file)
+      const dimensions = preview ? await readImageDimensions(preview) : { width: 0, height: 0 }
+      return {
+        _key: `pending-${Date.now()}-${Math.random()}`,
+        file,
+        preview,
+        media_type: isVideo ? "video" : "image",
+        width: dimensions.width || undefined,
+        height: dimensions.height || undefined,
+      }
+    }))
     setPendingFiles((prev) => [...prev, ...newItems])
   }
 
@@ -1034,15 +1115,40 @@ function ProductModal({
 
   function addPendingVariant() {
     if (!newVarDraft.label.trim() || !newVarDraft.priceUsd.trim()) return
-    setPendingVariants((prev) => [
-      ...prev,
-      { _key: `${Date.now()}-${Math.random()}`, ...newVarDraft },
-    ])
+    if (editingPendingVariantKey) {
+      setPendingVariants((prev) => prev.map((variant) =>
+        variant._key === editingPendingVariantKey ? { ...variant, ...newVarDraft } : variant
+      ))
+      setEditingPendingVariantKey(null)
+    } else {
+      setPendingVariants((prev) => [
+        ...prev,
+        { _key: `${Date.now()}-${Math.random()}`, ...newVarDraft },
+      ])
+    }
     setNewVarDraft(emptyVariant)
+  }
+
+  function editPendingVariant(variant: PendingVariant) {
+    setNewVarDraft({
+      label: variant.label,
+      labelKa: variant.labelKa,
+      sku: variant.sku,
+      stock: variant.stock,
+      priceUsd: variant.priceUsd,
+      priceGel: variant.priceGel,
+      salePriceUsd: variant.salePriceUsd,
+      salePriceGel: variant.salePriceGel,
+    })
+    setEditingPendingVariantKey(variant._key)
   }
 
   function removePendingVariant(key: string) {
     setPendingVariants((prev) => prev.filter((v) => v._key !== key))
+    if (editingPendingVariantKey === key) {
+      setEditingPendingVariantKey(null)
+      setNewVarDraft(emptyVariant)
+    }
   }
 
   async function handleDeleteSizeVariant(id: number) {
@@ -1079,6 +1185,10 @@ function ProductModal({
 
   async function handleSave() {
     if (!draft.title) { setError("Title is required."); return }
+    if (isSculpiProduct && !editProduct && pendingVariants.some((variant) => !variant.priceUsd.trim())) {
+      setError("Enter the USD price for both Sculpi scale variants.")
+      return
+    }
     setSaving(true)
     setError("")
     try {
@@ -1090,7 +1200,6 @@ function ProductModal({
       const body = {
         title: draft.title,
         title_ka: draft.title_ka,
-        title_ru: draft.title_ru,
         base_price: firstVariantPrice,
         regional_prices: {},
         category_slug_input: catSlugs[0] ?? "",
@@ -1099,7 +1208,6 @@ function ProductModal({
         status: draft.status,
         tags: tagValues(draft.tags).filter(Boolean),
         tags_ka: tagValues(draft.tags_ka),
-        tags_ru: tagValues(draft.tags_ru),
         is_limited: draft.isLimited,
         is_sale: draft.isSale,
         is_new: draft.isNew,
@@ -1109,14 +1217,11 @@ function ProductModal({
         allow_custom_size: draft.allowCustomSize,
         description: draft.description,
         description_ka: draft.description_ka,
-        description_ru: draft.description_ru,
-        material: draft.material,
-        material_ka: draft.material_ka,
-        material_ru: draft.material_ru,
+        material: isSculpiProduct ? "" : draft.material,
+        material_ka: isSculpiProduct ? "" : draft.material_ka,
         processing_option_ids: draft.processingOptionIds,
-        product_details: draft.productDetails.split("\n").map((line) => line.trim()).filter(Boolean),
-        product_details_ka: draft.productDetails_ka.split("\n").map((line) => line.trim()).filter(Boolean),
-        product_details_ru: draft.productDetails_ru.split("\n").map((line) => line.trim()).filter(Boolean),
+        product_details: isSculpiProduct ? [] : draft.productDetails.split("\n").map((line) => line.trim()).filter(Boolean),
+        product_details_ka: isSculpiProduct ? [] : draft.productDetails_ka.split("\n").map((line) => line.trim()).filter(Boolean),
       }
 
       let saved: AdminProduct
@@ -1140,7 +1245,6 @@ function ProductModal({
             body: JSON.stringify({
               label: variant.label,
               label_ka: variant.label_ka ?? "",
-              label_ru: variant.label_ru ?? "",
               sku: variant.sku?.trim() || null,
               stock: variant.stock ?? null,
             }),
@@ -1166,7 +1270,6 @@ function ProductModal({
               product_id: productId,
               label: v.label,
               label_ka: v.labelKa,
-              label_ru: v.labelRu,
               sku: v.sku.trim() || null,
               stock: v.stock.trim() === "" ? null : parseInt(v.stock),
               price_usd: v.priceUsd,
@@ -1226,16 +1329,13 @@ function ProductModal({
       return
     }
     const tagsKa = tagValues(draft.tags_ka)
-    const tagsRu = tagValues(draft.tags_ru)
     while (tagsKa.length < tags.length) tagsKa.push("")
-    while (tagsRu.length < tags.length) tagsRu.push("")
     setDraft((current) => ({
       ...current,
       tags: [...tags, english].join(", "),
       tags_ka: [...tagsKa, newTag.ka.trim()].join(", "),
-      tags_ru: [...tagsRu, newTag.ru.trim()].join(", "),
     }))
-    setNewTag({ en: "", ka: "", ru: "" })
+    setNewTag({ en: "", ka: "" })
     setShowTagsModal(false)
     setError("")
   }
@@ -1246,7 +1346,6 @@ function ProductModal({
       ...current,
       tags: removeAt(current.tags),
       tags_ka: removeAt(current.tags_ka),
-      tags_ru: removeAt(current.tags_ru),
     }))
   }
 
@@ -1280,13 +1379,15 @@ function ProductModal({
                   placeholder="Product description shown on the product page…"
                   className={`${INPUT_CLS} resize-y`} />
               </div>
-              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "title_ka", label: "Title · Georgian" }, { key: "title_ru", label: "Title · Russian" }, { key: "description_ka", label: "Short description · Georgian", multiline: true }, { key: "description_ru", label: "Short description · Russian", multiline: true }]} />
+              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "title_ka", label: "Title · Georgian" }, { key: "description_ka", label: "Short description · Georgian", multiline: true }]} />
 
+              {!isSculpiProduct && (
+              <>
               <div>
                 <label className={LABEL_CLS}>Material</label>
                 <input value={draft.material} onChange={(e) => set("material", e.target.value)} placeholder="e.g. Aluminium + UV ink" className={INPUT_CLS} />
               </div>
-              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "material_ka", label: "Material · Georgian" }, { key: "material_ru", label: "Material · Russian" }]} />
+              <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[{ key: "material_ka", label: "Material · Georgian" }]} />
 
               <div>
                 <label className={LABEL_CLS}>Product Details</label>
@@ -1295,8 +1396,10 @@ function ProductModal({
               </div>
               <TranslationFields value={draft} onChange={setDraft} inputClassName={INPUT_CLS} fields={[
                 { key: "productDetails_ka", label: "Product details · Georgian", multiline: true },
-                { key: "productDetails_ru", label: "Product details · Russian", multiline: true },
               ]} />
+
+              </>
+              )}
 
               {/* Processing time */}
               <div>
@@ -1345,9 +1448,9 @@ function ProductModal({
                     <span key={`${tag}-${index}`} className="inline-flex items-center gap-2 px-2.5 py-1 rounded-sm border border-dp-accent-cta bg-dp-accent-cta/10 text-[11px] font-semibold text-dp-accent-cta">
                       <span>
                         <span className="block">{tag}</span>
-                        {(tagValues(draft.tags_ka)[index] || tagValues(draft.tags_ru)[index]) && (
+                        {tagValues(draft.tags_ka)[index] && (
                           <span className="block text-[9px] font-normal text-dp-text-tertiary">
-                            KA: {tagValues(draft.tags_ka)[index] || "-"} · RU: {tagValues(draft.tags_ru)[index] || "-"}
+                            KA: {tagValues(draft.tags_ka)[index]}
                           </span>
                         )}
                       </span>
@@ -1423,27 +1526,46 @@ function ProductModal({
                 )}
                 {/* Pending files */}
                 {pendingFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {pendingFiles.map((pf, i) => (
-                      <div key={i} className="relative group w-20 h-16 rounded-sm overflow-hidden border border-dp-accent-cta/40 bg-dp-bg-elevated flex items-center justify-center shrink-0">
-                        {pf.media_type === "video" ? (
-                          <>
-                            <Video size={16} className="text-dp-accent-cta" />
-                            <span className="absolute bottom-0.5 left-0 right-0 text-center text-[8px] text-dp-text-tertiary truncate px-1">{pf.file.name}</span>
-                          </>
-                        ) : pf.preview ? (
-                          <Image src={pf.preview} alt="" fill className="object-cover" sizes="80px" />
-                        ) : (
-                          <ImageIcon2 size={16} className="text-dp-accent-cta" />
-                        )}
-                        <span className="absolute top-0 left-0 bg-dp-accent-cta text-white text-[7px] px-1 rounded-br">new</span>
-                        <button type="button" onClick={() => removePendingFile(i)}
-                          className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center transition-opacity" aria-label="Remove">
-                          <X size={8} className="text-white" />
-                        </button>
+                  <DndContext
+                    sensors={dndSensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(event: DragEndEvent) => {
+                      const { active, over } = event
+                      if (!over || active.id === over.id) return
+                      const oldIdx = pendingFiles.findIndex((item) => item._key === active.id)
+                      const newIdx = pendingFiles.findIndex((item) => item._key === over.id)
+                      if (oldIdx !== -1 && newIdx !== -1) {
+                        setPendingFiles((items) => arrayMove(items, oldIdx, newIdx))
+                      }
+                    }}
+                  >
+                    <SortableContext items={pendingFiles.map((item) => item._key)} strategy={rectSortingStrategy}>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {pendingFiles.map((pf, i) => (
+                          <SortableMediaItem
+                            key={pf._key}
+                            item={{
+                              sortId: pf._key,
+                              src: pf.preview,
+                              media_type: pf.media_type,
+                              name: pf.file.name,
+                              width: pf.width,
+                              height: pf.height,
+                            }}
+                            index={i}
+                            total={pendingFiles.length}
+                            onDelete={() => removePendingFile(i)}
+                            onSetThumbnail={pf.media_type === "image" ? () => setThumbnailEditorItem({
+                              src: pf.preview,
+                              pendingKey: pf._key,
+                              width: pf.width,
+                              height: pf.height,
+                            }) : undefined}
+                          />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </SortableContext>
+                  </DndContext>
                 )}
                 <button type="button" onClick={() => mediaInputRef.current?.click()}
                   className="flex items-center gap-2 px-3 py-2 border border-dashed border-dp-border hover:border-dp-accent-cta/50 rounded-sm text-[11px] text-dp-text-tertiary hover:text-dp-text-secondary transition-colors w-full justify-center">
@@ -1451,7 +1573,9 @@ function ProductModal({
                 </button>
                 <input ref={mediaInputRef} type="file" multiple accept="image/*,video/*" className="hidden" onChange={addPendingFile} />
                 <p className="text-[10px] text-dp-text-tertiary mt-1">
-                  {editProduct ? "Existing media shown above. New uploads will be added on save." : "Files will be uploaded when you save."}
+                  {editProduct
+                    ? "Existing media shown above. New uploads will be added on save. Use the crop icon to adjust the card thumbnail."
+                    : "Files will be uploaded when you save. Use the crop icon on an image to manually create the 5:7 card thumbnail first."}
                 </p>
               </div>
 
@@ -1479,7 +1603,6 @@ function ProductModal({
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input value={newCatNameKa} onChange={(e) => setNewCatNameKa(e.target.value)} placeholder="Category name (Georgian)" className={INPUT_CLS} />
-                      <input value={newCatNameRu} onChange={(e) => setNewCatNameRu(e.target.value)} placeholder="Category name (Russian)" className={INPUT_CLS} />
                     </div>
                     {catError && <p className="text-[10px] text-red-400">{catError}</p>}
                   </div>
@@ -1564,9 +1687,6 @@ function ProductModal({
                             <p className="text-[12px] font-semibold text-dp-text-primary">{sv.label || "Untitled size"}</p>
                             {sv.label_ka && sv.label_ka !== sv.label && (
                               <p className="text-[10px] text-dp-text-tertiary">KA: {sv.label_ka}</p>
-                            )}
-                            {sv.label_ru && sv.label_ru !== sv.label && (
-                              <p className="text-[10px] text-dp-text-tertiary">RU: {sv.label_ru}</p>
                             )}
                           </div>
                         </td>
@@ -1675,7 +1795,7 @@ function ProductModal({
                           <th className="text-right px-3 py-1.5">Sale GEL ₾</th>
                         </>
                       )}
-                      <th className="px-3 py-1.5 w-8" />
+                      <th className="px-3 py-1.5 w-16" />
                     </tr>
                   </thead>
                   <tbody>
@@ -1683,7 +1803,7 @@ function ProductModal({
                       <tr key={v._key} className="border-b border-dp-accent-cta/10 last:border-0">
                         <td className="px-3 py-1.5 text-dp-text-primary">
                           <span className="font-semibold">{v.label}</span>
-                          {(v.labelKa || v.labelRu) && <span className="block text-[10px] text-dp-text-tertiary">{[v.labelKa, v.labelRu].filter(Boolean).join(" / ")}</span>}
+                          {v.labelKa && <span className="block text-[10px] text-dp-text-tertiary">{v.labelKa}</span>}
                         </td>
                         <td className="px-3 py-1.5 font-mono text-[10px] text-dp-text-secondary">{v.sku || "Auto"}</td>
                         <td className="px-3 py-1.5 text-right">{v.stock || "Unlimited"}</td>
@@ -1696,10 +1816,18 @@ function ProductModal({
                           </>
                         )}
                         <td className="px-3 py-1.5 text-right">
-                          <button type="button" onClick={() => removePendingVariant(v._key)}
-                            className="text-dp-text-tertiary hover:text-red-400 transition-colors" aria-label="Remove">
-                            <X size={12} />
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button type="button" onClick={() => editPendingVariant(v)}
+                              className="text-dp-text-tertiary hover:text-dp-accent-cta transition-colors" aria-label="Edit variant">
+                              <Pencil size={12} />
+                            </button>
+                            {!isSculpiProduct && (
+                              <button type="button" onClick={() => removePendingVariant(v._key)}
+                                className="text-dp-text-tertiary hover:text-red-400 transition-colors" aria-label="Remove">
+                                <X size={12} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1709,20 +1837,17 @@ function ProductModal({
             )}
 
             {/* Add new variant row */}
+            {(!isSculpiProduct || editingPendingVariantKey) && (
             <div className="border border-dp-border rounded-sm p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-end">
               <div>
                 <label className={LABEL_CLS}>Label *</label>
-                <input value={newVarDraft.label} onChange={(e) => setNewVarDraft((d) => ({ ...d, label: e.target.value }))}
+                <input value={newVarDraft.label} readOnly={isSculpiProduct} onChange={(e) => setNewVarDraft((d) => ({ ...d, label: e.target.value }))}
                   placeholder="e.g. M / 50×70cm" className={INPUT_CLS}
                   onKeyDown={(e) => { if (e.key === "Enter") addPendingVariant() }} />
               </div>
               <div>
                 <label className={LABEL_CLS}>Label · Georgian</label>
-                <input value={newVarDraft.labelKa} onChange={(e) => setNewVarDraft((d) => ({ ...d, labelKa: e.target.value }))} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className={LABEL_CLS}>Label · Russian</label>
-                <input value={newVarDraft.labelRu} onChange={(e) => setNewVarDraft((d) => ({ ...d, labelRu: e.target.value }))} className={INPUT_CLS} />
+                <input value={newVarDraft.labelKa} readOnly={isSculpiProduct} onChange={(e) => setNewVarDraft((d) => ({ ...d, labelKa: e.target.value }))} className={INPUT_CLS} />
               </div>
               <div>
                 <label className={LABEL_CLS}>SKU <span className="normal-case font-normal">(optional)</span></label>
@@ -1764,10 +1889,25 @@ function ProductModal({
                 <button type="button" onClick={addPendingVariant}
                   disabled={!newVarDraft.label.trim() || !newVarDraft.priceUsd.trim()}
                   className="flex items-center gap-1.5 px-3 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[11px] font-bold rounded-sm transition-colors whitespace-nowrap w-full justify-center">
-                  <Plus size={12} /> Add
+                  {editingPendingVariantKey ? <Pencil size={12} /> : <Plus size={12} />}
+                  {editingPendingVariantKey ? "Update" : "Add"}
                 </button>
               </div>
+              {editingPendingVariantKey && (
+                <div>
+                  <button type="button" onClick={() => { setEditingPendingVariantKey(null); setNewVarDraft(emptyVariant) }}
+                    className="w-full px-3 py-2 border border-dp-border text-[11px] font-bold text-dp-text-secondary rounded-sm hover:border-dp-border-hover transition-colors">
+                    Cancel edit
+                  </button>
+                </div>
+              )}
             </div>
+            )}
+            {isSculpiProduct && !editProduct && !editingPendingVariantKey && (
+              <p className="text-[10px] text-dp-text-tertiary mt-1.5">
+                Sculpi uses the two fixed scale labels above. Edit each row to enter its prices, stock, SKU, and sale values.
+              </p>
+            )}
             <p className="text-[10px] text-dp-text-tertiary mt-1.5">Georgian storefront uses the GEL values you enter here — no conversion when GEL is set.</p>
           </div>
         </div>
@@ -1795,7 +1935,7 @@ function ProductModal({
         image={thumbnailEditorItem}
         productId={editProduct?.id}
         onClose={() => setThumbnailEditorItem(null)}
-        onApply={async (newImageId) => {
+        onApply={async ({ newImageId, croppedFile }) => {
           if (newImageId) {
             // New cropped image uploaded — add it to the list and move to position 0
             const newItem = { id: newImageId, src: "", media_type: "image" }
@@ -1815,10 +1955,26 @@ function ProductModal({
               // fallback: just prepend a placeholder
               await applyMediaOrder([newItem, ...mediaItems])
             }
-          } else {
-            // No upload (no productId yet) — just move existing image to position 0
-            const idx = mediaItems.findIndex((m) => m.id === thumbnailEditorItem.id || m.src === thumbnailEditorItem.src)
-            if (idx > 0) await applyMediaOrder(arrayMove(mediaItems, idx, 0))
+          } else if (croppedFile && thumbnailEditorItem.pendingKey) {
+            // Queue the manual crop first while retaining the untouched source image.
+            const sourceKey = thumbnailEditorItem.pendingKey
+            const preview = URL.createObjectURL(croppedFile)
+            setPendingFiles((current) => {
+              const remaining = current.filter((item) => {
+                if (item.croppedFromKey !== sourceKey) return true
+                if (item.preview) URL.revokeObjectURL(item.preview)
+                return false
+              })
+              return [{
+                _key: `crop-${Date.now()}-${Math.random()}`,
+                file: croppedFile,
+                preview,
+                media_type: "image",
+                width: THUMBNAIL_WIDTH,
+                height: THUMBNAIL_HEIGHT,
+                croppedFromKey: sourceKey,
+              }, ...remaining]
+            })
           }
           setThumbnailEditorItem(null)
         }}
@@ -1845,7 +2001,6 @@ function ProductModal({
           <div className="p-5 flex flex-col gap-4">
             <div><label className={LABEL_CLS}>English</label><input value={newTag.en} onChange={(e) => setNewTag((current) => ({ ...current, en: e.target.value }))} className={INPUT_CLS} placeholder="Anime" autoFocus /></div>
             <div><label className={LABEL_CLS}>Georgian</label><input value={newTag.ka} onChange={(e) => setNewTag((current) => ({ ...current, ka: e.target.value }))} className={INPUT_CLS} /></div>
-            <div><label className={LABEL_CLS}>Russian</label><input value={newTag.ru} onChange={(e) => setNewTag((current) => ({ ...current, ru: e.target.value }))} className={INPUT_CLS} /></div>
           </div>
           <div className="flex justify-end px-5 py-4 border-t border-dp-border">
             <button type="button" onClick={() => setShowTagsModal(false)} className="px-4 py-2 border border-dp-border text-dp-text-secondary text-[11px] font-bold uppercase tracking-widest rounded-sm">Cancel</button>
@@ -2102,6 +2257,7 @@ export default function AdminProductsPage(): React.ReactElement {
           editProduct={editTarget}
           endpoint={listEndpoint}
           isVendor={Boolean(isVendor)}
+          vendorSlug={adminUser?.vendor?.slug ?? ""}
           vendors={vendors}
         />
       )}

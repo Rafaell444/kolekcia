@@ -166,8 +166,11 @@ class ProductFilterOptionsView(generics.GenericAPIView):
         from .models import SizeVariant
         from django.db.models import Q
         category = (request.query_params.get("category") or "").strip().lower()
+        vendor_slug = (request.query_params.get("vendor") or "").strip().lower()
 
         qs = Product.objects.filter(status="active")
+        if vendor_slug:
+            qs = qs.filter(vendor__slug=vendor_slug)
         if category in {"figures", "figure"}:
             slug = "figures"
         elif category in {"wallpanels", "wallpanel", "panels"}:
@@ -187,7 +190,7 @@ class ProductFilterOptionsView(generics.GenericAPIView):
               .values_list("material", flat=True)
               .distinct()
         )
-        materials = sorted(set(m.strip() for m in raw_materials if m.strip()))
+        materials = [] if slug == "figures" or vendor_slug in ("sculpi", "figure-studio") else sorted(set(m.strip() for m in raw_materials if m.strip()))
 
         # Distinct size variant labels for these products
         size_labels = list(

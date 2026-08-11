@@ -54,6 +54,29 @@ class ProductCreationTests(TestCase):
         self.assertEqual(first.sku, "KOL-NEON-DRAGON-50-X-70-CM")
         self.assertEqual(second.sku, "KOL-NEON-DRAGON-50-X-70-CM-2")
 
+    def test_sculpi_product_ignores_material_and_product_details(self):
+        user = User.objects.create_user(email="sculpi@example.com", password="test-password")
+        Vendor.objects.create(user=user, name="Sculpi", slug="sculpi")
+        serializer = ProductDetailSerializer(
+            data={
+                "title": "Collector figure",
+                "base_price": "100.00",
+                "vendor_slug_input": "sculpi",
+                "material": "Resin",
+                "material_ka": "Resin KA",
+                "product_details": ["Hardcoded detail"],
+                "product_details_ka": ["Hardcoded detail KA"],
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+
+        self.assertEqual(product.material, "")
+        self.assertEqual(product.material_ka, "")
+        self.assertEqual(product.product_details, [])
+        self.assertEqual(product.product_details_ka, [])
+
     def test_translated_product_and_variant_fields_are_serialized(self):
         product = Product.objects.create(
             title="Poster",

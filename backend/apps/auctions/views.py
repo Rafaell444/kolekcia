@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -8,7 +9,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from rest_framework.exceptions import ValidationError
 from apps.admin_api.permissions import IsAdminOrVendor
-from .models import Auction, AuctionBid, AuctionChatMessage
+from .models import Auction, AuctionBid, AuctionBidderBan, AuctionChatMessage
 from .serializers import (
     AuctionSerializer,
     AuctionWriteSerializer,
@@ -58,7 +59,20 @@ class PlaceBidView(APIView):
     def post(self, request, lookup):
         serializer = PlaceBidSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        amount = serializer.validated_data["amount"]
+        submitted_amount = serializer.validated_data["amount"]
+        submitted_currency = serializer.validated_data["currency"]
+        fx_rate = None
+        amount = submitted_amount
+        if submitted_currency == "GEL":
+            from .services import gel_to_usd, get_usd_gel_rate
+
+            fx_rate = get_usd_gel_rate()
+            if fx_rate is None:
+                return Response(
+                    {"detail": "The official NBG exchange rate is temporarily unavailable. Please try again shortly."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            amount = gel_to_usd(submitted_amount, fx_rate)
 
         try:
             auction = Auction.objects.select_for_update().get(pk=resolve_auction(lookup).pk)
@@ -75,20 +89,45 @@ class PlaceBidView(APIView):
             auction.finalize_if_ended()
             return Response({"detail": "This auction has ended."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if AuctionBidderBan.objects.filter(
+            Q(vendor__isnull=True) | Q(vendor_id=auction.vendor_id),
+            user=request.user,
+            is_active=True,
+        ).exists():
+            return Response(
+                {"detail": "Your account is not eligible to bid in this seller's auctions."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         current = auction.current_bid
         if amount <= current:
+            current_display = current
+            if submitted_currency == "GEL":
+                from .services import usd_to_gel
+                current_display = usd_to_gel(current, fx_rate)
             return Response(
-                {"detail": f"Your bid must be higher than the current bid of {current:.2f}."},
+                {"detail": f"Your bid must be higher than {current_display:.2f} {submitted_currency}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         if amount < current + 1:
+            minimum_display = current + 1
+            if submitted_currency == "GEL":
+                from .services import usd_to_gel
+                minimum_display = usd_to_gel(current + 1, fx_rate)
             return Response(
-                {"detail": f"Minimum bid increment is 1.00. Bid at least {float(current) + 1:.2f}."},
+                {"detail": f"Bid at least {minimum_display:.2f} {submitted_currency}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        AuctionBid.objects.create(auction=auction, user=request.user, amount=amount)
+        AuctionBid.objects.create(
+            auction=auction,
+            user=request.user,
+            amount=amount,
+            submitted_amount=submitted_amount,
+            submitted_currency=submitted_currency,
+            fx_rate_used=fx_rate,
+        )
         auction.refresh_live_flag()
         auction.save(update_fields=["is_live"])
 
@@ -99,7 +138,10 @@ class PlaceBidView(APIView):
             pass
 
         auction.refresh_from_db()
-        return Response(AuctionSerializer(auction).data, status=status.HTTP_201_CREATED)
+        return Response(
+            AuctionSerializer(auction, context={"usd_gel_rate": fx_rate}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class AuctionLeaderboardView(APIView):
@@ -113,7 +155,7 @@ class AuctionLeaderboardView(APIView):
 
         bids = (
             AuctionBid.objects
-            .filter(auction=auction)
+            .filter(auction=auction, is_disqualified=False)
             .select_related("user")
             .order_by("-placed_at")
         )
@@ -175,7 +217,7 @@ class GlobalLeaderboardView(APIView):
 
         wins: dict = {}
         for auction in ended:
-            top_bid = auction.bids.order_by("-amount").first()
+            top_bid = auction.bids.filter(is_disqualified=False).order_by("-amount").first()
             if not top_bid:
                 continue
             uid = str(top_bid.user_id)
@@ -194,6 +236,7 @@ class GlobalLeaderboardView(APIView):
             from django.db.models import Sum, Count
             top_bidders = (
                 AuctionBid.objects
+                .filter(is_disqualified=False)
                 .values("user__name", "user__email")
                 .annotate(bid_count=Count("id"), total=Sum("amount"))
                 .order_by("-bid_count")[:10]
@@ -208,6 +251,16 @@ class GlobalLeaderboardView(APIView):
                 }
                 for i, b in enumerate(top_bidders)
             ]
+
+        from decimal import Decimal
+        from .services import get_usd_gel_rate, usd_to_gel
+
+        usd_gel_rate = get_usd_gel_rate()
+        for entry in leaderboard:
+            total_usd = Decimal(str(entry["total_spent"]))
+            total_gel = usd_to_gel(total_usd, usd_gel_rate) if usd_gel_rate else None
+            entry["total_spent_usd"] = float(total_usd)
+            entry["total_spent_gel"] = float(total_gel) if total_gel is not None else None
 
         return Response(leaderboard)
 
@@ -240,6 +293,7 @@ class VendorAuctionListView(VendorAuctionMixin, generics.ListCreateAPIView):
         ctx = super().get_serializer_context()
         ctx["vendor"] = self.get_vendor()
         ctx["include_all_bids"] = True
+        ctx["include_bidder_private_data"] = True
         return ctx
 
     def perform_create(self, serializer):
@@ -260,7 +314,14 @@ class VendorAuctionDetailView(VendorAuctionMixin, generics.RetrieveUpdateDestroy
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
         ctx["include_all_bids"] = True
+        ctx["include_bidder_private_data"] = True
         return ctx
+
+    def perform_destroy(self, instance):
+        if instance.inventory_reserved and instance.winner_payment_status != Auction.PAYMENT_PAID:
+            from .services import release_auction_inventory
+            release_auction_inventory(instance)
+        instance.delete()
 
 
 class VendorAuctionMarkPaidView(VendorAuctionMixin, APIView):
@@ -282,7 +343,136 @@ class VendorAuctionMarkPaidView(VendorAuctionMixin, APIView):
         if not auction.winning_amount:
             auction.winning_amount = auction.current_bid
         auction.save()
-        return Response(AuctionSerializer(auction, context={"include_all_bids": True}).data)
+        return Response(AuctionSerializer(auction, context={
+            "include_all_bids": True,
+            "include_bidder_private_data": True,
+        }).data)
+
+
+def _managed_auction_response(auction):
+    return AuctionSerializer(auction, context={
+        "include_all_bids": True,
+        "include_bidder_private_data": True,
+    }).data
+
+
+class VendorAuctionDisqualifyBidderView(VendorAuctionMixin, APIView):
+    permission_classes = [IsAdminOrVendor]
+
+    @transaction.atomic
+    def post(self, request, pk, bid_id):
+        auction = self.get_queryset().select_for_update().filter(pk=pk).first()
+        if not auction:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        bid = auction.bids.select_related("user").filter(pk=bid_id).first()
+        if not bid:
+            return Response({"detail": "Bid not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not auction.is_ended():
+            return Response(
+                {"detail": "A bidder can only be disqualified after the auction ends."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if auction.winner_id != bid.user_id:
+            return Response(
+                {"detail": "Only the currently assigned winner can be disqualified for non-payment."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reason = (request.data.get("reason") or "Winner did not complete payment.").strip()
+        auction.bids.filter(user=bid.user, is_disqualified=False).update(
+            is_disqualified=True,
+            disqualified_at=timezone.now(),
+            disqualification_reason=reason,
+        )
+        AuctionBidderBan.objects.update_or_create(
+            user=bid.user,
+            vendor=auction.vendor,
+            defaults={"reason": reason, "is_active": True, "created_by": request.user},
+        )
+        if auction.winner_id == bid.user_id:
+            auction.winner = None
+            auction.winning_amount = None
+            auction.winner_payment_status = Auction.PAYMENT_FAILED
+            auction.is_replacement_winner = False
+            auction.save(update_fields=("winner", "winning_amount", "winner_payment_status", "is_replacement_winner"))
+        auction.refresh_from_db()
+        return Response(_managed_auction_response(auction))
+
+
+class VendorAuctionPromoteBidView(VendorAuctionMixin, APIView):
+    permission_classes = [IsAdminOrVendor]
+
+    @transaction.atomic
+    def post(self, request, pk, bid_id):
+        auction = self.get_queryset().select_for_update().filter(pk=pk).first()
+        if not auction:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not auction.is_ended():
+            return Response(
+                {"detail": "A replacement winner can only be selected after the auction ends."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if auction.winner_id:
+            return Response(
+                {"detail": "Disqualify the current winner before selecting a replacement."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        bid = auction.bids.select_related("user").filter(pk=bid_id, is_disqualified=False).first()
+        if not bid:
+            return Response({"detail": "Eligible bid not found."}, status=status.HTTP_404_NOT_FOUND)
+        next_eligible = auction.bids.filter(is_disqualified=False).order_by("-amount", "placed_at").first()
+        if not next_eligible or next_eligible.pk != bid.pk:
+            return Response(
+                {"detail": "Select the highest remaining eligible bid as the replacement winner."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        auction.winner = bid.user
+        auction.winning_amount = bid.amount
+        auction.winner_payment_status = Auction.PAYMENT_PENDING
+        auction.is_replacement_winner = True
+        auction.save(update_fields=("winner", "winning_amount", "winner_payment_status", "is_replacement_winner"))
+        return Response(_managed_auction_response(auction))
+
+
+class VendorAuctionSecondChanceEmailView(VendorAuctionMixin, APIView):
+    permission_classes = [IsAdminOrVendor]
+
+    def post(self, request, pk):
+        from django.conf import settings
+        from apps.emails.service import send_template_email
+
+        auction = self.get_queryset().filter(pk=pk).first()
+        if not auction:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if (
+            not auction.winner_id
+            or auction.winner_payment_status != Auction.PAYMENT_PENDING
+            or not auction.is_replacement_winner
+        ):
+            return Response(
+                {"detail": "Select an unpaid replacement winner first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sent = send_template_email(
+            "auction_second_chance",
+            auction.winner.email,
+            {
+                "winner_name": auction.winner.name or auction.winner.email.split("@")[0],
+                "auction_title": auction.title,
+                "winning_amount": str(auction.winning_amount or ""),
+                "admin_note": (request.data.get("admin_note") or "").strip(),
+                "payment_link": f"{settings.FRONTEND_URL}/auctions/{auction.slug}",
+            },
+            vendor=auction.vendor,
+        )
+        if not sent:
+            return Response(
+                {"detail": "The email could not be sent. Check the template and email configuration."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({"detail": f"Replacement winner email sent to {auction.winner.email}."})
 
 
 class AuctionSubscribeView(APIView):

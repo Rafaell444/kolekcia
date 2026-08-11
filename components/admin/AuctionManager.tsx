@@ -11,22 +11,29 @@ import TranslationFields from "@/components/admin/TranslationFields"
 
 type AuctionBid = {
   id: number
+  user_id?: string
   user_name: string
   user_email: string
   amount: string
   placed_at: string
+  is_disqualified?: boolean
+  disqualification_reason?: string
 }
 
 type Auction = {
   id: string
   title: string
   title_ka?: string
-  title_ru?: string
   artist_name: string
   image_url: string
   effective_image?: string
   product_id?: number | null
+  reserved_size_variant?: number | null
+  reserved_variant_label?: string | null
+  inventory_reserved?: boolean
   starting_bid: string
+  shipping_price_gel: string
+  shipping_price_usd: string
   current_bid: string
   starts_at: string
   ends_at: string
@@ -38,6 +45,7 @@ type Auction = {
   winner_name?: string | null
   winning_amount?: string | null
   winner_payment_status?: string
+  is_replacement_winner?: boolean
   paid_at?: string | null
   all_bids?: AuctionBid[] | null
   recent_bids?: AuctionBid[]
@@ -47,19 +55,27 @@ type ProductOption = {
   id: number
   title: string
   title_ka?: string
-  title_ru?: string
   artist_name?: string
   image_url?: string
+  size_variants?: Array<{
+    id: number
+    label: string
+    stock: number | null
+    is_active: boolean
+    is_ready_to_ship: boolean
+  }>
 }
 
 type AuctionForm = {
   product_id: string
+  reserved_size_variant_id: string
   title: string
   title_ka: string
-  title_ru: string
   artist_name: string
   image_url: string
   starting_bid: string
+  shipping_price_gel: string
+  shipping_price_usd: string
   starts_at: string
   ends_at: string
   status: string
@@ -67,12 +83,14 @@ type AuctionForm = {
 
 const EMPTY_FORM: AuctionForm = {
   product_id: "",
+  reserved_size_variant_id: "",
   title: "",
   title_ka: "",
-  title_ru: "",
   artist_name: "",
   image_url: "",
   starting_bid: "10",
+  shipping_price_gel: "0",
+  shipping_price_usd: "0",
   starts_at: "",
   ends_at: "",
   status: "active",
@@ -139,14 +157,14 @@ export default function AuctionManager(): React.ReactElement {
     loadAuctions()
     adminFetch<ProductOption[] | PaginatedResponse<ProductOption>>(productsUrl)
       .then((data) => {
-        const list = parseList(data) as Array<{ id: number; title?: string; title_ka?: string; title_ru?: string; artist_name?: string; image_url?: string; images?: Array<{ url?: string; src?: string }> }>
+        const list = parseList(data) as Array<{ id: number; title?: string; title_ka?: string; artist_name?: string; image_url?: string; images?: Array<{ url?: string; src?: string }>; size_variants?: ProductOption["size_variants"] }>
         setProducts(list.map((p) => ({
           id: p.id,
           title: p.title ?? `Product #${p.id}`,
           title_ka: p.title_ka ?? "",
-          title_ru: p.title_ru ?? "",
           artist_name: p.artist_name ?? "",
           image_url: p.image_url || p.images?.[0]?.url || p.images?.[0]?.src || "",
+          size_variants: p.size_variants ?? [],
         })))
       })
       .catch(() => {})
@@ -170,12 +188,14 @@ export default function AuctionManager(): React.ReactElement {
     setEditing(a)
     setForm({
       product_id: a.product_id ? String(a.product_id) : "",
+      reserved_size_variant_id: a.reserved_size_variant ? String(a.reserved_size_variant) : "",
       title: linked?.title ?? a.title,
       title_ka: linked?.title_ka ?? a.title_ka ?? "",
-      title_ru: linked?.title_ru ?? a.title_ru ?? "",
       artist_name: a.artist_name ?? "",
       image_url: a.image_url ?? "",
       starting_bid: a.starting_bid,
+      shipping_price_gel: a.shipping_price_gel ?? "0",
+      shipping_price_usd: a.shipping_price_usd ?? "0",
       starts_at: toLocalInput(a.starts_at),
       ends_at: toLocalInput(a.ends_at),
       status: a.status,
@@ -189,9 +209,9 @@ export default function AuctionManager(): React.ReactElement {
     setForm((f) => ({
       ...f,
       product_id: productId,
+      reserved_size_variant_id: "",
       title: product?.title ?? (productId ? f.title : ""),
       title_ka: product?.title_ka ?? (productId ? f.title_ka : ""),
-      title_ru: product?.title_ru ?? (productId ? f.title_ru : ""),
       artist_name: product?.artist_name ?? f.artist_name,
       image_url: product?.image_url ?? f.image_url,
     }))
@@ -206,12 +226,14 @@ export default function AuctionManager(): React.ReactElement {
       : null
     const payload = {
       product_id: form.product_id ? parseInt(form.product_id, 10) : null,
+      reserved_size_variant_id: form.reserved_size_variant_id ? parseInt(form.reserved_size_variant_id, 10) : null,
       title: selectedProduct?.title ?? form.title,
       title_ka: selectedProduct?.title_ka ?? form.title_ka,
-      title_ru: selectedProduct?.title_ru ?? form.title_ru,
       artist_name: form.artist_name,
       image_url: form.image_url,
       starting_bid: form.starting_bid,
+      shipping_price_gel: form.shipping_price_gel,
+      shipping_price_usd: form.shipping_price_usd,
       starts_at: fromLocalInput(form.starts_at),
       ends_at: fromLocalInput(form.ends_at),
       status: form.status,
@@ -271,6 +293,54 @@ export default function AuctionManager(): React.ReactElement {
       setDetailAuction(full)
     } catch {
       setDetailAuction(a)
+    }
+  }
+
+  function applyManagedAuction(updated: Auction) {
+    setAuctions((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+    setDetailAuction(updated)
+  }
+
+  async function disqualifyBidder(auctionId: string, bid: AuctionBid) {
+    const reason = prompt(
+      `Reason for disqualifying ${bid.user_name} and blocking this account from this seller's auctions:`,
+      "Winner did not complete payment.",
+    )
+    if (reason === null) return
+    try {
+      const updated = await adminFetch<Auction>(`/auctions/vendor/${auctionId}/bids/${bid.id}/disqualify/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      })
+      applyManagedAuction(updated)
+    } catch (err) {
+      setError(getAdminErrorMessage(err, "Failed to disqualify bidder."))
+    }
+  }
+
+  async function promoteBid(auctionId: string, bid: AuctionBid) {
+    if (!confirm(`Select ${bid.user_name} as the replacement winner at $${parseFloat(bid.amount).toFixed(2)}?`)) return
+    try {
+      const updated = await adminFetch<Auction>(`/auctions/vendor/${auctionId}/bids/${bid.id}/promote/`, {
+        method: "POST",
+      })
+      applyManagedAuction(updated)
+    } catch (err) {
+      setError(getAdminErrorMessage(err, "Failed to select replacement winner."))
+    }
+  }
+
+  async function sendReplacementEmail(auctionId: string) {
+    const adminNote = prompt("Optional note to include in the replacement-winner email:", "")
+    if (adminNote === null) return
+    try {
+      const response = await adminFetch<{ detail: string }>(`/auctions/vendor/${auctionId}/send-second-chance/`, {
+        method: "POST",
+        body: JSON.stringify({ admin_note: adminNote }),
+      })
+      alert(response.detail)
+    } catch (err) {
+      setError(getAdminErrorMessage(err, "Failed to send replacement-winner email."))
     }
   }
 
@@ -372,6 +442,34 @@ export default function AuctionManager(): React.ReactElement {
                   {products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
                 </select>
               </label>
+              {form.product_id && (() => {
+                const readyVariants = products
+                  .find((p) => String(p.id) === form.product_id)
+                  ?.size_variants?.filter((v) => v.is_active && v.is_ready_to_ship && (v.stock ?? 0) > 0) ?? []
+                return (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Ready-to-ship unit</span>
+                    <select
+                      required
+                      value={form.reserved_size_variant_id}
+                      disabled={Boolean(editing?.inventory_reserved)}
+                      onChange={(e) => setForm((f) => ({ ...f, reserved_size_variant_id: e.target.value }))}
+                      className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] disabled:opacity-70"
+                    >
+                      <option value="">Select variant</option>
+                      {readyVariants.map((v) => (
+                        <option key={v.id} value={v.id}>{v.label} - {v.stock} ready</option>
+                      ))}
+                      {editing?.inventory_reserved && editing.reserved_size_variant && (
+                        <option value={editing.reserved_size_variant}>{editing.reserved_variant_label || "Reserved unit"}</option>
+                      )}
+                    </select>
+                    <span className="text-[10px] text-dp-text-tertiary">
+                      One unit is reserved when the auction becomes active. The last ready unit switches the catalog product to made-to-order.
+                    </span>
+                  </label>
+                )
+              })()}
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Title</span>
                 <input
@@ -392,7 +490,6 @@ export default function AuctionManager(): React.ReactElement {
                   inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]"
                   fields={[
                     { key: "title_ka", label: "Title · Georgian" },
-                    { key: "title_ru", label: "Title · Russian" },
                   ]}
                 />
               )}
@@ -408,8 +505,8 @@ export default function AuctionManager(): React.ReactElement {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Starting Bid ($)</span>
-                  <input required type="number" min="0" step="0.01" value={form.starting_bid} onChange={(e) => setForm((f) => ({ ...f, starting_bid: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Minimum starting bid (USD $)</span>
+                  <input required type="number" min="0.01" step="0.01" value={form.starting_bid} onChange={(e) => setForm((f) => ({ ...f, starting_bid: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Status</span>
@@ -420,6 +517,19 @@ export default function AuctionManager(): React.ReactElement {
                   </select>
                 </label>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Georgia shipping (GEL)</span>
+                  <input required type="number" min="0" step="0.01" value={form.shipping_price_gel} onChange={(e) => setForm((f) => ({ ...f, shipping_price_gel: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Other market shipping (USD)</span>
+                  <input required type="number" min="0" step="0.01" value={form.shipping_price_usd} onChange={(e) => setForm((f) => ({ ...f, shipping_price_usd: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
+                </label>
+              </div>
+              <p className="text-[10px] text-dp-text-tertiary">
+                Shipping is charged only after the auction is won. Self-pickup is offered on non-Sculpi auctions.
+              </p>
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Artist Name</span>
                 <input value={form.artist_name} onChange={(e) => setForm((f) => ({ ...f, artist_name: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
@@ -464,9 +574,16 @@ export default function AuctionManager(): React.ReactElement {
                     </p>
                   </div>
                   {detailAuction.winner_payment_status !== "paid" && detailAuction.status !== "bought" && (
-                    <button type="button" onClick={() => markPaid(detailAuction.id)} className="px-3 py-1.5 bg-dp-success text-white text-[11px] font-bold uppercase tracking-widest rounded-sm">
-                      Mark Paid
-                    </button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {detailAuction.is_replacement_winner && (
+                        <button type="button" onClick={() => sendReplacementEmail(detailAuction.id)} className="px-3 py-1.5 border border-dp-accent-gold text-dp-accent-gold text-[11px] font-bold uppercase tracking-widest rounded-sm">
+                          Send Replacement Email
+                        </button>
+                      )}
+                      <button type="button" onClick={() => markPaid(detailAuction.id)} className="px-3 py-1.5 bg-dp-success text-white text-[11px] font-bold uppercase tracking-widest rounded-sm">
+                        Mark Paid
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -476,14 +593,29 @@ export default function AuctionManager(): React.ReactElement {
                     <th className="text-left py-2">Bidder</th>
                     <th className="text-left py-2">Amount</th>
                     <th className="text-left py-2">Time</th>
+                    <th className="text-right py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dp-border">
                   {(detailAuction.all_bids ?? detailAuction.recent_bids ?? []).map((b) => (
-                    <tr key={b.id}>
+                    <tr key={b.id} className={b.is_disqualified ? "opacity-50" : ""}>
                       <td className="py-2 text-dp-text-primary">{b.user_name}<br /><span className="text-dp-text-tertiary">{b.user_email}</span></td>
                       <td className="py-2 font-bold">${parseFloat(b.amount).toFixed(2)}</td>
                       <td className="py-2 text-dp-text-tertiary">{new Date(b.placed_at).toLocaleString()}</td>
+                      <td className="py-2 text-right">
+                        {b.is_disqualified ? (
+                          <span className="text-[10px] uppercase tracking-widest text-dp-accent-cta" title={b.disqualification_reason}>Disqualified</span>
+                        ) : (
+                          <div className="flex flex-wrap justify-end gap-1">
+                            {!detailAuction.winner_name && parseFloat(b.amount) === parseFloat(detailAuction.current_bid) && (
+                              <button type="button" onClick={() => promoteBid(detailAuction.id, b)} className="px-2 py-1 border border-dp-accent-gold/50 text-dp-accent-gold rounded-sm text-[10px]">Make winner</button>
+                            )}
+                            {detailAuction.winner_name === b.user_name && (
+                              <button type="button" onClick={() => disqualifyBidder(detailAuction.id, b)} className="px-2 py-1 border border-dp-accent-cta/50 text-dp-accent-cta rounded-sm text-[10px]">Ban no-show</button>
+                            )}
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

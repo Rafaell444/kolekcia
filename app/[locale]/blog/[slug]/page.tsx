@@ -4,6 +4,8 @@ import SiteShell from "@/components/layout/SiteShell"
 import Breadcrumb from "@/components/seo/Breadcrumb"
 import { buildPageMetadata } from "@/lib/seo"
 
+export const dynamic = "force-dynamic"
+
 type ContentBlock =
   | { type: "paragraph"; text: string }
   | { type: "heading"; text: string }
@@ -22,9 +24,9 @@ type BlogPost = {
 }
 
 async function getPost(slug: string, locale: string): Promise<BlogPost | null> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+  const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api").replace(/\/$/, "")
   try {
-    const res = await fetch(`${apiUrl}/blog/${slug}/?lang=${locale}`, { next: { revalidate: 10 } })
+    const res = await fetch(`${apiUrl}/blog/${slug}/?lang=${locale}`, { cache: "no-store" })
     if (!res.ok) return null
     return (await res.json()) as BlogPost
   } catch {
