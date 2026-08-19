@@ -15,7 +15,7 @@ const ru: MessageTree = {
     account: "Мой аккаунт",
     inbox: "Входящие",
     wishlist: "Избранное",
-    awards: "Награды и XP",
+    awards: "Лояльность",
     orders: "История заказов",
     profile: "Профиль и заказы",
     signOut: "Выйти",

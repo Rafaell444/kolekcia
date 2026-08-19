@@ -1,5 +1,6 @@
 import { getAccessToken, storeTokens, clearTokens } from "./auth-storage"
 import { DEFAULT_LOCALE, isValidLocale, type Locale } from "./i18n"
+import { getDeviceRiskId } from "./device-risk"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 
@@ -51,20 +52,22 @@ export async function refreshAccessToken(): Promise<string | null> {
         const data = await cookieRes.json() as { access: string; refresh?: string }
         const rememberMe = !!localStorage.getItem("kol_access")
         if (data.refresh) {
-          storeTokens(data.access, data.refresh, rememberMe)
+          await storeTokens(data.access, data.refresh, rememberMe)
         } else if (typeof window !== "undefined") {
           const storage = rememberMe ? localStorage : sessionStorage
           storage.setItem("kol_access", data.access)
         }
         return data.access
       }
+      if (cookieRes.status !== 401) {
+        return getAccessToken()
+      }
       clearTokens()
       notifyAuthExpired()
       return null
     } catch {
-      clearTokens()
-      notifyAuthExpired()
-      return null
+      // A temporary network/backend outage must not log out an active bidder.
+      return getAccessToken()
     } finally {
       refreshPromise = null
     }
@@ -94,7 +97,6 @@ async function request<T>(
   url: string,
   options: RequestInit = {},
   authenticated = false,
-  retries = 0,
 ): Promise<T> {
   const locale = getRequestLocale()
   const localizedUrl = withLangParam(url, locale)
@@ -102,6 +104,7 @@ async function request<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "Accept-Language": locale,
+    "X-Device-ID": getDeviceRiskId(),
     ...(options.headers as Record<string, string> | undefined),
   }
 

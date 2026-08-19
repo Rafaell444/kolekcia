@@ -1,17 +1,22 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from asgiref.sync import async_to_sync
+from channels.testing import WebsocketCommunicator
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.orders.models import ProcessingOption
 from apps.products.models import Product, SizeVariant
 from apps.users.models import User
 from apps.vendors.models import Vendor
 
-from .models import Auction, AuctionBid, AuctionBidderBan
+from kolekcia.asgi import application
+
+from .models import Auction, AuctionBid, AuctionBidderBan, AuctionChatMessage
 from .serializers import AuctionSerializer
 from .services import FX_CACHE_KEY, release_auction_inventory, reserve_auction_inventory
 
@@ -80,6 +85,53 @@ class AuctionSecurityTests(TestCase):
 
         self.assertEqual(self.variant.stock, 2)
         self.assertTrue(self.variant.is_ready_to_ship)
+
+    def test_expired_auction_without_bids_restores_reserved_multi_stock_once(self):
+        self.variant.stock = 3
+        self.variant.save(update_fields=("stock",))
+        auction = self.make_auction()
+        reserve_auction_inventory(auction, self.variant.id)
+
+        self.assertTrue(auction.finalize_if_ended())
+        auction.refresh_from_db()
+        self.variant.refresh_from_db()
+        self.assertFalse(auction.inventory_reserved)
+        self.assertEqual(self.variant.stock, 3)
+        self.assertTrue(self.variant.is_ready_to_ship)
+
+        self.assertFalse(auction.finalize_if_ended())
+        self.variant.refresh_from_db()
+        self.assertEqual(self.variant.stock, 3)
+
+    def test_expired_auction_without_bids_restores_final_ready_unit(self):
+        auction = self.make_auction()
+        reserve_auction_inventory(auction, self.variant.id)
+
+        self.assertTrue(auction.finalize_if_ended())
+        auction.refresh_from_db()
+        self.variant.refresh_from_db()
+        self.assertFalse(auction.inventory_reserved)
+        self.assertEqual(self.variant.stock, 1)
+        self.assertTrue(self.variant.is_ready_to_ship)
+
+    def test_expired_auction_with_only_disqualified_bids_keeps_inventory_reserved(self):
+        self.variant.stock = 3
+        self.variant.save(update_fields=("stock",))
+        auction = self.make_auction()
+        reserve_auction_inventory(auction, self.variant.id)
+        bidder = User.objects.create_user(email="disqualified@example.com", password="test-password")
+        AuctionBid.objects.create(
+            auction=auction,
+            user=bidder,
+            amount="20.00",
+            is_disqualified=True,
+        )
+
+        self.assertFalse(auction.finalize_if_ended())
+        auction.refresh_from_db()
+        self.variant.refresh_from_db()
+        self.assertTrue(auction.inventory_reserved)
+        self.assertEqual(self.variant.stock, 2)
 
     def test_public_bid_response_does_not_expose_email_or_user_id(self):
         bidder = User.objects.create_user(email="private@example.com", password="test-password")
@@ -171,3 +223,56 @@ class AuctionSecurityTests(TestCase):
         self.assertEqual(auction.winner, first)
         self.assertEqual(str(auction.winning_amount), "20.00")
         self.assertTrue(auction.is_replacement_winner)
+
+
+class AuctionWebSocketTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="chat@example.com", password="test-password", name="Chat User")
+        self.auction = Auction.objects.create(
+            title="Live chat auction",
+            starting_bid="10.00",
+            starts_at=timezone.now() - timedelta(minutes=5),
+            ends_at=timezone.now() + timedelta(minutes=5),
+            status=Auction.STATUS_ACTIVE,
+        )
+
+    async def _send_authenticated_message(self, token):
+        communicator = WebsocketCommunicator(
+            application,
+            f"/ws/auctions/{self.auction.id}/",
+            subprotocols=["access_token", token],
+        )
+        connected, subprotocol = await communicator.connect()
+        if not connected:
+            return connected, subprotocol, None
+        await communicator.send_json_to({"text": "QA websocket message"})
+        response = await communicator.receive_json_from(timeout=2)
+        await communicator.disconnect()
+        return connected, subprotocol, response
+
+    async def _connect_without_token(self):
+        communicator = WebsocketCommunicator(application, f"/ws/auctions/{self.auction.id}/")
+        connected, _ = await communicator.connect()
+        if connected:
+            await communicator.disconnect()
+        return connected
+
+    def test_authenticated_live_chat_connects_persists_and_broadcasts(self):
+        token = str(RefreshToken.for_user(self.user).access_token)
+
+        connected, subprotocol, response = async_to_sync(self._send_authenticated_message)(token)
+
+        self.assertTrue(connected)
+        self.assertEqual(subprotocol, "access_token")
+        self.assertEqual(response["user_name"], "Chat User")
+        self.assertEqual(response["text"], "QA websocket message")
+        self.assertTrue(AuctionChatMessage.objects.filter(
+            auction=self.auction,
+            user=self.user,
+            text="QA websocket message",
+        ).exists())
+
+    def test_unauthenticated_websocket_is_rejected(self):
+        self.assertFalse(async_to_sync(self._connect_without_token)())

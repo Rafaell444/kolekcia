@@ -4,7 +4,7 @@ import { headers } from 'next/headers'
 import { Barlow, Barlow_Condensed, Bebas_Neue, Geist_Mono } from 'next/font/google'
 import { AuthProvider } from '@/contexts/auth-context'
 import GoogleAuthProvider from '@/components/auth/GoogleAuthProvider'
-import { GamificationProvider } from '@/contexts/gamification-context'
+import { LoyaltyProvider } from '@/contexts/gamification-context'
 import { CartProvider } from '@/contexts/cart-context'
 import { WishlistProvider } from '@/contexts/wishlist-context'
 import { LocaleProvider } from '@/contexts/locale-context'
@@ -128,12 +128,12 @@ export default async function RootLayout({
             <AuthProvider>
               <CartProvider>
                 <WishlistProvider>
-                  <GamificationProvider>
+                  <LoyaltyProvider>
                     <Suspense fallback={null}>
                       <ReferralTracker />
                     </Suspense>
                     {children}
-                  </GamificationProvider>
+                  </LoyaltyProvider>
                 </WishlistProvider>
               </CartProvider>
             </AuthProvider>

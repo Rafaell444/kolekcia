@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from apps.products.models import Category, Artist, Product, ProductImage, ProductVariant, SizeVariant, PosterSize, PosterFinish, PosterFrame
 from apps.cms.models import HeroSlide, FAQ
-from apps.gamification.models import Badge, XPRule
+from apps.gamification.models import PointsMarketItem
 
 
 class Command(BaseCommand):
@@ -385,31 +385,21 @@ class Command(BaseCommand):
         self.stdout.write("  CMS data seeded.")
 
     def _seed_gamification(self):
-        badges = [
-            ("First Purchase", "🛒", "common", "Complete your first order.", "first_purchase"),
-            ("Auction Gladiator", "⚔️", "rare", "Win your first live auction.", "auction_won"),
-            ("Collector", "🖼️", "common", "Own 10+ posters.", "collector"),
-            ("Art Connoisseur", "🎨", "epic", "Purchase from 5 different artist categories.", "art_connoisseur"),
-            ("Review Legend", "⭐", "rare", "Submit 20+ verified reviews.", "review_legend"),
-            ("Legendary Patron", "👑", "legendary", "Spend $1,000+ lifetime.", "legendary_patron"),
-            ("Referral Champion", "🤝", "epic", "Refer 5 friends who complete purchases.", "referral_champion"),
-            ("Night Owl", "🦉", "common", "Make a purchase between midnight and 4am.", "night_owl"),
+        items = [
+            ("Digital thank-you voucher", "A digital loyalty voucher issued after admin review.", 250, 25, PointsMarketItem.TYPE_DIGITAL),
+            ("Collector sticker pack", "A small physical bonus pack for loyal customers.", 450, 20, PointsMarketItem.TYPE_PHYSICAL),
+            ("Priority custom request review", "Move one eligible custom request to priority review.", 900, 10, PointsMarketItem.TYPE_DIGITAL),
         ]
-        for name, icon, rarity, description, trigger_action in badges:
-            Badge.objects.get_or_create(name=name, defaults={
-                "icon": icon, "rarity": rarity, "description": description, "trigger_action": trigger_action
-            })
+        for name, description, point_cost, stock_quantity, item_type in items:
+            PointsMarketItem.objects.get_or_create(
+                name=name,
+                defaults={
+                    "description": description,
+                    "point_cost": point_cost,
+                    "stock_quantity": stock_quantity,
+                    "item_type": item_type,
+                    "is_active": True,
+                },
+            )
 
-        xp_rules = [
-            ("first_purchase", 100, True),
-            ("newsletter_signup", 25, True),
-            ("profile_complete", 50, True),
-            ("review_submitted", 15, False),
-            ("auction_won", 200, False),
-            ("referral", 75, False),
-            ("order_placed", 10, False),
-        ]
-        for action_key, xp_amount, is_one_time in xp_rules:
-            XPRule.objects.get_or_create(action_key=action_key, defaults={"xp_amount": xp_amount, "is_one_time": is_one_time})
-
-        self.stdout.write("  Gamification data seeded.")
+        self.stdout.write("  Loyalty points market seeded.")

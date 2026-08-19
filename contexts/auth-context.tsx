@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react"
 import { getAccessToken, clearTokens, storeTokens, storeUser, getStoredUser } from "@/lib/auth-storage"
-import { authFetch, apiFetch, type ApiError } from "@/lib/api"
+import { authFetch, apiFetch, refreshAccessToken, type ApiError } from "@/lib/api"
 
 export type AuthUser = {
   id: string
@@ -26,7 +26,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [user, setUser] = useState<AuthUser | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser<AuthUser>())
   const [loading, setLoading] = useState(true)
 
   const refreshUser = useCallback(async () => {
@@ -39,15 +39,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       const me = await authFetch<AuthUser>("/auth/me/")
       setUser(me)
       storeUser(me)
-    } catch {
-      setUser(null)
+    } catch (error) {
+      // Keep the visible session during transient network/backend outages.
+      if ((error as ApiError)?.status === 401) setUser(null)
     }
   }, [])
 
   useEffect(() => {
-    const storedUser = getStoredUser<AuthUser>()
-    if (storedUser) setUser(storedUser)
-    refreshUser().finally(() => setLoading(false))
+    const timer = window.setTimeout(() => {
+      refreshUser().finally(() => setLoading(false))
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [refreshUser])
 
   useEffect(() => {
@@ -60,12 +62,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     return () => window.removeEventListener("kol-auth-expired", handleExpired)
   }, [])
 
+  useEffect(() => {
+    if (!user) return
+
+    const refreshIfNeeded = () => {
+      const token = getAccessToken()
+      if (!token) return
+      try {
+        const encoded = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")
+        const payload = JSON.parse(atob(encoded)) as { exp?: number }
+        const expiresInMs = (payload.exp ?? 0) * 1000 - Date.now()
+        if (expiresInMs < 10 * 60 * 1000) void refreshAccessToken()
+      } catch {
+        void refreshAccessToken()
+      }
+    }
+
+    refreshIfNeeded()
+    const interval = window.setInterval(refreshIfNeeded, 60_000)
+    const onVisible = () => { if (document.visibilityState === "visible") refreshIfNeeded() }
+    window.addEventListener("focus", refreshIfNeeded)
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refreshIfNeeded)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
+  }, [user])
+
   const login = useCallback(async (email: string, password: string, rememberMe = false) => {
     const data = await apiFetch<{ access: string; refresh: string; user: AuthUser }>("/auth/login/", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     })
-    storeTokens(data.access, data.refresh, rememberMe)
+    await storeTokens(data.access, data.refresh, rememberMe)
     setUser(data.user)
     storeUser(data.user)
   }, [])
@@ -75,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       method: "POST",
       body: JSON.stringify({ id_token: idToken }),
     })
-    storeTokens(data.access, data.refresh, rememberMe)
+    await storeTokens(data.access, data.refresh, rememberMe)
     setUser(data.user)
     storeUser(data.user)
     return { isNewUser: Boolean(data.is_new_user) }

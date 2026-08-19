@@ -5,6 +5,8 @@ import { usePathname, useSearchParams } from "next/navigation"
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
 import { getAccessToken } from "@/lib/auth-storage"
+import { useLocalePrefix } from "@/lib/use-localized-href"
+import { LOCALES } from "@/lib/i18n"
 
 // ─── SVG Icons ───────────────────────────────────────────────
 
@@ -106,7 +108,16 @@ const NAV_ITEMS = [
 export default function BottomNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const lp = useLocalePrefix()
   const [cartCount, setCartCount] = useState(0)
+
+  const pathWithoutLocale = (() => {
+    const segments = pathname.split("/").filter(Boolean)
+    if (segments[0] && LOCALES.includes(segments[0] as typeof LOCALES[number])) {
+      return `/${segments.slice(1).join("/")}` || "/"
+    }
+    return pathname
+  })()
 
   // Lightly fetch cart item count — only when authenticated
   useEffect(() => {
@@ -120,12 +131,12 @@ export default function BottomNav() {
   }, [pathname])
 
   function isActive(href: string, key: string) {
-    if (key === "home") return pathname === "/"
-    if (key === "panels") return pathname.startsWith("/catalog") && searchParams.get("category") === "wallpanels"
-    if (key === "figures") return pathname.startsWith("/catalog") && searchParams.get("category") === "figures"
-    if (key === "cart") return pathname.startsWith("/cart")
-    if (key === "auction") return pathname.startsWith("/auctions")
-    return pathname.startsWith(href)
+    if (key === "home") return pathWithoutLocale === "/"
+    if (key === "panels") return pathWithoutLocale.startsWith("/catalog") && searchParams.get("category") === "wallpanels"
+    if (key === "figures") return pathWithoutLocale.startsWith("/catalog") && searchParams.get("category") === "figures"
+    if (key === "cart") return pathWithoutLocale.startsWith("/cart")
+    if (key === "auction") return pathWithoutLocale.startsWith("/auctions")
+    return pathWithoutLocale.startsWith(href)
   }
 
   return (
@@ -157,7 +168,7 @@ export default function BottomNav() {
                   )}
 
                   <Link
-                    href={href}
+                    href={`${lp}${href === "/" ? "" : href}`}
                     aria-current={active ? "page" : undefined}
                     className={`flex flex-col items-center justify-center gap-[5px] h-full w-full select-none transition-colors duration-150 ${
                       active ? "text-dp-accent-cta" : "text-dp-text-tertiary active:text-dp-text-secondary"

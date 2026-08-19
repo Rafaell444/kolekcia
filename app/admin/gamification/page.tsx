@@ -1,70 +1,122 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { Trophy, Zap, Pencil, Plus, Trash2, X } from "lucide-react"
-import { adminFetch } from "@/lib/admin-auth"
+import { Award, ChevronLeft, ChevronRight, Gift, ImagePlus, Pencil, Plus, ScrollText, ShoppingBag, Star, Trash2, X } from "lucide-react"
+import { adminFetch, getAdminToken, getAdminUser, type AdminUser } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 
-type XPRule = {
-  id: string
-  action_key: string
-  xp_amount: number
-  is_one_time: boolean
-  description: string
-}
-type Promo = { id: number; code: string }
-type Badge = {
-  id: string
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+
+type PointsMarketItem = {
+  id: number
   name: string
-  icon: string
-  rarity: string
   description: string
-  trigger_action: string
-  prize_promo_id?: number | null
-  prize_promo_code?: string | null
-  prize_description?: string
+  vendor: number | null
+  vendor_name?: string | null
+  vendor_slug?: string | null
+  main_image_url: string
+  image_urls: string[]
+  point_cost: number
+  stock_quantity: number
+  item_type: "physical" | "digital"
+  voucher_discount_type: "percent" | "fixed"
+  voucher_discount_value: string
+  voucher_min_order_value: string
+  is_active: boolean
+  is_locked: boolean
+  created_at: string
 }
 
-type RuleForm = {
-  action_key: string
-  xp_amount: string
-  is_one_time: boolean
+type PointTransaction = {
+  id: number
+  transaction_type: string
+  status: string
+  points: number
   description: string
+  order_number?: string | null
+  market_item_name?: string | null
+  user_email?: string
+  user_name?: string
+  created_at: string
 }
 
-type BadgeForm = {
+type PointsMarketRedemption = {
+  id: number
+  status: "pending" | "approved" | "shipped" | "delivered" | "cancelled"
+  user_email?: string
+  user_name?: string
+  item_name: string
+  item_image_url: string
+  point_cost: number
+  shipping_name: string
+  shipping_line1: string
+  shipping_line2: string
+  shipping_city: string
+  shipping_state: string
+  shipping_zip: string
+  shipping_country: string
+  shipping_email: string
+  shipping_phone: string
+  shipping_type: string
+  shipping_label: string
+  shipping_price: string
+  shipping_currency: string
+  tracking_code: string
+  admin_note: string
+  created_at: string
+}
+
+type LoyaltyTier = {
+  tier_key: "genin" | "chunin" | "jonin"
+  label: string
+  min_lifetime_points: number
+  max_lifetime_points: number | null
+  discount_percent: string
+}
+
+type MarketForm = {
   name: string
-  icon: string
-  rarity: string
   description: string
-  trigger_action: string
-  prize_promo_id: string
-  prize_description: string
+  vendor: string
+  main_image_url: string
+  image_urls: string[]
+  point_cost: string
+  stock_quantity: string
+  item_type: "physical" | "digital"
+  voucher_discount_type: "percent" | "fixed"
+  voucher_discount_value: string
+  voucher_min_order_value: string
+  is_active: boolean
 }
 
-const EMPTY_RULE: RuleForm = {
-  action_key: "",
-  xp_amount: "10",
-  is_one_time: false,
-  description: "",
+type LoyaltyAdminTab = "overview" | "market" | "redemptions" | "ledger"
+
+type VendorOption = {
+  id: number
+  name: string
+  slug: string
 }
 
-const EMPTY_BADGE: BadgeForm = {
+const EMPTY_FORM: MarketForm = {
   name: "",
-  icon: "🏆",
-  rarity: "common",
   description: "",
-  trigger_action: "",
-  prize_promo_id: "",
-  prize_description: "",
+  vendor: "",
+  main_image_url: "",
+  image_urls: [],
+  point_cost: "250",
+  stock_quantity: "1",
+  item_type: "digital",
+  voucher_discount_type: "percent",
+  voucher_discount_value: "5",
+  voucher_min_order_value: "0",
+  is_active: true,
 }
 
-const RARITY_COLOR: Record<string, string> = {
-  common:    "text-dp-text-secondary bg-dp-bg-elevated border-dp-border",
-  rare:      "text-blue-400 bg-blue-400/10 border-blue-400/30",
-  epic:      "text-purple-400 bg-purple-400/10 border-purple-400/30",
-  legendary: "text-dp-accent-gold bg-dp-accent-gold/10 border-dp-accent-gold/30",
-}
+const FIXED_TIERS: LoyaltyTier[] = [
+  { tier_key: "genin", label: "Genin", min_lifetime_points: 0, max_lifetime_points: 350, discount_percent: "0" },
+  { tier_key: "chunin", label: "Chunin", min_lifetime_points: 350, max_lifetime_points: 1000, discount_percent: "5" },
+  { tier_key: "jonin", label: "Jonin", min_lifetime_points: 1000, max_lifetime_points: null, discount_percent: "10" },
+]
 
 function getAdminErrorMessage(err: unknown, fallback: string): string {
   if (!err || typeof err !== "object") return fallback
@@ -79,350 +131,599 @@ function getAdminErrorMessage(err: unknown, fallback: string): string {
 }
 
 export default function AdminGamificationPage(): React.ReactElement {
-  const [rules, setRules] = useState<XPRule[]>([])
-  const [badges, setBadges] = useState<Badge[]>([])
-  const [promos, setPromos] = useState<Promo[]>([])
+  const [items, setItems] = useState<PointsMarketItem[]>([])
+  const [vendors, setVendors] = useState<VendorOption[]>([])
+  const [transactions, setTransactions] = useState<PointTransaction[]>([])
+  const [redemptions, setRedemptions] = useState<PointsMarketRedemption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [showRuleModal, setShowRuleModal] = useState(false)
-  const [showBadgeModal, setShowBadgeModal] = useState(false)
-  const [editingRule, setEditingRule] = useState<XPRule | null>(null)
-  const [editingBadge, setEditingBadge] = useState<Badge | null>(null)
-  const [ruleForm, setRuleForm] = useState<RuleForm>(EMPTY_RULE)
-  const [badgeForm, setBadgeForm] = useState<BadgeForm>(EMPTY_BADGE)
-  const [badgeModalError, setBadgeModalError] = useState("")
+  const [showModal, setShowModal] = useState(false)
+  const [editingItem, setEditingItem] = useState<PointsMarketItem | null>(null)
+  const [form, setForm] = useState<MarketForm>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [marketSlides, setMarketSlides] = useState<Record<number, number>>({})
+  const [activeTab, setActiveTab] = useState<LoyaltyAdminTab>("overview")
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
+
+  const isVendorAdmin = !!adminUser?.vendor && !adminUser.is_staff
+  const vendorId = adminUser?.vendor?.id ? String(adminUser.vendor.id) : ""
 
   function loadData() {
     setLoading(true)
+    setError("")
     Promise.all([
-      adminFetch<XPRule[]>("/admin/gamification/xp-rules/"),
-      adminFetch<Badge[]>("/admin/gamification/badges/"),
-      adminFetch<Promo[] | PaginatedResponse<Promo>>("/admin/promos/"),
+      adminFetch<PointsMarketItem[] | PaginatedResponse<PointsMarketItem>>("/admin/gamification/market/"),
+      adminFetch<PointTransaction[] | PaginatedResponse<PointTransaction>>("/admin/gamification/transactions/"),
+      adminFetch<PointsMarketRedemption[] | PaginatedResponse<PointsMarketRedemption>>("/admin/gamification/redemptions/"),
+      adminFetch<VendorOption[] | PaginatedResponse<VendorOption> | VendorOption>("/vendors/me/"),
     ])
-      .then(([r, b, p]) => { setRules(r); setBadges(b); setPromos(parseList(p)) })
-      .catch((err) => setError(getAdminErrorMessage(err, "Failed to load gamification data.")))
+      .then(([marketData, transactionData, redemptionData, vendorData]) => {
+        setItems(parseList(marketData))
+        setTransactions(parseList(transactionData).slice(0, 12))
+        setRedemptions(parseList(redemptionData).slice(0, 20))
+        setVendors(normalizeVendors(vendorData))
+      })
+      .catch((err) => setError(getAdminErrorMessage(err, "Failed to load loyalty data.")))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
+    const storedAdmin = getAdminUser()
+    setAdminUser(storedAdmin)
+    if (storedAdmin?.vendor && !storedAdmin.is_staff) {
+      setActiveTab("market")
+      setForm((prev) => ({ ...prev, item_type: "physical", vendor: String(storedAdmin.vendor?.id || "") }))
+    }
     loadData()
   }, [])
 
-  function openCreateRule() {
-    setEditingRule(null)
-    setRuleForm(EMPTY_RULE)
-    setShowRuleModal(true)
-    setError("")
+  function normalizeVendors(data: VendorOption[] | PaginatedResponse<VendorOption> | VendorOption): VendorOption[] {
+    if (Array.isArray(data) || "results" in data) return parseList(data as VendorOption[] | PaginatedResponse<VendorOption>)
+    return data?.id ? [data] : []
   }
 
-  function openEditRule(rule: XPRule) {
-    setEditingRule(rule)
-    setRuleForm({
-      action_key: rule.action_key,
-      xp_amount: String(rule.xp_amount),
-      is_one_time: rule.is_one_time,
-      description: rule.description ?? "",
+  function saleBonusForTier(tier: LoyaltyTier): number {
+    if (tier.tier_key === "chunin") return 5
+    if (tier.tier_key === "jonin") return 10
+    return 0
+  }
+
+  function tierRuleText(tier: LoyaltyTier): string {
+    const bonus = saleBonusForTier(tier)
+    if (bonus <= 0) return "No extra sale bonus. Vouchers can be used on non-sale products."
+    return `Automatically adds +${bonus.toFixed(0)}% on sale products only. Vouchers still apply only to non-sale products.`
+  }
+
+  function openCreate() {
+    setEditingItem(null)
+    setForm(isVendorAdmin ? { ...EMPTY_FORM, item_type: "physical", vendor: vendorId } : EMPTY_FORM)
+    setShowModal(true)
+  }
+
+  function openEdit(item: PointsMarketItem) {
+    setEditingItem(item)
+    setForm({
+      name: item.name,
+      description: item.description,
+      vendor: item.vendor ? String(item.vendor) : "",
+      main_image_url: item.main_image_url || "",
+      image_urls: item.image_urls || [],
+      point_cost: String(item.point_cost),
+      stock_quantity: String(item.stock_quantity),
+      item_type: item.item_type,
+      voucher_discount_type: item.voucher_discount_type || "percent",
+      voucher_discount_value: String(item.voucher_discount_value || "5"),
+      voucher_min_order_value: String(item.voucher_min_order_value || "0"),
+      is_active: item.is_active,
     })
-    setShowRuleModal(true)
-    setError("")
+    setShowModal(true)
   }
 
-  function openCreateBadge() {
-    setEditingBadge(null)
-    setBadgeForm(EMPTY_BADGE)
-    setBadgeModalError("")
-    setShowBadgeModal(true)
-    setError("")
-  }
-
-  function openEditBadge(badge: Badge) {
-    setEditingBadge(badge)
-    setBadgeForm({
-      name: badge.name,
-      icon: badge.icon,
-      rarity: badge.rarity,
-      description: badge.description,
-      trigger_action: badge.trigger_action,
-      prize_promo_id: badge.prize_promo_id ? String(badge.prize_promo_id) : "",
-      prize_description: badge.prize_description ?? "",
-    })
-    setBadgeModalError("")
-    setShowBadgeModal(true)
-    setError("")
-  }
-
-  async function saveRule(e: React.FormEvent) {
+  async function saveItem(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     setError("")
     const payload = {
-      action_key: ruleForm.action_key.trim(),
-      xp_amount: parseInt(ruleForm.xp_amount, 10),
-      is_one_time: ruleForm.is_one_time,
-      description: ruleForm.description.trim(),
+      name: form.name.trim(),
+      description: form.description.trim(),
+      vendor: form.item_type === "physical" && (isVendorAdmin ? vendorId : form.vendor) ? Number(isVendorAdmin ? vendorId : form.vendor) : null,
+      main_image_url: form.main_image_url,
+      image_urls: form.image_urls,
+      point_cost: Number(form.point_cost),
+      stock_quantity: Number(form.stock_quantity),
+      item_type: form.item_type,
+      voucher_discount_type: form.voucher_discount_type,
+      voucher_discount_value: Number(form.voucher_discount_value || 0),
+      voucher_min_order_value: Number(form.voucher_min_order_value || 0),
+      is_active: form.is_active,
     }
     try {
-      if (editingRule) {
-        const updated = await adminFetch<XPRule>(`/admin/gamification/xp-rules/${editingRule.id}/`, {
+      if (editingItem) {
+        const updated = await adminFetch<PointsMarketItem>(`/admin/gamification/market/${editingItem.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         })
-        setRules((prev) => prev.map((r) => (r.id === editingRule.id ? updated : r)))
+        setItems((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
       } else {
-        const created = await adminFetch<XPRule>("/admin/gamification/xp-rules/", {
+        const created = await adminFetch<PointsMarketItem>("/admin/gamification/market/", {
           method: "POST",
           body: JSON.stringify(payload),
         })
-        setRules((prev) => [...prev, created].sort((a, b) => a.action_key.localeCompare(b.action_key)))
+        setItems((prev) => [created, ...prev])
       }
-      setShowRuleModal(false)
+      setShowModal(false)
     } catch (err) {
-      setError(getAdminErrorMessage(err, "Failed to save XP rule."))
+      setError(getAdminErrorMessage(err, "Failed to save market item."))
     } finally {
       setSaving(false)
     }
   }
 
-  async function saveBadge(e: React.FormEvent) {
-    e.preventDefault()
-    setSaving(true)
+  async function uploadMarketImage(file: File) {
+    setUploadingImage(true)
     setError("")
-    setBadgeModalError("")
-    const promoRaw = badgeForm.prize_promo_id.trim()
-    const promoId = promoRaw ? Number(promoRaw) : null
-    if (promoRaw && Number.isNaN(promoId)) {
-      setBadgeModalError("Please select a valid promo code.")
-      setSaving(false)
-      return
-    }
-    const payload = {
-      name: badgeForm.name.trim(),
-      icon: badgeForm.icon.trim(),
-      rarity: badgeForm.rarity,
-      description: badgeForm.description.trim(),
-      trigger_action: badgeForm.trigger_action.trim(),
-      prize_description: badgeForm.prize_description.trim(),
-      prize_promo_id: promoId,
-    }
     try {
-      if (editingBadge) {
-        const updated = await adminFetch<Badge>(`/admin/gamification/badges/${editingBadge.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-        setBadges((prev) => prev.map((b) => (String(b.id) === String(editingBadge.id) ? updated : b)))
-      } else {
-        const created = await adminFetch<Badge>("/admin/gamification/badges/", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-        setBadges((prev) => [...prev, created])
-      }
-      setShowBadgeModal(false)
+      const token = getAdminToken()
+      const data = new FormData()
+      data.append("file", file)
+      data.append("folder", "points-market")
+      const response = await fetch(`${API_BASE}/admin/media/upload/`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: data,
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw { data: payload }
+      const url = String(payload.url || "")
+      if (!url) throw new Error("Upload did not return an image URL.")
+      setForm((prev) => {
+        const nextImages = [...prev.image_urls, url].slice(0, 12)
+        return {
+          ...prev,
+          image_urls: nextImages,
+          main_image_url: prev.main_image_url || url,
+        }
+      })
     } catch (err) {
-      const msg = getAdminErrorMessage(err, "Failed to save badge.")
-      setBadgeModalError(msg)
-      setError(msg)
+      setError(getAdminErrorMessage(err, "Failed to upload market image."))
     } finally {
-      setSaving(false)
+      setUploadingImage(false)
     }
   }
 
-  async function deleteRule(rule: XPRule) {
-    if (!confirm(`Delete XP rule "${rule.action_key}"?`)) return
+  function removeMarketImage(url: string) {
+    setForm((prev) => {
+      const nextImages = prev.image_urls.filter((image) => image !== url)
+      return {
+        ...prev,
+        image_urls: nextImages,
+        main_image_url: prev.main_image_url === url ? (nextImages[0] || "") : prev.main_image_url,
+      }
+    })
+  }
+
+  function marketImages(item: PointsMarketItem): string[] {
+    const urls = [item.main_image_url, ...(item.image_urls || [])].filter(Boolean)
+    return Array.from(new Set(urls))
+  }
+
+  function shiftMarketSlide(itemId: number, count: number, direction: -1 | 1) {
+    setMarketSlides((prev) => {
+      const current = prev[itemId] || 0
+      return { ...prev, [itemId]: (current + direction + count) % count }
+    })
+  }
+
+  async function deleteItem(item: PointsMarketItem) {
+    if (!confirm(`Delete points market item "${item.name}"?`)) return
     setError("")
     try {
-      await adminFetch(`/admin/gamification/xp-rules/${rule.id}/`, { method: "DELETE" })
-      setRules((prev) => prev.filter((r) => r.id !== rule.id))
+      await adminFetch(`/admin/gamification/market/${item.id}/`, { method: "DELETE" })
+      setItems((prev) => prev.filter((entry) => entry.id !== item.id))
     } catch (err) {
-      setError(getAdminErrorMessage(err, "Failed to delete XP rule."))
+      setError(getAdminErrorMessage(err, "Failed to delete market item."))
     }
   }
 
-  async function deleteBadge(badge: Badge) {
-    if (!confirm(`Delete badge "${badge.name}"?`)) return
-    setError("")
+  async function updateRedemption(id: number, payload: Partial<Pick<PointsMarketRedemption, "status" | "tracking_code" | "admin_note">>) {
     try {
-      await adminFetch(`/admin/gamification/badges/${badge.id}/`, { method: "DELETE" })
-      setBadges((prev) => prev.filter((b) => b.id !== badge.id))
+      const updated = await adminFetch<PointsMarketRedemption>(`/admin/gamification/redemptions/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      })
+      setRedemptions((prev) => prev.map((redemption) => (redemption.id === id ? updated : redemption)))
     } catch (err) {
-      setError(getAdminErrorMessage(err, "Failed to delete badge."))
+      setError(getAdminErrorMessage(err, "Failed to update redemption."))
     }
   }
 
   return (
     <div className="p-4 sm:p-8 flex flex-col gap-8">
-      <div>
-        <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">Gamification</h1>
-        <p className="text-[13px] text-dp-text-tertiary mt-1">Configure XP rules, badges, levels, and achievements.</p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl sm:text-4xl text-dp-text-primary">Loyalty</h1>
+          <p className="text-[13px] text-dp-text-tertiary mt-1">
+            {isVendorAdmin ? "Manage your vendor points market products and fulfillment redemptions." : "Manage tier policy, points market items, and the immutable points ledger."}
+          </p>
+        </div>
+        <button type="button" onClick={openCreate} className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-black uppercase tracking-widest rounded-sm">
+          <Plus size={14} /> {isVendorAdmin ? "Add reward product" : "Add product or voucher"}
+        </button>
       </div>
 
-      {error && (
-        <div className="px-4 py-3 bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm text-[13px] text-dp-accent-cta">
-          {error}
-        </div>
-      )}
+      {error && <div className="px-4 py-3 bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm text-[13px] text-dp-accent-cta">{error}</div>}
 
-      <section className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-2xl text-dp-text-primary flex items-center gap-2">
-            <Zap size={16} className="text-dp-accent-gold" /> XP Rules
-          </h2>
-          <button type="button" onClick={openCreateRule} className="flex items-center gap-1.5 px-3 py-1.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-bold uppercase tracking-widest rounded-sm">
-            <Plus size={12} /> New Rule
+      <div className="flex flex-wrap gap-2 rounded-sm border border-dp-border bg-dp-bg-surface p-2">
+        {[
+          ...(!isVendorAdmin ? [{ id: "overview", label: "Overview", Icon: Award }] : []),
+          { id: "market", label: "Points Market", Icon: Gift },
+          { id: "redemptions", label: "Points Redemptions", Icon: ShoppingBag },
+          { id: "ledger", label: "Points Ledger", Icon: ScrollText },
+        ].map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveTab(id as LoyaltyAdminTab)}
+            className={`inline-flex items-center gap-2 rounded-sm px-3 py-2 text-[11px] font-black uppercase tracking-widest transition-colors ${activeTab === id ? "bg-dp-accent-cta text-white" : "text-dp-text-secondary hover:bg-dp-bg-elevated hover:text-dp-text-primary"}`}
+          >
+            <Icon size={13} /> {label}
           </button>
-        </div>
-        {loading ? (
-          <div className="animate-pulse grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-16 bg-dp-bg-elevated rounded-sm" />)}</div>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {rules.map((r) => (
-              <div key={r.id} className="flex items-center justify-between p-3 bg-dp-bg-elevated border border-dp-border rounded-sm">
-                <div className="min-w-0 pr-2">
-                  <p className="text-[12px] font-semibold text-dp-text-primary">{r.action_key.replace(/_/g, " ")}</p>
-                  {r.description && <p className="text-[10px] text-dp-text-tertiary truncate">{r.description}</p>}
-                  {r.is_one_time && <p className="text-[10px] text-dp-text-tertiary">One-time</p>}
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <span className="font-bold text-dp-accent-gold text-[14px]">+{r.xp_amount} XP</span>
-                  <button type="button" onClick={() => openEditRule(r)} className="w-6 h-6 flex items-center justify-center text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Edit"><Pencil size={11} /></button>
-                  <button type="button" onClick={() => deleteRule(r)} className="w-6 h-6 flex items-center justify-center text-dp-accent-cta hover:text-dp-accent-cta-hover" aria-label="Delete"><Trash2 size={11} /></button>
-                </div>
-              </div>
-            ))}
-            {rules.length === 0 && <p className="col-span-3 text-center py-6 text-dp-text-tertiary">No XP rules configured.</p>}
-          </div>
-        )}
-      </section>
+        ))}
+      </div>
 
-      <section className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-2xl text-dp-text-primary flex items-center gap-2"><Trophy size={16} className="text-dp-accent-cta" /> Badges</h2>
-          <button type="button" onClick={openCreateBadge} className="flex items-center gap-1.5 px-3 py-1.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-bold uppercase tracking-widest rounded-sm">
-            <Plus size={12} /> New Badge
-          </button>
+      {activeTab === "overview" && <section className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
+        <div className="mb-4">
+          <h2 className="font-display text-2xl text-dp-text-primary flex items-center gap-2"><Award size={17} className="text-dp-accent-gold" /> Automatic Sale Bonuses</h2>
+          <p className="text-[12px] text-dp-text-tertiary mt-1">Levels are automatic. Tier bonuses apply only to products already marked as sale. Vouchers apply only to non-sale products.</p>
         </div>
-        {loading ? (
-          <div className="animate-pulse grid sm:grid-cols-2 lg:grid-cols-4 gap-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-24 bg-dp-bg-elevated rounded-sm" />)}</div>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {badges.map((b) => (
-              <div key={b.id} className="p-4 bg-dp-bg-elevated border border-dp-border rounded-sm flex flex-col gap-2 relative">
-                <div className="absolute top-2 right-2 flex gap-1">
-                  <button type="button" onClick={() => openEditBadge(b)} className="w-6 h-6 flex items-center justify-center rounded-sm border border-dp-border text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Edit"><Pencil size={11} /></button>
-                  <button type="button" onClick={() => deleteBadge(b)} className="w-6 h-6 flex items-center justify-center rounded-sm border border-dp-accent-cta/40 text-dp-accent-cta" aria-label="Delete"><Trash2 size={11} /></button>
-                </div>
-                <div className="text-2xl">{b.icon}</div>
-                <p className="font-display text-base text-dp-text-primary pr-14">{b.name}</p>
-                <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 border rounded-sm self-start ${RARITY_COLOR[b.rarity] ?? RARITY_COLOR.common}`}>{b.rarity}</span>
-                <p className="text-[11px] text-dp-text-tertiary">{b.description}</p>
-                {b.trigger_action && <p className="text-[10px] font-mono text-dp-text-tertiary">trigger: {b.trigger_action}</p>}
-                <div className="mt-1 pt-2 border-t border-dp-border/60">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1">Prize reward</p>
-                  {b.prize_promo_code || b.prize_description ? (
-                    <p className="text-[10px] text-dp-accent-gold font-semibold">
-                      {b.prize_description || b.prize_promo_code}
-                      {b.prize_promo_code ? <span className="block font-mono text-dp-text-secondary mt-0.5">Code: {b.prize_promo_code}</span> : null}
+        <div className="grid lg:grid-cols-3 gap-4">
+          {FIXED_TIERS.map((tier) => (
+            <article key={tier.tier_key} className="bg-dp-bg-elevated border border-dp-border rounded-sm p-4 flex flex-col gap-3">
+              <p className="font-display text-2xl text-dp-text-primary">{tier.label}</p>
+              <p className="text-[11px] text-dp-text-tertiary">
+                {tier.min_lifetime_points.toLocaleString()} - {tier.max_lifetime_points == null ? "infinity" : tier.max_lifetime_points.toLocaleString()} current points
+              </p>
+              <p className="font-display text-4xl text-dp-accent-gold">+{saleBonusForTier(tier).toFixed(0)}%</p>
+              <p className="text-[12px] text-dp-text-secondary leading-relaxed">{tierRuleText(tier)}</p>
+            </article>
+          ))}
+        </div>
+      </section>}
+
+      {activeTab === "redemptions" && <section className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
+        <h2 className="font-display text-2xl text-dp-text-primary flex items-center gap-2 mb-4"><ShoppingBag size={17} className="text-dp-accent-gold" /> Points Redemptions</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] text-left text-[12px]">
+            <thead className="text-dp-text-tertiary uppercase tracking-widest">
+              <tr className="border-b border-dp-border">
+                <th className="py-2 pr-4">Reward</th>
+                <th className="py-2 pr-4">Customer</th>
+                <th className="py-2 pr-4">Fulfillment</th>
+                <th className="py-2 pr-4">Status</th>
+                <th className="py-2 pr-4">Tracking</th>
+                <th className="py-2 pr-4">Admin note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {redemptions.map((redemption) => (
+                <tr key={redemption.id} className="border-b border-dp-border/70 align-top last:border-b-0">
+                  <td className="py-3 pr-4">
+                    <div className="flex items-center gap-3">
+                      {redemption.item_image_url && <img src={redemption.item_image_url} alt="" className="h-12 w-12 rounded-sm object-contain border border-dp-border bg-dp-bg-elevated p-1" />}
+                      <div>
+                        <p className="font-semibold text-dp-text-primary">{redemption.item_name}</p>
+                        <p className="text-[11px] text-dp-text-tertiary">{redemption.point_cost.toLocaleString()} pts · {new Date(redemption.created_at).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <p className="text-dp-text-primary">{redemption.user_name || redemption.shipping_name}</p>
+                    <p className="text-[11px] text-dp-text-tertiary">{redemption.user_email || redemption.shipping_email}</p>
+                    {redemption.shipping_phone && <p className="text-[11px] text-dp-text-tertiary">{redemption.shipping_phone}</p>}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <p className="font-semibold text-dp-text-primary">{redemption.shipping_label}</p>
+                    <p className="text-[11px] text-dp-text-tertiary">{Number(redemption.shipping_price) > 0 ? `${redemption.shipping_price} ${redemption.shipping_currency}` : "Free"}</p>
+                    <p className="mt-1 max-w-xs text-[11px] text-dp-text-secondary">
+                      {redemption.shipping_line1}, {redemption.shipping_city}, {redemption.shipping_state}, {redemption.shipping_zip}, {redemption.shipping_country}
                     </p>
-                  ) : (
-                    <button type="button" onClick={() => openEditBadge(b)} className="text-[10px] text-dp-text-tertiary hover:text-dp-accent-cta underline">
-                      Not set — click to add promo code
-                    </button>
-                  )}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <select
+                      value={redemption.status}
+                      onChange={(e) => updateRedemption(redemption.id, { status: e.target.value as PointsMarketRedemption["status"] })}
+                      className="rounded-sm border border-dp-border bg-dp-bg-elevated px-2 py-1.5 text-[12px] text-dp-text-primary"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="shipped">Shipped</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <input
+                      value={redemption.tracking_code || ""}
+                      onChange={(e) => setRedemptions((prev) => prev.map((row) => row.id === redemption.id ? { ...row, tracking_code: e.target.value } : row))}
+                      onBlur={(e) => updateRedemption(redemption.id, { tracking_code: e.target.value })}
+                      placeholder="Tracking code"
+                      className="w-36 rounded-sm border border-dp-border bg-dp-bg-elevated px-2 py-1.5 text-[12px] text-dp-text-primary"
+                    />
+                  </td>
+                  <td className="py-3 pr-4">
+                    <textarea
+                      value={redemption.admin_note || ""}
+                      onChange={(e) => setRedemptions((prev) => prev.map((row) => row.id === redemption.id ? { ...row, admin_note: e.target.value } : row))}
+                      onBlur={(e) => updateRedemption(redemption.id, { admin_note: e.target.value })}
+                      placeholder="Internal note"
+                      rows={2}
+                      className="w-52 resize-none rounded-sm border border-dp-border bg-dp-bg-elevated px-2 py-1.5 text-[12px] text-dp-text-primary"
+                    />
+                  </td>
+                </tr>
+              ))}
+              {redemptions.length === 0 && (
+                <tr><td colSpan={6} className="py-8 text-center text-dp-text-tertiary">No physical points redemptions yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>}
+
+      {activeTab === "market" && <section className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-display text-2xl text-dp-text-primary flex items-center gap-2"><Gift size={17} className="text-dp-accent-cta" /> Points Market</h2>
+            <p className="text-[12px] text-dp-text-tertiary mt-1">
+              {isVendorAdmin ? "Add physical rewards from your store and manage their stock/photos." : "Add rewards users can buy with spendable points: physical products with stock or digital vouchers."}
+            </p>
+          </div>
+          <button type="button" onClick={openCreate} className="hidden sm:inline-flex items-center justify-center gap-2 px-3 py-2 border border-dp-border text-[11px] font-black uppercase tracking-widest rounded-sm text-dp-text-primary hover:border-dp-border-hover">
+            <Plus size={13} /> Add item
+          </button>
+        </div>
+        {loading ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,260px))] items-start justify-start gap-3 animate-pulse">{[1, 2, 3, 4].map((i) => <div key={i} className="h-36 bg-dp-bg-elevated rounded-sm" />)}</div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,260px))] items-start justify-start gap-3">
+            {items.map((item) => (
+              <article key={item.id} className="self-start w-full p-3.5 bg-dp-bg-elevated border border-dp-border rounded-sm">
+                {marketImages(item).length > 0 && (
+                  <div className="relative mb-3 h-32 sm:h-36 overflow-hidden rounded-sm border border-dp-border bg-dp-bg-surface">
+                    <img
+                      src={marketImages(item)[marketSlides[item.id] || 0] || marketImages(item)[0]}
+                      alt={item.name}
+                      className="h-full w-full object-contain p-1"
+                    />
+                    {marketImages(item).length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => shiftMarketSlide(item.id, marketImages(item).length, -1)}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/55 text-white flex items-center justify-center"
+                          aria-label="Previous image"
+                        >
+                          <ChevronLeft size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => shiftMarketSlide(item.id, marketImages(item).length, 1)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/55 text-white flex items-center justify-center"
+                          aria-label="Next image"
+                        >
+                          <ChevronRight size={15} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-dp-text-tertiary">{item.item_type === "digital" ? "Digital voucher" : "Physical product"}</p>
+                    <h3 className="font-display text-lg leading-tight text-dp-text-primary mt-1">{item.name}</h3>
+                    {item.item_type === "physical" && item.vendor_name && (
+                      <p className="text-[11px] text-dp-accent-gold mt-1">{item.vendor_name}</p>
+                    )}
+                    {item.item_type === "digital" && (
+                      <p className="text-[11px] text-dp-accent-gold mt-1">
+                        {item.voucher_discount_type === "percent" ? `${Number(item.voucher_discount_value || 0).toFixed(0)}% checkout voucher` : `$${Number(item.voucher_discount_value || 0).toFixed(2)} checkout voucher`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-1">
+                    <button type="button" onClick={() => openEdit(item)} className="w-7 h-7 flex items-center justify-center rounded-sm border border-dp-border text-dp-text-tertiary hover:text-dp-text-primary" aria-label="Edit"><Pencil size={12} /></button>
+                    <button type="button" onClick={() => deleteItem(item)} className="w-7 h-7 flex items-center justify-center rounded-sm border border-dp-accent-cta/40 text-dp-accent-cta" aria-label="Delete"><Trash2 size={12} /></button>
+                  </div>
                 </div>
-              </div>
+                <p className="text-[11px] leading-relaxed text-dp-text-secondary mt-2 line-clamp-2">{item.description || "No description."}</p>
+                <div className="mt-4 flex items-center justify-between text-[12px]">
+                  <span className="font-display text-xl text-dp-text-primary">{item.point_cost.toLocaleString()} pts</span>
+                  <span className={item.stock_quantity > 0 && item.is_active ? "text-dp-success" : "text-dp-accent-cta"}>
+                    {item.stock_quantity > 0 && item.is_active ? `${item.stock_quantity} stock` : "Locked"}
+                  </span>
+                </div>
+              </article>
             ))}
-            {badges.length === 0 && <p className="col-span-4 text-center py-6 text-dp-text-tertiary">No badges configured.</p>}
+            {items.length === 0 && <p className="col-span-full py-8 text-center text-[13px] text-dp-text-tertiary">No points market items yet.</p>}
           </div>
         )}
-      </section>
+      </section>}
 
-      {showRuleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="w-full max-w-md bg-dp-bg-surface border border-dp-border rounded-sm shadow-xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border">
-              <h2 className="font-display text-xl text-dp-text-primary">{editingRule ? "Edit XP Rule" : "New XP Rule"}</h2>
-              <button type="button" onClick={() => setShowRuleModal(false)} className="text-dp-text-tertiary hover:text-dp-text-primary"><X size={18} /></button>
-            </div>
-            <form onSubmit={saveRule} className="p-5 flex flex-col gap-4">
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Action Key</span>
-                <input required disabled={!!editingRule} value={ruleForm.action_key} onChange={(e) => setRuleForm((f) => ({ ...f, action_key: e.target.value }))} placeholder="first_purchase" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary disabled:opacity-60" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">XP Amount</span>
-                <input required type="number" min="1" value={ruleForm.xp_amount} onChange={(e) => setRuleForm((f) => ({ ...f, xp_amount: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Description</span>
-                <input value={ruleForm.description} onChange={(e) => setRuleForm((f) => ({ ...f, description: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-              </label>
-              <label className="flex items-center gap-2 text-[13px] text-dp-text-secondary">
-                <input type="checkbox" checked={ruleForm.is_one_time} onChange={(e) => setRuleForm((f) => ({ ...f, is_one_time: e.target.checked }))} />
-                One-time only
-              </label>
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowRuleModal(false)} className="flex-1 py-2.5 border border-dp-border text-[12px] font-bold uppercase tracking-widest rounded-sm">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-dp-accent-cta text-white text-[12px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-60">{saving ? "Saving…" : "Save"}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showBadgeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="w-full max-w-md bg-dp-bg-surface border border-dp-border rounded-sm shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border">
-              <h2 className="font-display text-xl text-dp-text-primary">{editingBadge ? "Edit Badge" : "New Badge"}</h2>
-              <button type="button" onClick={() => setShowBadgeModal(false)} className="text-dp-text-tertiary hover:text-dp-text-primary"><X size={18} /></button>
-            </div>
-            <form onSubmit={saveBadge} className="p-5 flex flex-col gap-4">
-              {badgeModalError && (
-                <div className="px-3 py-2 bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm text-[12px] text-dp-accent-cta">
-                  {badgeModalError}
-                </div>
+      {activeTab === "ledger" && <section className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
+        <h2 className="font-display text-2xl text-dp-text-primary flex items-center gap-2 mb-4"><ScrollText size={17} className="text-dp-text-tertiary" /> Points Ledger</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-[12px]">
+            <thead className="text-dp-text-tertiary uppercase tracking-widest">
+              <tr className="border-b border-dp-border">
+                <th className="py-2 pr-4">Date</th>
+                <th className="py-2 pr-4">Type</th>
+                <th className="py-2 pr-4">Status</th>
+                <th className="py-2 pr-4">Points</th>
+                <th className="py-2 pr-4">Customer</th>
+                <th className="py-2 pr-4">Reference</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map((entry) => (
+                <tr key={entry.id} className="border-b border-dp-border/70 last:border-b-0">
+                  <td className="py-3 pr-4 text-dp-text-secondary">{new Date(entry.created_at).toLocaleDateString()}</td>
+                  <td className="py-3 pr-4 text-dp-text-primary">{entry.transaction_type}</td>
+                  <td className="py-3 pr-4 text-dp-text-secondary">{entry.status}</td>
+                  <td className={`py-3 pr-4 font-black ${entry.points >= 0 ? "text-dp-success" : "text-dp-accent-cta"}`}>{entry.points}</td>
+                  <td className="py-3 pr-4 text-dp-text-secondary">
+                    <span className="block text-dp-text-primary">{entry.user_name || "-"}</span>
+                    {entry.user_email && <span className="block text-[11px] text-dp-text-tertiary">{entry.user_email}</span>}
+                  </td>
+                  <td className="py-3 pr-4 text-dp-text-tertiary">{entry.order_number || entry.market_item_name || entry.description || "-"}</td>
+                </tr>
+              ))}
+              {transactions.length === 0 && (
+                <tr><td colSpan={6} className="py-8 text-center text-dp-text-tertiary">No ledger entries yet.</td></tr>
               )}
+            </tbody>
+          </table>
+        </div>
+      </section>}
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-lg bg-dp-bg-surface border border-dp-border rounded-sm shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border">
+              <h2 className="font-display text-xl text-dp-text-primary">{editingItem ? "Edit Points Market Item" : "Add Points Market Item"}</h2>
+              <button type="button" onClick={() => setShowModal(false)} className="text-dp-text-tertiary hover:text-dp-text-primary"><X size={18} /></button>
+            </div>
+            <form onSubmit={saveItem} className="p-5 flex flex-col gap-4">
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Name</span>
-                <input required value={badgeForm.name} onChange={(e) => setBadgeForm((f) => ({ ...f, name: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Icon (emoji, max 10 chars)</span>
-                <input required maxLength={10} value={badgeForm.icon} onChange={(e) => setBadgeForm((f) => ({ ...f, icon: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Rarity</span>
-                <select value={badgeForm.rarity} onChange={(e) => setBadgeForm((f) => ({ ...f, rarity: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary">
-                  <option value="common">Common</option>
-                  <option value="rare">Rare</option>
-                  <option value="epic">Epic</option>
-                  <option value="legendary">Legendary</option>
-                </select>
+                <input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Description</span>
-                <textarea required value={badgeForm.description} onChange={(e) => setBadgeForm((f) => ({ ...f, description: e.target.value }))} rows={2} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary resize-none" />
+                <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary resize-none" />
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Trigger Action Key</span>
-                <input value={badgeForm.trigger_action} onChange={(e) => setBadgeForm((f) => ({ ...f, trigger_action: e.target.value }))} placeholder="first_purchase" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Prize Promo Code</span>
-                <select value={badgeForm.prize_promo_id} onChange={(e) => setBadgeForm((f) => ({ ...f, prize_promo_id: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary">
-                  <option value="">None</option>
-                  {promos.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Prize Description</span>
-                <input value={badgeForm.prize_description} onChange={(e) => setBadgeForm((f) => ({ ...f, prize_description: e.target.value }))} placeholder="Free shipping on next order" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
-              </label>
+              {form.item_type === "physical" && (
+                <div className="border border-dp-border rounded-sm p-4 bg-dp-bg-elevated">
+                  <label className="mb-4 flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Reward vendor</span>
+                    <select
+                      required
+                      value={form.vendor}
+                      onChange={(e) => setForm((f) => ({ ...f, vendor: e.target.value }))}
+                      disabled={isVendorAdmin}
+                      className="px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary"
+                    >
+                      <option value="">Choose vendor for shipping</option>
+                      {vendors.map((vendor) => (
+                        <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
+                      ))}
+                    </select>
+                    <span className="text-[11px] text-dp-text-tertiary">Physical rewards use this vendor's shipping options in the customer popup.</span>
+                  </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Product photos</p>
+                      <p className="text-[11px] text-dp-text-tertiary mt-1">Upload photos, choose the main one, and keep up to 12 gallery images.</p>
+                    </div>
+                    <label className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-dp-text-primary text-white text-[11px] font-black uppercase tracking-widest rounded-sm cursor-pointer">
+                      <ImagePlus size={13} />
+                      {uploadingImage ? "Uploading..." : "Upload"}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        disabled={uploadingImage}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) void uploadMarketImage(file)
+                          e.currentTarget.value = ""
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                  {form.image_urls.length > 0 ? (
+                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {form.image_urls.map((url) => (
+                        <div key={url} className="relative aspect-square overflow-hidden rounded-sm border border-dp-border bg-dp-bg-surface">
+                          <img src={url} alt="Points market item" className="h-full w-full object-cover" />
+                          <div className="absolute inset-x-2 bottom-2 flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setForm((prev) => ({ ...prev, main_image_url: url }))}
+                              className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-widest rounded-sm ${form.main_image_url === url ? "bg-dp-accent-gold text-dp-bg" : "bg-black/65 text-white"}`}
+                            >
+                              <Star size={10} /> Main
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeMarketImage(url)}
+                              className="w-7 flex items-center justify-center bg-black/65 text-white rounded-sm"
+                              aria-label="Remove image"
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-[12px] text-dp-text-tertiary">No photos uploaded yet.</p>
+                  )}
+                </div>
+              )}
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Point cost</span>
+                  <input required type="number" min="1" value={form.point_cost} onChange={(e) => setForm((f) => ({ ...f, point_cost: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Stock quantity</span>
+                  <input required type="number" min="0" value={form.stock_quantity} onChange={(e) => setForm((f) => ({ ...f, stock_quantity: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
+                </label>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Item type</span>
+                  <select
+                    value={form.item_type}
+                    onChange={(e) => setForm((f) => ({ ...f, item_type: e.target.value as MarketForm["item_type"], vendor: e.target.value === "physical" && isVendorAdmin ? vendorId : f.vendor }))}
+                    disabled={isVendorAdmin}
+                    className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary"
+                  >
+                    {!isVendorAdmin && <option value="digital">Digital Voucher</option>}
+                    <option value="physical">Physical Product</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-[13px] text-dp-text-secondary pt-5">
+                  <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} />
+                  Active in market
+                </label>
+              </div>
+              {form.item_type === "digital" && (
+                <div className="grid sm:grid-cols-3 gap-3 rounded-sm border border-dp-accent-gold/25 bg-dp-accent-gold/5 p-4">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Voucher type</span>
+                    <select value={form.voucher_discount_type ?? "percent"} onChange={(e) => setForm((f) => ({ ...f, voucher_discount_type: e.target.value as MarketForm["voucher_discount_type"] }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary">
+                      <option value="percent">Percentage</option>
+                      <option value="fixed">Fixed amount</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">{form.voucher_discount_type === "percent" ? "Discount %" : "Discount amount"}</span>
+                    <input required type="number" min="0.01" step="0.01" value={form.voucher_discount_value ?? ""} onChange={(e) => setForm((f) => ({ ...f, voucher_discount_value: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Min order value</span>
+                    <input type="number" min="0" step="0.01" value={form.voucher_min_order_value ?? ""} onChange={(e) => setForm((f) => ({ ...f, voucher_min_order_value: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary" />
+                  </label>
+                  <p className="sm:col-span-3 text-[11px] text-dp-text-secondary">
+                    After purchase, the customer receives an autogenerated one-use promo code for checkout.
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowBadgeModal(false)} className="flex-1 py-2.5 border border-dp-border text-[12px] font-bold uppercase tracking-widest rounded-sm">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-dp-accent-cta text-white text-[12px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-60">{saving ? "Saving…" : "Save"}</button>
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-dp-border text-[12px] font-bold uppercase tracking-widest rounded-sm">Cancel</button>
+                <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-dp-accent-cta text-white text-[12px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-60">{saving ? "Saving..." : "Save"}</button>
               </div>
             </form>
           </div>

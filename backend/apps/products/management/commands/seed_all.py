@@ -92,7 +92,6 @@ class Command(BaseCommand):
     # ------------------------------------------------
     def _seed_users(self):
         from apps.users.models import User
-        from apps.gamification.models import GamificationProfile
 
         # Staff / artist users
         staff = [
@@ -115,14 +114,17 @@ class Command(BaseCommand):
             ("diana@example.com",   "Diana Park",    "Test1234!", "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=80&h=80&fit=crop&crop=face", 2100),
             ("evan@example.com",    "Evan Nakamura", "Test1234!", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&h=80&fit=crop&crop=face", 500),
         ]
-        for email, name, pw, avatar, xp in customers:
+        for email, name, pw, avatar, points in customers:
             if not User.objects.filter(email=email).exists():
-                u = User.objects.create_user(email=email, password=pw, name=name, role="customer", avatar=avatar)
-                profile, _ = GamificationProfile.objects.get_or_create(user=u)
-                profile.xp = xp
-                profile.points = xp
-                profile.recalculate_level()
-                profile.save()
+                User.objects.create_user(
+                    email=email,
+                    password=pw,
+                    name=name,
+                    role="customer",
+                    avatar=avatar,
+                    lifetime_points=points,
+                    spendable_points=points,
+                )
 
         self.stdout.write("  ? Users (3 staff + 5 customers)")
 
@@ -140,7 +142,7 @@ class Command(BaseCommand):
                 "We craft ultra-high-definition 3D metal panel posters using our proprietary UV-cure layering process. Each panel is a sculptural art piece that transforms any wall.",
                 "vendor1@koleqcia.com",
                 "3D Panel Poster",
-                "Hyper-realistic 3D relief metal panels — submit your image and we'll turn it into a stunning textured wall piece.",
+                "Hyper-realistic 3D relief metal panels ï¿½ submit your image and we'll turn it into a stunning textured wall piece.",
                 "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&h=400&fit=crop",
             ),
             (
@@ -148,7 +150,7 @@ class Command(BaseCommand):
                 "Figure Studio",
                 "figure-studio",
                 "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=200&h=200&fit=crop",
-                "Precision-printed 3D collectible figures using resin SLA technology. From anime characters to custom portraits — we make the impossible tangible.",
+                "Precision-printed 3D collectible figures using resin SLA technology. From anime characters to custom portraits ï¿½ we make the impossible tangible.",
                 "vendor2@koleqcia.com",
                 "3D Figure",
                 "Send us a reference image and we'll sculpt a one-of-a-kind 3D printed figure, hand-painted and ready to display.",
@@ -182,7 +184,7 @@ class Command(BaseCommand):
                 "Ryo Tanabe", "ryo_tanabe",
                 "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face",
                 "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=1200&h=400&fit=crop",
-                "Osaka sculptor specializing in premium 3D metal collectible figures — from anime icons to original characters.",
+                "Osaka sculptor specializing in premium 3D metal collectible figures ï¿½ from anime icons to original characters.",
                 96, 12100, 22, "Gold", True, "vendor2@koleqcia.com", "figure-studio",
             ),
             (
@@ -223,7 +225,7 @@ class Command(BaseCommand):
 
         # (title, artist_handle, cat_slug, base_price, orig_price, limited, sale, new_, exclusive, rating, reviews, tags, image_url, extra_images)
         products_data = [
-            # Figures — Ryo Tanabe
+            # Figures ï¿½ Ryo Tanabe
             ("Cyber Samurai",   "ryo_tanabe",  "figures",    39.99, None,  True,  False, False, False, 4.7,  987, ["Figure","Samurai","Cyberpunk"],
              "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop",
              ["https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=840&fit=crop"]),
@@ -237,7 +239,7 @@ class Command(BaseCommand):
              "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop", []),
             ("Pixel Phantom",   "ryo_tanabe",  "figures",    29.99, 39.99, False, True,  False, False, 4.5,  543, ["Figure","Pixel","Retro"],
              "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&h=840&fit=crop", []),
-            # Wallpanels — Alex Tanaka
+            # Wallpanels ï¿½ Alex Tanaka
             ("Midnight Circuit", "alex_tanaka", "wallpanels", 34.99, None,  True,  False, False, False, 4.6,  876, ["Wallpanel","Circuit","Cyberpunk"],
              "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop",
              ["https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop"]),
@@ -358,7 +360,7 @@ class Command(BaseCommand):
         from apps.users.models import User
 
         review_texts = [
-            ("Amazing quality — the colours are even more vivid in person!", 5),
+            ("Amazing quality ï¿½ the colours are even more vivid in person!", 5),
             ("Arrived perfectly packaged. Already ordered a second one.", 5),
             ("Great print, the metal finish is top-notch.", 4),
             ("Looks incredible on my wall. My guests always ask about it.", 5),
@@ -401,14 +403,14 @@ class Command(BaseCommand):
         now = timezone.now()
 
         auctions_data = [
-            ("Cyber Samurai — Signed Edition",      "Ryo Tanabe",  "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop", 249.99,  48,  True),
-            ("Oni Guardian — Artist Proof",         "Ryo Tanabe",  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 499.99,  96,  True),
-            ("Ghost Protocol — Chrome Variant",     "Ryo Tanabe",  "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop", 399.99,  72,  True),
-            ("Aurora Drift — Master Panel",         "Alex Tanaka", "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop", 299.99,  72,  True),
-            ("Midnight Circuit — Glow Edition",     "Alex Tanaka", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 129.99,  60,  True),
-            ("Event Horizon — Collector Series",    "Alex Tanaka", "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600&h=840&fit=crop", 349.99, 168, True),
-            ("Void Horizon — Embossed Metal",       "Alex Tanaka", "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop", 179.99,  36,  True),
-            ("Dragon Knight — Foil 1/50",           "Ryo Tanabe",  "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop", 459.99, 120, True),
+            ("Cyber Samurai ï¿½ Signed Edition",      "Ryo Tanabe",  "https://images.unsplash.com/photo-1545566943-86600b05e0a6?w=600&h=840&fit=crop", 249.99,  48,  True),
+            ("Oni Guardian ï¿½ Artist Proof",         "Ryo Tanabe",  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 499.99,  96,  True),
+            ("Ghost Protocol ï¿½ Chrome Variant",     "Ryo Tanabe",  "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=600&h=840&fit=crop", 399.99,  72,  True),
+            ("Aurora Drift ï¿½ Master Panel",         "Alex Tanaka", "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=840&fit=crop", 299.99,  72,  True),
+            ("Midnight Circuit ï¿½ Glow Edition",     "Alex Tanaka", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=840&fit=crop", 129.99,  60,  True),
+            ("Event Horizon ï¿½ Collector Series",    "Alex Tanaka", "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600&h=840&fit=crop", 349.99, 168, True),
+            ("Void Horizon ï¿½ Embossed Metal",       "Alex Tanaka", "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=600&h=840&fit=crop", 179.99,  36,  True),
+            ("Dragon Knight ï¿½ Foil 1/50",           "Ryo Tanabe",  "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=840&fit=crop", 459.99, 120, True),
         ]
 
         created = 0
@@ -430,57 +432,26 @@ class Command(BaseCommand):
 
     # ------------------------------------------------
     def _seed_gamification(self):
-        from apps.gamification.models import Badge, XPRule
+        from apps.gamification.models import PointsMarketItem
 
-        badges = [
-            ("Welcome",           "??", "common",    "Create your Koleqcia account.",                    "registration_bonus"),
-            ("First Purchase",    "??", "common",    "Complete your first order.",                       "first_purchase"),
-            ("Auction Gladiator", "??", "rare",      "Win your first live auction.",                     "auction_won"),
-            ("Collector",         "???", "common",    "Own 10+ posters.",                                "collector"),
-            ("Art Connoisseur",   "??", "epic",      "Purchase from 5 different artist categories.",    "art_connoisseur"),
-            ("Review Legend",     "?", "rare",      "Submit 20+ verified reviews.",                    "review_legend"),
-            ("Legendary Patron",  "??", "legendary", "Spend $1,000+ lifetime.",                          "legendary_patron"),
-            ("Referral Champion", "??", "epic",      "Refer 5 friends who complete purchases.",          "referral_champion"),
-            ("Night Owl",         "??", "common",    "Make a purchase between midnight and 4am.",        "night_owl"),
-            ("Streak Master",     "??", "rare",      "Log in 30 days in a row.",                        "streak_30"),
-            ("Wishlist Curator",  "??", "common",    "Add 10 items to your wishlist.",                   "wishlist_10"),
-            ("Social Butterfly",  "??", "epic",      "Share 5 products on social media.",                "social_share_5"),
+        items = [
+            ("Digital thank-you voucher", "A digital loyalty voucher issued after admin review.", 250, 25, PointsMarketItem.TYPE_DIGITAL),
+            ("Collector sticker pack", "A small physical bonus pack for loyal customers.", 450, 20, PointsMarketItem.TYPE_PHYSICAL),
+            ("Priority custom request review", "Move one eligible custom request to priority review.", 900, 10, PointsMarketItem.TYPE_DIGITAL),
         ]
-        for name, icon, rarity, description, trigger_action in badges:
-            Badge.objects.get_or_create(name=name, defaults={
-                "icon": icon, "rarity": rarity,
-                "description": description, "trigger_action": trigger_action,
-            })
-
-        from apps.promo.models import PromoCode
-        freeshp = PromoCode.objects.filter(code="FREESHIP").first()
-        if freeshp:
-            Badge.objects.filter(trigger_action="first_purchase").update(
-                prize_promo=freeshp,
-                prize_description="Free shipping on your next order over $49",
+        for name, description, point_cost, stock_quantity, item_type in items:
+            PointsMarketItem.objects.update_or_create(
+                name=name,
+                defaults={
+                    "description": description,
+                    "point_cost": point_cost,
+                    "stock_quantity": stock_quantity,
+                    "item_type": item_type,
+                    "is_active": True,
+                },
             )
 
-        xp_rules = [
-            ("registration_bonus", 5, True),
-            ("first_purchase",     100, True),
-            ("newsletter_signup",   25, True),
-            ("profile_complete",    50, True),
-            ("review_submitted",    15, False),
-            ("auction_won",        200, False),
-            ("referral",            75, False),
-            ("order_placed",        10, False),
-            ("daily_login",          5, False),
-            ("streak_30",          300, True),
-            ("wishlist_10",         30, True),
-            ("social_share_5",      50, True),
-        ]
-        for action_key, xp_amount, is_one_time in xp_rules:
-            XPRule.objects.update_or_create(
-                action_key=action_key,
-                defaults={"xp_amount": xp_amount, "is_one_time": is_one_time},
-            )
-
-        self.stdout.write("  ? Gamification (badges + XP rules)")
+        self.stdout.write("  ? Loyalty points market")
 
     # ------------------------------------------------
     def _seed_promos(self):
@@ -490,7 +461,7 @@ class Command(BaseCommand):
             ("WELCOME10",   "percent", 10,  None,  1, 0,    None,   True,  "10% off for new members"),
             ("FREESHIP",    "percent",  0,  None,  1, 49,   None,   True,  "Free shipping over $49"),
             ("SAVE20",      "percent", 20,  100,   1, 50,   None,   True,  "20% off orders over $50 (max 100 uses)"),
-            ("FLASH15",     "percent", 15,  None,  1, 0,    24,     True,  "Flash 15% off — 24h only"),
+            ("FLASH15",     "percent", 15,  None,  1, 0,    24,     True,  "Flash 15% off ï¿½ 24h only"),
             ("COLLECTOR5",  "fixed",    5,  None,  3, 30,   None,   True,  "$5 off repeat purchases"),
         ]
         for (code, dtype, value, max_uses, max_per_user, min_val, expires_h, active, _desc) in promos:
@@ -518,9 +489,9 @@ class Command(BaseCommand):
             pk=1,
             defaults={
                 "messages": [
-                    "FREE SHIPPING on orders over $49 — use code FREESHIP",
+                    "FREE SHIPPING on orders over $49 ï¿½ use code FREESHIP",
                     "LIMITED EDITIONS: New drops every Friday at noon",
-                    "EARN XP with every purchase — unlock exclusive badges",
+                    "LIMITED EDITIONS: New drops every Friday at noon",
                 ],
                 "is_active": True,
             },
@@ -545,10 +516,10 @@ class Command(BaseCommand):
                 )
 
         faqs = [
-            ("What materials are used?",        "Our posters are printed on premium aluminium using advanced UV printing technology — vibrant, durable, and scratch-resistant.", "general", 0),
+            ("What materials are used?",        "Our posters are printed on premium aluminium using advanced UV printing technology ï¿½ vibrant, durable, and scratch-resistant.", "general", 0),
             ("How long does shipping take?",    "Standard shipping: 5-7 business days. Express: 2-3 business days. We ship worldwide to 80+ countries.", "shipping", 1),
             ("Can I return my order?",          "100-day no-questions return policy. If you're not satisfied for any reason, contact us for a free return and full refund.", "returns", 2),
-            ("How does magnetic mounting work?","Every order includes 4 magnetic mounting pins. Press a pin into the wall, click the poster on — no tools, no damage, under 30 seconds.", "general", 3),
+            ("How does magnetic mounting work?","Every order includes 4 magnetic mounting pins. Press a pin into the wall, click the poster on ï¿½ no tools, no damage, under 30 seconds.", "general", 3),
             ("Do you ship internationally?",    "Yes! We ship to 80+ countries. International delivery typically takes 10-14 business days.", "shipping", 4),
             ("How do artist royalties work?",   "Artists set their own royalty on top of our base price. We handle production and fulfilment. Royalties are paid monthly.", "general", 5),
         ]

@@ -32,6 +32,20 @@ type DeliveryOpt = {
 type Step = "shipping" | "payment" | "review" | "confirmed"
 type Address = { id: number; label: string; line1: string; line2: string; city: string; state: string; zip_code: string; country: string; is_default: boolean }
 
+function discountLabel(cart: ReturnType<typeof useCart>["cart"]): string {
+  if (!cart) return "Discount"
+  if (cart.applied_discount_source === "tier") {
+    return `Sale tier bonus${cart.tier_discount_percent ? ` (+${parseFloat(cart.tier_discount_percent).toFixed(0)}%)` : ""}`
+  }
+  if (cart.applied_discount_source === "tier_voucher") {
+    return "Sale tier bonus + voucher"
+  }
+  if (cart.applied_discount_source === "voucher") {
+    return `Voucher discount${cart.promo_code_str ? ` (${cart.promo_code_str})` : ""}`
+  }
+  return `Discount${cart.promo_code_str ? ` (${cart.promo_code_str})` : ""}`
+}
+
 function shippingPriceLabel(opt: DeliveryOpt, currency: string): string {
   const amount = parseFloat(opt.price ?? (currency === "GEL" ? opt.price_gel : opt.price_usd) ?? "0")
   if (amount === 0) return "Free"
@@ -721,12 +735,17 @@ function ReviewStep({
             </div>
           )}
           {discount > 0 && (
-            <div className="flex justify-between text-[13px] text-dp-success">
-              <span>
-                Discount{cart?.promo_code_str ? ` (${cart.promo_code_str})` : ""}
-                {cart?.promo_products_only ? " · products" : ""}
-              </span>
-              <span className="font-semibold">−{formatPrice(discount)}</span>
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-[13px] text-dp-success">
+                <span>
+                  {discountLabel(cart)}
+                  {cart?.promo_products_only && cart.applied_discount_source === "voucher" ? " · products" : ""}
+                </span>
+                <span className="font-semibold">−{formatPrice(discount)}</span>
+              </div>
+              {cart?.discount_message && (
+                <p className="text-[11px] text-dp-text-tertiary leading-relaxed">{cart.discount_message}</p>
+              )}
             </div>
           )}
           {shippingLines.map((line, i) => (
@@ -873,12 +892,17 @@ function OrderAside({
               </div>
             )}
             {discount > 0 && (
-              <div className="flex justify-between text-[12px] text-dp-success">
-                <span>
-                  Discount{cart?.promo_code_str ? ` (${cart.promo_code_str})` : ""}
-                  {cart?.promo_products_only ? " · products" : ""}
-                </span>
-                <span>−{formatPrice(discount)}</span>
+              <div className="flex flex-col gap-1">
+                <div className="flex justify-between text-[12px] text-dp-success">
+                  <span>
+                    {discountLabel(cart)}
+                    {cart?.promo_products_only && cart.applied_discount_source === "voucher" ? " · products" : ""}
+                  </span>
+                  <span>−{formatPrice(discount)}</span>
+                </div>
+                {cart?.discount_message && (
+                  <p className="text-[11px] text-dp-text-tertiary leading-relaxed">{cart.discount_message}</p>
+                )}
               </div>
             )}
             {showShipping && (

@@ -6,6 +6,7 @@ import { ShoppingCart, Heart, Check, Loader2 } from "lucide-react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/cart-context"
+import { useLoyalty } from "@/contexts/gamification-context"
 import { useWishlist } from "@/contexts/wishlist-context"
 import { useLocale } from "@/contexts/locale-context"
 import { formatAmount } from "@/lib/product-pricing"
@@ -45,6 +46,7 @@ export default function ProductCard({ product: p }: ProductCardProps) {
   const href = `${lp}${productHref({ id: p.id, slug: p.slug, categorySlug: p.category })}`
   const router = useRouter()
   const { addItem } = useCart()
+  const { profile } = useLoyalty()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()
   const { formatPrice, currency } = useLocale()
   const [adding, setAdding]           = useState(false)
@@ -64,6 +66,13 @@ export default function ProductCard({ product: p }: ProductCardProps) {
     p.originalPrice && p.originalPrice > p.price
       ? Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)
       : null
+  const saleBonus = parseFloat(profile?.tier.sale_bonus_percent ?? profile?.tier.discount_percent ?? "0")
+  const nextSaleBonus = profile?.tier.next_sale_bonus_percent ? parseFloat(profile.tier.next_sale_bonus_percent) : null
+  const saleBonusText = saleBonus >= 10
+    ? "+10% loyalty bonus applies at checkout"
+    : saleBonus >= 5
+      ? `+5% loyalty bonus now · next level +${nextSaleBonus ?? 10}%`
+      : "Level up for +5% or +10% extra on sale"
 
   async function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault()
@@ -234,6 +243,9 @@ export default function ProductCard({ product: p }: ProductCardProps) {
         </div>
         {cartError && (
           <p className="text-[10px] text-dp-accent-cta leading-tight">{cartError}</p>
+        )}
+        {p.isSale && (
+          <p className="text-[10px] font-bold text-dp-accent-gold leading-tight">{saleBonusText}</p>
         )}
       </div>
     </Link>

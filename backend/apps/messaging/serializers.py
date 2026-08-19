@@ -35,7 +35,10 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ("id", "from_role", "sender_kind", "text", "sent_at", "read", "attachments", "sender_label")
+        fields = (
+            "id", "from_role", "sender_kind", "text", "sent_at", "read", "attachments",
+            "sender_label", "is_deleted",
+        )
         read_only_fields = ("id", "from_role", "sender_kind", "sent_at", "read", "sender_label")
 
     def get_sender_label(self, obj):
@@ -59,6 +62,13 @@ class MessageSerializer(serializers.ModelSerializer):
                 vendor = obj.conversation.vendor
             return f"{shop_label_for_vendor(vendor)} shop" if vendor else "Vendor"
         return None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.is_deleted:
+            data["text"] = "Message removed by a moderator."
+            data["attachments"] = []
+        return data
 
 
 class ConversationSerializer(serializers.ModelSerializer):

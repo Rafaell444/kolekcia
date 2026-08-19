@@ -132,14 +132,12 @@ class PromoCodeUsage(models.Model):
 class UserPromoGrant(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="promo_grants")
     promo = models.ForeignKey(PromoCode, on_delete=models.CASCADE, related_name="grants")
-    source_badge = models.ForeignKey(
-        "gamification.Badge", on_delete=models.SET_NULL, null=True, blank=True, related_name="promo_grants"
-    )
+    source = models.CharField(max_length=80, blank=True, default="")
     granted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "user_promo_grants"
-        unique_together = ("user", "promo", "source_badge")
+        unique_together = ("user", "promo", "source")
 
     def __str__(self):
         return f"{self.user.email} — {self.promo.code}"

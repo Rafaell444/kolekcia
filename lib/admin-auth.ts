@@ -1,3 +1,5 @@
+import { getDeviceRiskId } from "./device-risk"
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
 
 export type AdminVendor = {
@@ -70,13 +72,16 @@ export async function refreshAdminToken(): Promise<string | null> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh }),
       })
-      if (!res.ok) { clearAdminTokens(); return null }
+      if (!res.ok) {
+        if (res.status === 401) clearAdminTokens()
+        return getAdminToken()
+      }
       const data = await res.json() as { access: string; refresh?: string }
       setAdminTokens(data.access, data.refresh ?? refresh)
       return data.access
     } catch {
-      clearAdminTokens()
-      return null
+      // A temporary outage should not discard an otherwise valid admin session.
+      return getAdminToken()
     } finally {
       refreshPromise = null
     }
@@ -90,6 +95,7 @@ export async function adminFetch<T>(url: string, options: RequestInit = {}): Pro
   const token = getAdminToken()
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Device-ID": getDeviceRiskId(),
     ...(options.headers as Record<string, string> | undefined),
   }
   if (token) headers["Authorization"] = `Bearer ${token}`

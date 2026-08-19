@@ -15,7 +15,7 @@ const ka: MessageTree = {
     account: "ჩემი ანგარიში",
     inbox: "შეტყობინებები",
     wishlist: "სურვილების სია",
-    awards: "ჯილდოები და XP",
+    awards: "ლოიალობა",
     orders: "შეკვეთების ისტორია",
     profile: "პროფილი და შეკვეთები",
     signOut: "გასვლა",

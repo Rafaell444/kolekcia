@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useCart } from "@/contexts/cart-context"
-import { useGamification } from "@/contexts/gamification-context"
+import { useLoyalty } from "@/contexts/gamification-context"
 import { UnreadBadge } from "@/components/messaging/UnreadBadge"
 import { useInboxUnreadCount } from "@/hooks/use-inbox-unread"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
@@ -226,43 +226,77 @@ function ShopMegaMenu({
 // ── Mega nav item (desktop) ───────────────────────────────
 type MegaMenuKey = "shop" | null
 
-// ── XP levels (must match account/page.tsx LEVEL_ROADMAP) ──
-const LEVEL_XP: Record<number, number> = {
-  1: 150, 2: 300, 3: 600, 4: 1000, 5: 1500,
-  6: 2000, 7: 3000, 8: 4500, 9: 10000, 10: Infinity,
-}
-
-function XpBar() {
+function LoyaltyBar() {
   const { user } = useAuth()
-  const { profile } = useGamification()
+  const { profile } = useLoyalty()
   const lp = useLocalePrefix()
 
   if (!user || !profile) return null
 
-  const xp     = profile.xp ?? 0
-  const level  = profile.level ?? 1
-  const nextXp = LEVEL_XP[level] ?? Infinity
-  const pct    = level >= 10 ? 100 : Math.min(100, Math.round((xp / nextXp) * 100))
+  const tier = profile.tier
+  const pct = tier.progress_percent
+  const bonus = parseFloat(tier.sale_bonus_percent ?? tier.discount_percent ?? "0")
+  const nextBonus = tier.next_sale_bonus_percent ? parseFloat(tier.next_sale_bonus_percent) : null
+  const cta = bonus >= 10
+    ? "You have +10% extra on sale products"
+    : bonus >= 5
+      ? `${tier.points_to_next.toLocaleString()} points to unlock +${nextBonus ?? 10}% on sale products`
+      : "Unlock +5% or +10% extra on sale products"
 
   return (
     <Link
-      href={`${lp}/account?tab=badges`}
+      href={`${lp}/account?tab=loyalty`}
       className="hidden md:flex items-center gap-2 px-2.5 py-1.5 bg-dp-bg-elevated border border-dp-border rounded-sm hover:border-dp-border-hover transition-colors group"
-      title={`Level ${level} · ${xp} XP · ${level < 10 ? `${nextXp - xp} XP to next level` : "Max level"}`}
+      title={`${tier.label} tier · ${profile.spendable_points.toLocaleString()} current points · ${(profile.pending_points ?? 0).toLocaleString()} pending points · ${cta}`}
     >
-      <Zap size={12} className="text-dp-accent-cta shrink-0" />
+      <Award size={12} className="text-dp-accent-gold shrink-0" />
       <span className="text-[11px] font-bold text-dp-text-secondary group-hover:text-dp-text-primary transition-colors whitespace-nowrap">
-        Lv.{level}
+        {tier.label}
       </span>
       <div className="w-16 h-1.5 rounded-full bg-dp-bg-base overflow-hidden">
         <div
-          className="h-full rounded-full bg-dp-accent-cta transition-all duration-500"
+          className="h-full rounded-full bg-dp-accent-gold transition-all duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>
       <span className="text-[10px] text-dp-text-tertiary tabular-nums whitespace-nowrap">
-        {level < 10 ? `${xp}/${nextXp}` : "MAX"}
+        {profile.spendable_points.toLocaleString()} pts
       </span>
+      <span className="hidden xl:inline text-[10px] text-dp-accent-gold whitespace-nowrap">
+        +{bonus.toFixed(0)}% sale
+      </span>
+    </Link>
+  )
+}
+
+function MobileLoyaltyStrip() {
+  const { user } = useAuth()
+  const { profile } = useLoyalty()
+  const lp = useLocalePrefix()
+
+  if (!user || !profile) return null
+
+  const tier = profile.tier
+  const bonus = parseFloat(tier.sale_bonus_percent ?? tier.discount_percent ?? "0")
+
+  return (
+    <Link
+      href={`${lp}/account?tab=loyalty`}
+      className="lg:hidden flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm border border-dp-accent-gold/35 bg-gradient-to-r from-dp-accent-gold/15 via-dp-bg-elevated to-dp-accent-cta/10 px-2 py-1.5 shadow-sm"
+      title={`${tier.label} tier · ${profile.spendable_points.toLocaleString()} current points · ${(profile.pending_points ?? 0).toLocaleString()} pending points`}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <Award size={13} className="text-dp-accent-gold shrink-0" />
+        <div className="min-w-0">
+          <p className="truncate text-[9px] font-black uppercase tracking-widest text-dp-accent-gold leading-none">{tier.label}</p>
+          <p className="mt-0.5 truncate text-[10px] text-dp-text-secondary leading-none">
+            {profile.spendable_points.toLocaleString()} pts
+          </p>
+        </div>
+      </div>
+      <div className="h-1.5 w-10 shrink-0 overflow-hidden rounded-full bg-dp-bg-base">
+        <div className="h-full rounded-full bg-dp-accent-gold" style={{ width: `${tier.progress_percent}%` }} />
+      </div>
     </Link>
   )
 }
@@ -406,7 +440,7 @@ function AccountMenu() {
                 { href: `${lp}/account`,          icon: <User    size={13} />, label: t("nav.profile") },
                 { href: `${lp}/inbox`,            icon: <MessageSquare size={13} />, label: t("nav.inbox") },
                 { href: `${lp}/account/wishlist`, icon: <Heart   size={13} />, label: t("nav.wishlist") },
-                { href: `${lp}/account/awards`,   icon: <Award   size={13} />, label: t("nav.awards") },
+                { href: `${lp}/account/awards`,   icon: <Award   size={13} />, label: "Loyalty" },
                 { href: `${lp}/account/orders`,   icon: <Package size={13} />, label: t("nav.orders") },
                 ...(user.role === "staff" ? [{ href: "/admin", icon: <Settings size={13} />, label: "Admin Panel" }] : []),
               ].map(({ href, icon, label }) => (
@@ -550,6 +584,8 @@ function SiteHeader({
           <span className="font-display text-xl text-dp-text-primary tracking-wider hidden sm:block">KOLEQCIA</span>
         </Link>
 
+        <MobileLoyaltyStrip />
+
         {/* Desktop Nav */}
         <nav className="hidden lg:flex items-center gap-6" aria-label="Main navigation">
           <MegaNavItem label={t("nav.shop")} menuKey="shop" href={`${lp}/catalog`} activeMenu={activeMenu} onEnter={handleEnter} onLeave={handleLeave} isActive={pathname.includes("/catalog")} />
@@ -566,7 +602,7 @@ function SiteHeader({
           <div className="hidden lg:block">
             <LocaleSwitcher />
           </div>
-          <XpBar />
+          <LoyaltyBar />
           <MobileHeaderSearch hidden={mobileOpen} />
           <DesktopSearch />
           <Link
@@ -815,7 +851,7 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
     /^\/auctions\/[^/]+/.test(path)
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+      <div className="min-h-screen flex flex-col bg-background">
       {!mobileOpen && <PromoBanner />}
       <SiteHeader mobileOpen={mobileOpen} onMobileOpenChange={setMobileOpen} />
       <main className="flex-1">{children}</main>

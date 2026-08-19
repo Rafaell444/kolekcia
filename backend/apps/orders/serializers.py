@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from .models import Cart, CartItem, Order, OrderItem, OrderShipment, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
 from apps.products.serializers import ProductVariantSerializer, SizeVariantSerializer
@@ -86,43 +88,68 @@ class CartSerializer(serializers.ModelSerializer):
     discount = serializers.SerializerMethodField()
     promo_percent = serializers.SerializerMethodField()
     promo_products_only = serializers.SerializerMethodField()
+    tier_discount_percent = serializers.SerializerMethodField()
+    tier_discount = serializers.SerializerMethodField()
+    voucher_discount = serializers.SerializerMethodField()
+    applied_discount_source = serializers.SerializerMethodField()
+    ignored_discount_source = serializers.SerializerMethodField()
+    discount_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
         fields = (
             "id", "items", "subtotal", "promo_code_str",
             "discount", "promo_percent", "promo_products_only",
+            "tier_discount_percent", "tier_discount", "voucher_discount",
+            "applied_discount_source", "ignored_discount_source", "discount_message",
         )
 
-    def get_discount(self, obj):
-        from decimal import Decimal
-        from apps.creators.services import product_subtotal_from_cart
+    def _voucher_discount(self, obj):
+        return self._discount_decision(obj).voucher_discount
 
-        promo = obj.promo_code
-        if not promo:
-            return "0.00"
-        if promo.owner_id:
-            amount = promo.calculate_product_discount(product_subtotal_from_cart(obj))
-        elif promo.is_scoped:
-            items_with_products = []
-            for item in obj.items.select_related(
-                "variant__product", "size_variant__product"
-            ):
-                product = (
-                    item.size_variant.product if item.size_variant_id
-                    else item.variant.product if item.variant_id
-                    else None
-                )
-                if product:
-                    unit = Decimal(item.unit_price or 0)
-                    if unit == 0:
-                        from apps.orders.pricing import resolve_unit_price
-                        unit = resolve_unit_price(item.variant, item.size_variant, item.currency)
-                    items_with_products.append((product, unit * item.quantity))
-            amount = promo.calculate_scoped_discount(items_with_products)
-        else:
-            amount = promo.calculate_discount(Decimal(obj.subtotal))
-        return str(amount.quantize(Decimal("0.01")))
+    def _discount_decision(self, obj):
+        from decimal import Decimal
+        from apps.gamification.services import (
+            CheckoutDiscountCalculator,
+            calculate_tier_eligible_subtotal,
+            calculate_voucher_discount_for_lines,
+            is_sale_product_line,
+        )
+        from apps.orders.pricing import resolve_unit_price
+
+        discount_base = Decimal(obj.subtotal)
+        tier_lines = []
+        for item in obj.items.select_related(
+            "variant__product",
+            "size_variant__product",
+        ).prefetch_related(
+            "variant__product__categories",
+            "size_variant__product__categories",
+        ):
+            product = (
+                item.size_variant.product if item.size_variant_id
+                else item.variant.product if item.variant_id
+                else None
+            )
+            if product:
+                unit = Decimal(item.unit_price or 0)
+                if unit == 0:
+                    unit = resolve_unit_price(item.variant, item.size_variant, item.currency)
+                is_sale = is_sale_product_line(product, item.variant, item.size_variant, item.currency)
+                tier_lines.append((product, unit * item.quantity, is_sale))
+        voucher_discount = calculate_voucher_discount_for_lines(obj.promo_code, tier_lines)
+        tier_eligible_subtotal, tier_info = calculate_tier_eligible_subtotal(obj.user, tier_lines)
+        return CheckoutDiscountCalculator(
+            obj.user,
+            discount_base,
+            promo=obj.promo_code,
+            voucher_discount=voucher_discount,
+            tier_eligible_subtotal=tier_eligible_subtotal,
+            tier_info=tier_info,
+        ).evaluate()
+
+    def get_discount(self, obj):
+        return str(self._discount_decision(obj).discount.quantize(Decimal("0.01")))
 
     def get_promo_percent(self, obj):
         promo = obj.promo_code
@@ -133,6 +160,24 @@ class CartSerializer(serializers.ModelSerializer):
     def get_promo_products_only(self, obj):
         promo = obj.promo_code
         return bool(promo and (promo.owner_id or promo.is_scoped))
+
+    def get_tier_discount_percent(self, obj):
+        return str(self._discount_decision(obj).tier_percent)
+
+    def get_tier_discount(self, obj):
+        return str(self._discount_decision(obj).tier_discount.quantize(Decimal("0.01")))
+
+    def get_voucher_discount(self, obj):
+        return str(self._discount_decision(obj).voucher_discount.quantize(Decimal("0.01")))
+
+    def get_applied_discount_source(self, obj):
+        return self._discount_decision(obj).source
+
+    def get_ignored_discount_source(self, obj):
+        return self._discount_decision(obj).ignored_source
+
+    def get_discount_message(self, obj):
+        return self._discount_decision(obj).message
 
 
 class AddToCartSerializer(serializers.Serializer):

@@ -7,9 +7,10 @@ import { adminFetch } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
-import { Send, MessageSquare, Loader2, Paperclip, X, Play, Check, CheckCheck } from "lucide-react"
+import { Send, MessageSquare, Loader2, Paperclip, X, Play, Check, CheckCheck, Trash2, VolumeX } from "lucide-react"
 import { getAdminToken, getAdminUser, refreshAdminToken } from "@/lib/admin-auth"
 import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
+import { getDeviceRiskId } from "@/lib/device-risk"
 
 type Attachment = { id: string; url: string; media_type: string; original_name: string }
 type Message = {
@@ -21,6 +22,7 @@ type Message = {
   sent_at: string
   read: boolean
   attachments: Attachment[]
+  is_deleted?: boolean
 }
 type Conversation = {
   id: string
@@ -74,7 +76,7 @@ function AttachmentPreview({ att }: { att: Attachment }) {
 
 function mergeMsg(msgs: Message[], newMsg: Message): Message[] {
   const id = String(newMsg.id)
-  if (msgs.some((m) => String(m.id) === id)) return msgs
+  if (msgs.some((m) => String(m.id) === id)) return msgs.map((message) => String(message.id) === id ? newMsg : message)
   return [...msgs, newMsg]
 }
 
@@ -86,6 +88,7 @@ export default function AdminInboxPage(): React.ReactElement {
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [sending, setSending]   = useState(false)
   const [loading, setLoading]   = useState(true)
+  const [moderationNotice, setModerationNotice] = useState("")
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const activeIdRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -220,10 +223,15 @@ export default function AdminInboxPage(): React.ReactElement {
         pendingFiles.forEach((f) => form.append("files", f))
         const res = await fetch(`${base}/messaging/conversations/${activeId}/messages/`, {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            "X-Device-ID": getDeviceRiskId(),
+          },
           body: form,
         })
-        msg = await res.json() as Message
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw { status: res.status, data }
+        msg = data as Message
       } else {
         msg = await adminFetch<Message>(`/messaging/conversations/${activeId}/messages/`, {
           method: "POST",
@@ -240,6 +248,39 @@ export default function AdminInboxPage(): React.ReactElement {
       requestAnimationFrame(scrollChatToBottom)
     } catch { /* noop */ }
     finally { setSending(false) }
+  }
+
+  async function restrictCustomer(action: "30" | "300" | "review") {
+    const active = convs.find((conversation) => String(conversation.id) === String(activeId))
+    if (!active) return
+    const reason = window.prompt("Moderation reason", "Inbox spam protection.")
+    if (!reason) return
+    await adminFetch("/messaging/moderation/restrictions/", {
+      method: "POST",
+      body: JSON.stringify({
+        user_email: active.customer_email,
+        channel: "inbox",
+        duration_seconds: action === "30" || action === "300" ? Number(action) : null,
+        requires_admin_review: action === "review",
+        reason,
+      }),
+    })
+    setModerationNotice("Customer restriction applied and recorded.")
+  }
+
+  async function deleteMessage(message: Message) {
+    const reason = window.prompt("Deletion reason", "Removed by inbox moderator.")
+    if (!reason) return
+    const updated = await adminFetch<Message>(`/messaging/moderation/messages/inbox/${message.id}/delete/`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    })
+    setConvs((current) => current.map((conversation) =>
+      String(conversation.id) === String(activeId)
+        ? { ...conversation, messages: mergeMsg(conversation.messages ?? [], updated) }
+        : conversation
+    ))
+    setModerationNotice("Message removed and retained in the audit history.")
   }
 
   const active = convs.find((c) => String(c.id) === activeId) ?? null
@@ -330,7 +371,14 @@ export default function AdminInboxPage(): React.ReactElement {
                     </span>
                   )}
                 </div>
+                <div className="hidden lg:flex flex-wrap justify-end gap-1">
+                  <button type="button" onClick={() => void restrictCustomer("30")} className="px-2 py-1 border border-dp-border text-[9px] uppercase rounded-sm"><VolumeX size={10} className="inline mr-1" />30s</button>
+                  <button type="button" onClick={() => void restrictCustomer("300")} className="px-2 py-1 border border-dp-border text-[9px] uppercase rounded-sm">Mute 5m</button>
+                  <button type="button" onClick={() => void restrictCustomer("review")} className="px-2 py-1 border border-amber-500/50 text-amber-400 text-[9px] uppercase rounded-sm">Review hold</button>
+                </div>
               </div>
+
+              {moderationNotice && <p className="px-6 py-2 border-b border-green-500/20 bg-green-500/10 text-green-400 text-[11px]">{moderationNotice}</p>}
 
               {/* Product context */}
               {active.product_id && active.product_title && (
@@ -361,7 +409,7 @@ export default function AdminInboxPage(): React.ReactElement {
                   const attachments = m.attachments ?? []
                   return (
                     <div key={m.id} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[75%] px-4 py-2.5 rounded-sm text-[13px] leading-relaxed ${
+                      <div className={`group relative max-w-[75%] px-4 py-2.5 rounded-sm text-[13px] leading-relaxed ${
                         isAdmin
                           ? "bg-dp-accent-cta text-white"
                           : "bg-dp-bg-elevated border border-dp-border text-dp-text-primary"
@@ -376,7 +424,7 @@ export default function AdminInboxPage(): React.ReactElement {
                             {m.sender_label}
                           </p>
                         )}
-                        {hasText && <p className="mb-1">{m.text}</p>}
+                        {hasText && <p className={`mb-1 ${m.is_deleted ? "italic opacity-70" : ""}`}>{m.text}</p>}
                         {attachments.length > 0 && (
                           <div className="flex flex-wrap gap-2 mt-1">
                             {attachments.map((att) => (
@@ -395,6 +443,11 @@ export default function AdminInboxPage(): React.ReactElement {
                               : <Check size={13} className="text-white/60" aria-label="Sent" />
                           )}
                         </p>
+                        {!m.is_deleted && (
+                          <button type="button" onClick={() => void deleteMessage(m)} className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 text-red-400" aria-label="Delete message">
+                            <Trash2 size={11} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   )

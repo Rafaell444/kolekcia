@@ -35,6 +35,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="customer")
     avatar = models.URLField(blank=True)
     google_sub = models.CharField(max_length=255, unique=True, null=True, blank=True, db_index=True)
+    spendable_points = models.IntegerField(default=0)
+    lifetime_points = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)

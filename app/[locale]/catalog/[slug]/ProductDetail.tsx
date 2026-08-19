@@ -7,6 +7,7 @@ import { useRouter, useParams } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
 import { apiFetch, authFetch, getApiErrorMessage } from "@/lib/api"
 import { useCart } from "@/contexts/cart-context"
+import { useLoyalty } from "@/contexts/gamification-context"
 import { useWishlist } from "@/contexts/wishlist-context"
 import { useLocale } from "@/contexts/locale-context"
 import { getAccessToken } from "@/lib/auth-storage"
@@ -237,6 +238,7 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const localeParam = typeof params?.locale === "string" ? params.locale : ""
   const locale = isValidLocale(localeParam) ? localeParam : DEFAULT_LOCALE
   const { addItem } = useCart()
+  const { profile } = useLoyalty()
   const { isWishlisted, toggle: toggleWishlist } = useWishlist()
   const { formatPrice, currency, rates, detectedCountry } = useLocale()
   const formatLocalized = (amount: number | string | null | undefined) => formatAmount(amount, currency)
@@ -434,6 +436,13 @@ export default function ProductDetail({ product, categoryContext }: { product: A
   const discount = originalPrice != null && originalPrice > basePrice
     ? Math.round(((originalPrice - basePrice) / originalPrice) * 100)
     : null
+  const saleBonus = parseFloat(profile?.tier.sale_bonus_percent ?? profile?.tier.discount_percent ?? "0")
+  const nextSaleBonus = profile?.tier.next_sale_bonus_percent ? parseFloat(profile.tier.next_sale_bonus_percent) : null
+  const saleBonusText = saleBonus >= 10
+    ? "Your level adds +10% more on this sale product at checkout."
+    : saleBonus >= 5
+      ? `Your level adds +5% more here. Next level gives +${nextSaleBonus ?? 10}% on sale products.`
+      : "Level up to get +5% or +10% extra on sale products like this."
   const creatorName = (product.artist_name || product.vendor_name || "").trim()
   const creatorSearch = creatorName || product.title
 
@@ -704,6 +713,12 @@ export default function ProductDetail({ product, categoryContext }: { product: A
               )}
               {discount != null && discount > 0 && <span className="text-sm font-bold text-dp-accent-cta">Save {discount}%</span>}
             </div>
+            {product.is_sale && (
+              <div className="border border-dp-accent-gold/40 bg-dp-accent-gold/10 rounded-sm px-4 py-3">
+                <p className="text-[12px] font-black uppercase tracking-widest text-dp-accent-gold">Loyalty sale bonus</p>
+                <p className="text-[13px] text-dp-text-secondary mt-1">{saleBonusText}</p>
+              </div>
+            )}
 
             <p className="text-[14px] text-dp-text-secondary leading-relaxed whitespace-pre-wrap">
               {product.description

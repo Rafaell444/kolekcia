@@ -75,7 +75,12 @@ function useStableWs(
       // If closed immediately without receiving any message (auth rejected), try refresh
       if (!wasAccepted && !hasTriedRefresh.current && refreshToken) {
         hasTriedRefresh.current = true
-        const newToken = await refreshToken()
+        let newToken: string | null = null
+        try {
+          newToken = await refreshToken()
+        } catch {
+          newToken = null
+        }
         if (newToken) {
           // Retry immediately with refreshed token
           reconnectTimer.current = setTimeout(() => void connect(), 100)

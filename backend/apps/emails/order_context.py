@@ -192,6 +192,34 @@ def render_shipping_address_html(order) -> str:
     )
 
 
+def loyalty_points_context(order) -> dict:
+    try:
+        from apps.gamification.models import PointTransaction
+        earned = list(
+            PointTransaction.objects.filter(
+                order=order,
+                transaction_type=PointTransaction.TYPE_EARNED,
+            )
+        )
+    except Exception:
+        earned = []
+    points = sum(tx.points for tx in earned)
+    has_available = any(tx.status == "available" for tx in earned)
+    status = "spendable" if points > 0 and has_available else "pending until shipment"
+    message = (
+        f"You earned {points} Koleqcia points from this order. They are already spendable in your Points Market."
+        if points > 0 and has_available
+        else f"You earned {points} Koleqcia points from this order. They will become spendable when your order ships."
+        if points > 0
+        else "No loyalty points were earned for this order."
+    )
+    return {
+        "points_earned": str(points),
+        "points_status": status,
+        "points_message": message,
+    }
+
+
 def build_shipment_email_context(order, shipment) -> dict:
     """Context for per-vendor shipment notification emails."""
     currency = order.currency or "USD"
@@ -240,7 +268,7 @@ def build_shipment_email_context(order, shipment) -> dict:
         + "".join(rows) + "</table>"
     )
 
-    return {
+    context = {
         "customer_name": order.shipping_name or "there",
         "order_number": order.order_number,
         "vendor_name": vendor_name,
@@ -254,6 +282,8 @@ def build_shipment_email_context(order, shipment) -> dict:
         "delivery_label": shipment.delivery_label or "",
         "delivery_price": _money(shipment.delivery_price, currency),
     }
+    context.update(loyalty_points_context(order))
+    return context
 
 
 def build_order_email_context(order) -> dict:
@@ -295,6 +325,7 @@ def build_order_email_context(order) -> dict:
         "tracking_code": tracking or "—",
         "tracking_info": tracking_info,
     }
+    context.update(loyalty_points_context(order))
 
     # Include per-vendor shipment info if available
     shipments = list(order.shipments.select_related("vendor").all()) if hasattr(order, "shipments") else []

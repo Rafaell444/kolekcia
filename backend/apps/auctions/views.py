@@ -29,6 +29,17 @@ def resolve_auction(lookup: str) -> Auction:
 class BidThrottle(ScopedRateThrottle):
     scope = "bid"
 
+    def allow_request(self, request, view):
+        allowed = super().allow_request(request, view)
+        if not allowed:
+            from apps.messaging.moderation import log_risk_event
+
+            log_risk_event(
+                "bid_rate_limited", "rejected", user=request.user, source=request,
+                reason="Bid request rate exceeded.", metadata={"lookup": view.kwargs.get("lookup")},
+            )
+        return allowed
+
 
 class AuctionListView(generics.ListAPIView):
     serializer_class = AuctionSerializer
@@ -58,9 +69,31 @@ class PlaceBidView(APIView):
     @transaction.atomic
     def post(self, request, lookup):
         serializer = PlaceBidSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            from apps.messaging.moderation import log_risk_event
+
+            log_risk_event(
+                "bid_rejected", "rejected", user=request.user, source=request,
+                reason="Invalid bid payload.", metadata={"lookup": lookup, "errors": serializer.errors},
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         submitted_amount = serializer.validated_data["amount"]
         submitted_currency = serializer.validated_data["currency"]
+        try:
+            auction = Auction.objects.select_for_update().get(pk=resolve_auction(lookup).pk)
+        except Auction.DoesNotExist:
+            return Response({"detail": "Auction not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.messaging.moderation import log_risk_event
+
+        def reject(detail, response_status):
+            log_risk_event(
+                "bid_rejected", "rejected", user=request.user, auction=auction,
+                vendor=auction.vendor, source=request, reason=detail,
+                metadata={"submitted_amount": str(submitted_amount), "currency": submitted_currency},
+            )
+            return Response({"detail": detail}, status=response_status)
+
         fx_rate = None
         amount = submitted_amount
         if submitted_currency == "GEL":
@@ -68,35 +101,30 @@ class PlaceBidView(APIView):
 
             fx_rate = get_usd_gel_rate()
             if fx_rate is None:
-                return Response(
-                    {"detail": "The official NBG exchange rate is temporarily unavailable. Please try again shortly."},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                return reject(
+                    "The official NBG exchange rate is temporarily unavailable. Please try again shortly.",
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
             amount = gel_to_usd(submitted_amount, fx_rate)
 
-        try:
-            auction = Auction.objects.select_for_update().get(pk=resolve_auction(lookup).pk)
-        except Auction.DoesNotExist:
-            return Response({"detail": "Auction not found."}, status=status.HTTP_404_NOT_FOUND)
-
         if auction.status != Auction.STATUS_ACTIVE:
-            return Response({"detail": "This auction is not active."}, status=status.HTTP_400_BAD_REQUEST)
+            return reject("This auction is not active.", status.HTTP_400_BAD_REQUEST)
 
         if auction.is_upcoming():
-            return Response({"detail": "Bidding has not started yet."}, status=status.HTTP_400_BAD_REQUEST)
+            return reject("Bidding has not started yet.", status.HTTP_400_BAD_REQUEST)
 
         if auction.ends_at <= timezone.now():
             auction.finalize_if_ended()
-            return Response({"detail": "This auction has ended."}, status=status.HTTP_400_BAD_REQUEST)
+            return reject("This auction has ended.", status.HTTP_400_BAD_REQUEST)
 
         if AuctionBidderBan.objects.filter(
             Q(vendor__isnull=True) | Q(vendor_id=auction.vendor_id),
             user=request.user,
             is_active=True,
         ).exists():
-            return Response(
-                {"detail": "Your account is not eligible to bid in this seller's auctions."},
-                status=status.HTTP_403_FORBIDDEN,
+            return reject(
+                "Your account is not eligible to bid in this seller's auctions.",
+                status.HTTP_403_FORBIDDEN,
             )
 
         current = auction.current_bid
@@ -105,9 +133,9 @@ class PlaceBidView(APIView):
             if submitted_currency == "GEL":
                 from .services import usd_to_gel
                 current_display = usd_to_gel(current, fx_rate)
-            return Response(
-                {"detail": f"Your bid must be higher than {current_display:.2f} {submitted_currency}."},
-                status=status.HTTP_400_BAD_REQUEST,
+            return reject(
+                f"Your bid must be higher than {current_display:.2f} {submitted_currency}.",
+                status.HTTP_400_BAD_REQUEST,
             )
 
         if amount < current + 1:
@@ -115,9 +143,9 @@ class PlaceBidView(APIView):
             if submitted_currency == "GEL":
                 from .services import usd_to_gel
                 minimum_display = usd_to_gel(current + 1, fx_rate)
-            return Response(
-                {"detail": f"Bid at least {minimum_display:.2f} {submitted_currency}."},
-                status=status.HTTP_400_BAD_REQUEST,
+            return reject(
+                f"Bid at least {minimum_display:.2f} {submitted_currency}.",
+                status.HTTP_400_BAD_REQUEST,
             )
 
         AuctionBid.objects.create(
@@ -130,12 +158,11 @@ class PlaceBidView(APIView):
         )
         auction.refresh_live_flag()
         auction.save(update_fields=["is_live"])
-
-        try:
-            from apps.gamification.services import award_xp
-            award_xp(request.user, "bid_placed")
-        except Exception:
-            pass
+        log_risk_event(
+            "bid_placed", "allowed", user=request.user, auction=auction,
+            vendor=auction.vendor, source=request,
+            metadata={"amount": str(amount), "submitted_amount": str(submitted_amount), "currency": submitted_currency},
+        )
 
         auction.refresh_from_db()
         return Response(
@@ -192,7 +219,25 @@ class AuctionChatView(APIView):
         if not text:
             return Response({"detail": "Message cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
 
+        from apps.messaging.moderation import enforce_message, log_risk_event
+
+        decision = enforce_message(
+            request.user, text, "auction", auction=auction, vendor=auction.vendor, source=request
+        )
+        if not decision.allowed:
+            response = Response(
+                {"detail": decision.detail, "retry_after": decision.retry_after},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+            if decision.retry_after:
+                response["Retry-After"] = str(decision.retry_after)
+            return response
+
         msg = AuctionChatMessage.objects.create(auction=auction, user=request.user, text=text)
+        log_risk_event(
+            "chat_message", "allowed", user=request.user, auction=auction,
+            vendor=auction.vendor, source=request, metadata={"channel": "auction"},
+        )
 
         from asgiref.sync import async_to_sync
         from channels.layers import get_channel_layer

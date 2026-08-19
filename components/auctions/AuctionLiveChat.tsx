@@ -1,8 +1,8 @@
 "use client"
 
 import React, { useEffect, useState, useRef, useCallback } from "react"
-import { MessageSquare, Send, Loader2 } from "lucide-react"
-import { apiFetch, authFetch, getApiErrorMessage } from "@/lib/api"
+import { MessageSquare, Send, Loader2, Flag } from "lucide-react"
+import { apiFetch, authFetch, getApiErrorMessage, refreshAccessToken } from "@/lib/api"
 import { getAccessToken } from "@/lib/auth-storage"
 
 type ChatMessage = {
@@ -10,6 +10,7 @@ type ChatMessage = {
   user_name: string
   text: string
   created_at: string
+  is_deleted?: boolean
 }
 
 type AuctionLiveChatProps = {
@@ -29,6 +30,7 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState("")
+  const [reported, setReported] = useState<Set<number>>(new Set())
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const prevMsgCount = useRef(0)
@@ -58,37 +60,45 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
 
   useEffect(() => {
     if (!isLive) return
-
-    const token = getAccessToken()
-    if (!token) return
-
     const url = `${wsBaseUrl()}/ws/auctions/${auctionId}/`
-    let ws: WebSocket
-    try {
-      ws = new WebSocket(url, ["access_token", token])
-    } catch {
-      ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`)
-    }
-    wsRef.current = ws
+    let stopped = false
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-    ws.onmessage = (event) => {
+    async function connect(refresh = false) {
+      const token = refresh ? await refreshAccessToken() : getAccessToken()
+      if (!token || stopped) return
+      let ws: WebSocket
       try {
-        const msg = JSON.parse(event.data as string) as ChatMessage
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev
-          return [...prev, msg]
-        })
+        ws = new WebSocket(url, ["access_token", token])
       } catch {
-        // ignore malformed frames
+        ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`)
+      }
+      wsRef.current = ws
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data as string) as ChatMessage & { type?: string; detail?: string }
+          if (payload.type === "chat_error") {
+            setError(payload.detail ?? "Message rejected.")
+            return
+          }
+          setMessages((prev) => {
+            const existing = prev.findIndex((message) => message.id === payload.id)
+            if (existing < 0) return [...prev, payload]
+            return prev.map((message, index) => index === existing ? payload : message)
+          })
+        } catch { /* ignore malformed frames */ }
+      }
+      ws.onerror = () => ws.close()
+      ws.onclose = () => {
+        if (!stopped) reconnectTimer = setTimeout(() => void connect(true), 1000)
       }
     }
-
-    ws.onerror = () => {
-      // REST fallback still works for send
-    }
+    void connect()
 
     return () => {
-      ws.close()
+      stopped = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      wsRef.current?.close()
       wsRef.current = null
     }
   }, [auctionId, isLive])
@@ -106,22 +116,30 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
     setSending(true)
     setError("")
     try {
-      const viaWs = wsRef.current?.readyState === WebSocket.OPEN
-      if (viaWs) {
-        wsRef.current?.send(JSON.stringify({ text: trimmed }))
-        setText("")
-      } else {
-        const msg = await authFetch<ChatMessage>(`/auctions/${auctionId}/chat/`, {
-          method: "POST",
-          body: JSON.stringify({ text: trimmed }),
-        })
-        setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
-        setText("")
-      }
+      const msg = await authFetch<ChatMessage>(`/auctions/${auctionId}/chat/`, {
+        method: "POST",
+        body: JSON.stringify({ text: trimmed }),
+      })
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
+      setText("")
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not send message."))
     } finally {
       setSending(false)
+    }
+  }
+
+  async function reportMessage(message: ChatMessage) {
+    const reason = window.prompt("Why are you reporting this message?")
+    if (!reason?.trim()) return
+    try {
+      await authFetch("/messaging/reports/", {
+        method: "POST",
+        body: JSON.stringify({ target_type: "auction", target_id: message.id, reason: reason.trim() }),
+      })
+      setReported((current) => new Set(current).add(message.id))
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not report message."))
     }
   }
 
@@ -145,10 +163,17 @@ export default function AuctionLiveChat({ auctionId, isLive }: AuctionLiveChatPr
           <p className="text-center text-[12px] text-dp-text-tertiary py-8">No messages yet. Say hello!</p>
         ) : (
           messages.map((m) => (
-            <div key={m.id} className="text-[12px]">
+            <div key={m.id} className="text-[12px] group flex items-start gap-1">
+              <div className="flex-1">
               <span className="font-semibold text-dp-text-primary">{m.user_name}</span>
               <span className="text-dp-text-tertiary mx-1.5">·</span>
-              <span className="text-dp-text-secondary">{m.text}</span>
+              <span className={m.is_deleted ? "text-dp-text-tertiary italic" : "text-dp-text-secondary"}>{m.text}</span>
+              </div>
+              {!m.is_deleted && getAccessToken() && (
+                <button type="button" disabled={reported.has(m.id)} onClick={() => void reportMessage(m)} className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-dp-text-tertiary hover:text-dp-accent-cta disabled:opacity-40" aria-label="Report message">
+                  <Flag size={11} />
+                </button>
+              )}
             </div>
           ))
         )}

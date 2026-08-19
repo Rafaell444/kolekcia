@@ -8,7 +8,7 @@ import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save, CalendarC
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
 
-type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled"
+type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded"
 
 type OrderItem = {
   id: number
@@ -104,6 +104,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   shipped:    { label: "Shipped",    color: "text-dp-accent-cta",   bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30",    Icon: Truck       },
   delivered:  { label: "Delivered",  color: "text-dp-success",      bg: "bg-dp-success/10 border-dp-success/30",          Icon: CheckCircle },
   cancelled:  { label: "Cancelled",  color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",             Icon: XCircle     },
+  refunded:   { label: "Refunded",   color: "text-orange-400",      bg: "bg-orange-400/10 border-orange-400/30",           Icon: XCircle     },
 }
 
 const SHIPMENT_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {

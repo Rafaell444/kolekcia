@@ -134,6 +134,7 @@ class CartStockTests(TestCase):
         order = Order.objects.get()
         self.assertEqual(order.delivery_type, f"vendor-{shipping.id}")
         self.assertEqual(str(order.delivery_price), "12.00")
+        self.assertEqual(str(order.discount), "0.00")
         self.assertEqual(str(order.total), "112.00")
 
     def test_non_sculpi_vendor_can_use_free_self_pickup(self):
@@ -229,6 +230,8 @@ class CartStockTests(TestCase):
 
         self.assertEqual(checkout_response.status_code, 400)
         self.assertEqual(checkout_response.data["detail"], "Self-pickup is not available for this vendor.")
+        self.variant.refresh_from_db()
+        self.assertEqual(self.variant.stock, 1)
 
     def test_checkout_retry_with_same_idempotency_key_returns_one_order(self):
         self.client.post(

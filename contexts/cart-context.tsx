@@ -41,6 +41,12 @@ export type CartType = {
   discount?: string
   promo_percent?: string | null
   promo_products_only?: boolean
+  tier_discount_percent?: string
+  tier_discount?: string
+  voucher_discount?: string
+  applied_discount_source?: "tier" | "voucher" | "tier_voucher" | "none"
+  ignored_discount_source?: "tier" | "voucher" | null
+  discount_message?: string
 }
 
 type CartContextValue = {
@@ -61,6 +67,26 @@ type CartContextValue = {
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
+
+async function missingCartProviderAction(): Promise<void> {
+  throw new Error("Cart is not ready yet. Please refresh the page and try again.")
+}
+
+const FALLBACK_CART_CONTEXT: CartContextValue = {
+  cart: null,
+  itemCount: 0,
+  loading: false,
+  isOpen: false,
+  openCart: () => {},
+  closeCart: () => {},
+  refresh: async () => {},
+  addItem: missingCartProviderAction,
+  removeItem: missingCartProviderAction,
+  updateQuantity: missingCartProviderAction,
+  applyPromo: missingCartProviderAction,
+  removePromo: missingCartProviderAction,
+  repriceCart: missingCartProviderAction,
+}
 
 export function CartProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [cart, setCart] = useState<CartType | null>(null)
@@ -158,6 +184,5 @@ export function CartProvider({ children }: { children: React.ReactNode }): React
 
 export function useCart(): CartContextValue {
   const ctx = useContext(CartContext)
-  if (!ctx) throw new Error("useCart must be used within CartProvider")
-  return ctx
+  return ctx ?? FALLBACK_CART_CONTEXT
 }

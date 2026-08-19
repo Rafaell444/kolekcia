@@ -7,14 +7,14 @@ import Link from "next/link"
 import {
   Package, Heart, Star, Settings, LogOut, ChevronRight,
   Truck, CheckCircle2, Clock, XCircle, RotateCcw,
-  Award, Zap, ShoppingBag, User, MapPin, BellRing, MessageSquare,
-  Lock, Plus, Pencil, Trash2, Home, Building2, FileText, ExternalLink, CreditCard, Check,
+  Award, ShoppingBag, User, MapPin, BellRing, MessageSquare,
+  Plus, Pencil, Trash2, Home, Building2, FileText, ExternalLink, CreditCard, Check,
   Megaphone,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useGamification } from "@/contexts/gamification-context"
-import { useRouter } from "next/navigation"
-import { authFetch, apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import { useRouter, useSearchParams } from "next/navigation"
+import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
@@ -35,27 +35,10 @@ type CustomOrder = {
 }
 
 const CUSTOM_STATUS_LABELS: Record<string, string> = {
-  pending: "Pending review", review: "In review", approved: "Approved — pay now",
+  pending: "Pending review", review: "In review", approved: "Approved - pay now",
   paid: "Paid", printing: "Printing", shipped: "Shipped", cancelled: "Cancelled",
 }
 type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count?: number; items?: { id: number }[]; tracking_code: string; currency?: string }
-type Badge = {
-  id: string
-  name: string
-  icon: string
-  rarity: string
-  description: string
-  trigger_action?: string
-  prize_promo_code?: string | null
-  prize_description?: string
-}
-type EarnedBadge = {
-  badge: Badge
-  earned_at: string
-  seen_at?: string | null
-  is_new?: boolean
-  granted_promo_code?: string | null
-}
 type WishlistProduct = {
   id: string
   slug?: string
@@ -68,8 +51,6 @@ type WishlistProduct = {
 }
 type WishlistItem = { id: number; product: WishlistProduct; added_at: string }
 type Address = { id: number; label: string; line1: string; line2: string; city: string; state: string; zip_code: string; country: string; is_default: boolean }
-type XPLog = { id: number; action: string; xp_amount: number; created_at: string }
-type XPRule = { id: number; action_key: string; xp_amount: number; is_one_time: boolean }
 type ReferralStats = { code: string; total_invites: number; converted_invites: number }
 type CreatorSummary = {
   is_creator: boolean
@@ -87,7 +68,7 @@ const ACCOUNT_TABS = [
   { id: "orders",        label: "Orders",         Icon: Package },
   { id: "custom",        label: "Custom Orders",  Icon: FileText },
   { id: "wishlist",      label: "Wishlist",       Icon: Heart },
-  { id: "badges",        label: "Badges & XP",    Icon: Award },
+  { id: "loyalty",       label: "Loyalty",        Icon: Award },
   { id: "settings",      label: "Settings",       Icon: Settings },
   { id: "addresses",     label: "Addresses",      Icon: MapPin },
   { id: "payments",      label: "Payments",       Icon: CreditCard },
@@ -99,45 +80,7 @@ const ORDER_STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode
   shipped:    { label: "Shipped",     icon: <Truck size={13} />,        color: "text-dp-accent-gold" },
   processing: { label: "Processing",  icon: <Clock size={13} />,        color: "text-dp-text-secondary" },
   cancelled:  { label: "Cancelled",   icon: <XCircle size={13} />,      color: "text-dp-accent-cta" },
-}
-
-// ── Level XP roadmap data ──────────────────────────────────
-const LEVEL_ROADMAP = [
-  { level: 1,  minXp: 0,     maxXp: 149,   perks: ["Access to community forum", "Basic XP earning"] },
-  { level: 2,  minXp: 150,   maxXp: 299,   perks: ["5% off your next order", "Early sale notifications"] },
-  { level: 3,  minXp: 300,   maxXp: 599,   perks: ["Free standard shipping on 1 order/month", "Priority support"] },
-  { level: 4,  minXp: 600,   maxXp: 999,   perks: ["Unlock rare badges", "10% off limited editions"] },
-  { level: 5,  minXp: 1000,  maxXp: 1499,  perks: ["15% discount coupon", "VIP newsletter access"] },
-  { level: 6,  minXp: 1500,  maxXp: 1999,  perks: ["Free express shipping", "Custom order priority"] },
-  { level: 7,  minXp: 2000,  maxXp: 2999,  perks: ["20% discount on any order", "Early access to drops"] },
-  { level: 8,  minXp: 3000,  maxXp: 4499,  perks: ["Exclusive collector badge", "Monthly mystery gift"] },
-  { level: 9,  minXp: 4500,  maxXp: 9999,  perks: ["25% off all orders", "VIP event invitations"] },
-  { level: 10, minXp: 10000, maxXp: Infinity, perks: ["Legendary status", "30% off lifetime discount", "Direct artist contact"] },
-]
-
-function badgeRewardLabel(
-  badge: Badge,
-  xpRules: XPRule[],
-  unlocked: boolean,
-  grantedPromoCode?: string | null,
-): string {
-  const promo = grantedPromoCode || badge.prize_promo_code
-  const desc = badge.prize_description?.trim()
-
-  if (desc || promo) {
-    const parts: string[] = []
-    if (desc) parts.push(desc)
-    if (promo) parts.push(`Promo code ${promo}`)
-    const reward = parts.join(" · ")
-    return unlocked ? reward : `Unlock: ${reward}`
-  }
-
-  const rule = xpRules.find((r) => r.action_key === badge.trigger_action)
-  if (rule) {
-    return unlocked ? `+${rule.xp_amount} XP earned` : `Unlock: +${rule.xp_amount} XP`
-  }
-
-  return unlocked ? "Badge collected" : "Complete the challenge to unlock"
+  refunded:   { label: "Refunded",    icon: <XCircle size={13} />,      color: "text-orange-400" },
 }
 
 function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
@@ -145,30 +88,29 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
   const { formatPrice } = useLocale()
   const lp = useLocalePrefix()
   const [orders, setOrders] = useState<Order[]>([])
-  const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([])
   const [referral, setReferral] = useState<ReferralStats | null>(null)
   const [creatorSummary, setCreatorSummary] = useState<CreatorSummary | null>(null)
-  const [xpLog, setXpLog] = useState<XPLog[]>([])
-  const [xpRules, setXpRules] = useState<XPRule[]>([])
 
   useEffect(() => {
     let cancelled = false
     authFetch<Order[] | PaginatedResponse<Order>>("/orders/").then((d) => { if (!cancelled) setOrders(parseList(d).slice(0, 3)) }).catch(() => {})
-    authFetch<EarnedBadge[]>("/gamification/my-badges/").then((d) => { if (!cancelled) setEarnedBadges(d.slice(0, 6)) }).catch(() => {})
     authFetch<ReferralStats>("/referrals/me/").then((d) => { if (!cancelled) setReferral(d) }).catch(() => {})
     authFetch<CreatorSummary>("/creators/me/").then((d) => { if (!cancelled) setCreatorSummary(d) }).catch(() => {})
-    authFetch<XPLog[] | PaginatedResponse<XPLog>>("/gamification/xp-log/")
-      .then((d) => { if (!cancelled) setXpLog(parseList(d).slice(0, 4)) })
-      .catch(() => {})
-    apiFetch<XPRule[]>("/gamification/xp-rules/").then((d) => { if (!cancelled) setXpRules((Array.isArray(d) ? d : []).slice(0, 4)) }).catch(() => {})
     return () => { cancelled = true }
   }, [])
 
-  const xp = profile?.xp ?? 0
-  const level = profile?.level ?? 1
-  const nextLevelInfo = LEVEL_ROADMAP.find((l) => l.level === level + 1)
-  const nextLevelXp = nextLevelInfo?.minXp ?? (level * 500)
-  const progress = level >= 10 ? 100 : Math.min(100, Math.round((xp / nextLevelXp) * 100))
+  const tier = profile?.tier
+  const spendablePoints = profile?.spendable_points ?? 0
+  const lifetimePoints = profile?.lifetime_points ?? 0
+  const pendingPoints = profile?.pending_points ?? 0
+  const progress = tier?.progress_percent ?? 0
+  const saleBonus = parseFloat(tier?.sale_bonus_percent ?? tier?.discount_percent ?? "0")
+  const nextSaleBonus = tier?.next_sale_bonus_percent ? parseFloat(tier.next_sale_bonus_percent) : null
+  const saleBonusCta = saleBonus >= 10
+    ? "You have +10% extra discount on products that are already on sale."
+    : saleBonus >= 5
+      ? `You have +5% extra on sale products. Reach ${tier?.next_label ?? "the next level"} to get +${nextSaleBonus ?? 10}% on sale products.`
+      : "On higher levels, sale products get an extra +5% or +10% loyalty discount."
 
   return (
     <div className="flex flex-col gap-8">
@@ -211,26 +153,32 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
       <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-gold mb-0.5">Level {level}</p>
-            <p className="font-display text-3xl text-dp-text-primary">{xp.toLocaleString()} XP</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-gold mb-0.5">Loyalty tier</p>
+            <p className="font-display text-3xl text-dp-text-primary">{tier?.label ?? "Genin"}</p>
+            <p className="text-[12px] text-dp-text-secondary mt-1">+{saleBonus.toFixed(0)}% extra on sale products</p>
+            <p className="text-[11px] text-dp-accent-gold mt-1">{saleBonusCta}</p>
           </div>
           <div className="flex items-center justify-center w-14 h-14 rounded-full border-2 border-dp-accent-gold">
-            <Zap size={20} className="text-dp-accent-gold" />
+            <Award size={20} className="text-dp-accent-gold" />
           </div>
         </div>
         <div className="w-full bg-dp-bg-elevated rounded-full h-2 overflow-hidden">
-          <div className="h-full bg-dp-accent-gold rounded-full transition-all duration-700" style={{ width: `${progress}%` }} role="progressbar" aria-valuenow={xp} aria-valuemax={nextLevelXp} aria-label="XP progress" />
+          <div className="h-full bg-dp-accent-gold rounded-full transition-all duration-700" style={{ width: `${progress}%` }} role="progressbar" aria-valuenow={spendablePoints} aria-valuemax={tier?.next_threshold ?? spendablePoints} aria-label="Loyalty tier progress" />
         </div>
-        {level < 10 && <p className="text-[11px] text-dp-text-tertiary mt-2">{nextLevelXp - xp} XP until Level {level + 1}</p>}
-        {level >= 10 && <p className="text-[11px] text-dp-accent-gold mt-2 font-bold">Maximum level reached — Legendary Collector!</p>}
+        {tier?.next_label ? (
+          <p className="text-[11px] text-dp-text-tertiary mt-2">{tier.points_to_next.toLocaleString()} current points until {tier.next_label}</p>
+        ) : (
+          <p className="text-[11px] text-dp-accent-gold mt-2 font-bold">Top loyalty tier reached.</p>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
         {[
           { icon: ShoppingBag, label: "Total Orders",  value: orders.length },
-          { icon: Award,       label: "Badges Earned", value: earnedBadges.length },
-          { icon: Star,        label: "Streak Days",   value: profile?.streak_days ?? 0 },
-          { icon: Heart,       label: "Points",        value: profile?.points ?? 0 },
+          { icon: Award,       label: "Tier",          value: tier?.label ?? "Genin" },
+          { icon: Star,        label: "Total Earned", value: lifetimePoints.toLocaleString() },
+          { icon: Clock,       label: "Pending Points", value: pendingPoints.toLocaleString() },
+          { icon: Heart,       label: "Current Points", value: spendablePoints.toLocaleString() },
         ].map(({ icon: Icon, label, value }) => (
           <div key={label} className="bg-dp-bg-surface border border-dp-border rounded-sm p-4 flex flex-col gap-1">
             <Icon size={16} className="text-dp-text-tertiary" />
@@ -242,26 +190,13 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-4">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">XP History</h3>
-          <div className="space-y-1.5">
-            {xpLog.length > 0 ? xpLog.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between text-[11px]">
-                <span className="text-dp-text-secondary truncate pr-3">{entry.action.replaceAll("_", " ")}</span>
-                <span className="font-bold text-dp-accent-cta shrink-0">+{entry.xp_amount}</span>
-              </div>
-            )) : <p className="text-[11px] text-dp-text-tertiary">No XP activity yet.</p>}
-          </div>
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">How points work</h3>
+          <p className="text-[12px] text-dp-text-secondary">Every successful checkout creates pending points at 0.5 points per 1 currency unit. Points become spendable when the order is marked as shipped.</p>
         </div>
         <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-4">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">How To Earn XP</h3>
-          <div className="space-y-1.5">
-            {xpRules.length > 0 ? xpRules.map((rule) => (
-              <div key={rule.id} className="flex items-center justify-between text-[11px]">
-                <span className="text-dp-text-secondary truncate pr-3">{rule.action_key.replaceAll("_", " ")}</span>
-                <span className="font-bold text-dp-success shrink-0">{rule.xp_amount}</span>
-              </div>
-            )) : <p className="text-[11px] text-dp-text-tertiary">XP rules unavailable.</p>}
-          </div>
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-2">Discount rule</h3>
+          <p className="text-[12px] text-dp-text-secondary">Tier bonuses apply only to sale products. Vouchers apply only to non-sale products, so they never stack on the same item.</p>
+          <Link href={`${lp}/account/awards`} className="inline-flex mt-3 text-[11px] font-black uppercase tracking-widest text-dp-accent-cta hover:underline">Open Points Market</Link>
         </div>
       </div>
 
@@ -291,25 +226,11 @@ function OverviewTab({ onOpenCreator }: { onOpenCreator?: () => void }) {
         )}
       </div>
 
-      {earnedBadges.length > 0 && (
-        <div>
-          <h2 className="font-display text-2xl text-dp-text-primary mb-4">Recent Badges</h2>
-          <div className="flex gap-3 flex-wrap">
-            {earnedBadges.map(({ badge, earned_at }) => (
-              <div key={badge.id} className="flex flex-col items-center gap-1.5 px-4 py-3 bg-dp-bg-surface border border-dp-accent-gold/40 rounded-sm" title={`Earned ${new Date(earned_at).toLocaleDateString()}`}>
-                <span className="text-2xl" aria-hidden>{badge.icon}</span>
-                <span className="text-[11px] font-bold text-dp-text-primary text-center">{badge.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {referral && (
         <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
           <h2 className="font-display text-2xl text-dp-text-primary mb-3">Referral Program</h2>
           <p className="text-[12px] text-dp-text-secondary mb-3">
-            Share your link. When a friend buys for the first time, both of you earn XP.
+            Share your link. When a friend buys for the first time, both of you can receive approved account rewards.
           </p>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <code className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary break-all">
@@ -527,183 +448,63 @@ function WishlistTab() {
   )
 }
 
-function BadgesTab({ onSeen }: { onSeen?: () => void }) {
-  const { profile, refresh } = useGamification()
-  const [badges, setBadges] = useState<Badge[]>([])
-  const [earnedMap, setEarnedMap] = useState<Record<string, EarnedBadge>>({})
-  const [xpLog, setXpLog] = useState<XPLog[]>([])
-  const [xpRules, setXpRules] = useState<XPRule[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showRoadmap, setShowRoadmap] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    authFetch("/gamification/badges/mark-seen/", { method: "POST" })
-      .then(() => { if (!cancelled) { void refresh(); onSeen?.() } })
-      .catch(() => {})
-    Promise.all([
-      apiFetch<Badge[]>("/gamification/badges/").catch(() => []),
-      authFetch<EarnedBadge[]>("/gamification/my-badges/").catch(() => []),
-      authFetch<XPLog[] | PaginatedResponse<XPLog>>("/gamification/xp-log/").catch(() => []),
-      apiFetch<XPRule[]>("/gamification/xp-rules/").catch(() => []),
-    ]).then(([b, earnedList, logs, rules]) => {
-      if (!cancelled) {
-        setBadges(b)
-        const map: Record<string, EarnedBadge> = {}
-        earnedList.forEach((e) => { map[String(e.badge.id)] = e })
-        setEarnedMap(map)
-        setXpLog(parseList(logs).slice(0, 10))
-        setXpRules(Array.isArray(rules) ? rules.slice(0, 10) : [])
-      }
-    }).finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [onSeen, refresh])
-
-  const rarityColor: Record<string, string> = { common: "border-dp-border", rare: "border-blue-400/50", epic: "border-purple-400/50", legendary: "border-dp-accent-gold/70" }
-
-  const xp = profile?.xp ?? 0
-  const level = profile?.level ?? 1
+function LoyaltyTab() {
+  const { profile } = useGamification()
+  const lp = useLocalePrefix()
+  const tier = profile?.tier
+  const lifetimePoints = profile?.lifetime_points ?? 0
+  const spendablePoints = profile?.spendable_points ?? 0
+  const pendingPoints = profile?.pending_points ?? 0
+  const progress = tier?.progress_percent ?? 0
+  const saleBonus = parseFloat(tier?.sale_bonus_percent ?? tier?.discount_percent ?? "0")
+  const nextSaleBonus = tier?.next_sale_bonus_percent ? parseFloat(tier.next_sale_bonus_percent) : null
+  const saleBonusCta = saleBonus >= 10
+    ? "You have +10% extra discount on products that are already on sale."
+    : saleBonus >= 5
+      ? `You have +5% extra on sale products. Reach ${tier?.next_label ?? "the next level"} to get +${nextSaleBonus ?? 10}% on sale products.`
+      : "If you reach the next levels, sale products can get an extra +5% or +10% loyalty discount."
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Badges grid */}
+    <div className="flex flex-col gap-6">
       <div>
-        <h2 className="font-display text-3xl text-dp-text-primary mb-2">Badges &amp; XP</h2>
-        <p className="text-[13px] text-dp-text-tertiary mb-6">Complete challenges to earn badges and level up your collector status.</p>
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 animate-pulse">{[1,2,3,4].map((i) => <div key={i} className="h-28 bg-dp-bg-elevated rounded-sm" />)}</div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-            {badges.map((badge) => {
-              const earnedEntry = earnedMap[String(badge.id)]
-              const unlocked = Boolean(earnedEntry)
-              const isNew = unlocked && (earnedEntry.is_new || earnedEntry.seen_at == null)
-              const rewardText = badgeRewardLabel(badge, xpRules, unlocked, earnedEntry?.granted_promo_code)
-              return (
-                <div
-                  key={badge.id}
-                  className={`relative flex flex-col items-center gap-2 p-4 bg-dp-bg-surface border rounded-sm transition-all ${rarityColor[badge.rarity] ?? rarityColor.common} ${unlocked ? "opacity-100" : "opacity-70"} ${isNew ? "ring-2 ring-dp-accent-cta/60" : ""}`}
-                >
-                  {isNew && (
-                    <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-dp-accent-cta text-white text-[9px] font-bold uppercase tracking-widest rounded-full">
-                      New
-                    </span>
-                  )}
-                  {!unlocked && (
-                    <div className="absolute top-2 right-2">
-                      <Lock size={12} className="text-dp-text-tertiary" />
-                    </div>
-                  )}
-                  <span className={`text-3xl ${!unlocked ? "grayscale" : ""}`} aria-hidden>{badge.icon}</span>
-                  <p className="text-[12px] font-bold text-dp-text-primary text-center">{badge.name}</p>
-                  <p className="text-[10px] text-dp-text-tertiary text-center leading-snug">{badge.description}</p>
-                  <div className={`w-full mt-1 px-2 py-2 rounded-sm border text-center ${unlocked ? "border-dp-accent-gold/40 bg-dp-accent-gold/10" : "border-dp-border bg-dp-bg-elevated/90"}`}>
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-dp-text-tertiary mb-0.5">You get</p>
-                    <p className={`text-[10px] font-semibold leading-snug ${unlocked ? "text-dp-accent-gold" : "text-dp-text-secondary"}`}>
-                      {rewardText}
-                    </p>
-                  </div>
-                  <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${badge.rarity === "legendary" ? "bg-dp-accent-gold/20 text-dp-accent-gold" : badge.rarity === "epic" ? "bg-purple-500/20 text-purple-400" : badge.rarity === "rare" ? "bg-blue-500/20 text-blue-400" : "bg-dp-bg-elevated text-dp-text-tertiary"}`}>
-                    {unlocked ? badge.rarity : `Locked · ${badge.rarity}`}
-                  </span>
-                </div>
-              )
-            })}
-            {badges.length === 0 && !loading && (
-              <div className="col-span-4 py-12 text-center text-dp-text-tertiary text-[13px]">
-                No badges available yet. Keep collecting XP!
-              </div>
-            )}
-          </div>
-        )}
+        <h2 className="font-display text-3xl text-dp-text-primary mb-2">Loyalty &amp; Points</h2>
+          <p className="text-[13px] text-dp-text-tertiary">Your tier is based on current spendable points. Pending order points become spendable when the order ships.</p>
       </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-4">XP History</h3>
-          <div className="space-y-2">
-            {xpLog.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between text-[12px]">
-                <span className="text-dp-text-secondary">{entry.action.replaceAll("_", " ")}</span>
-                <span className="font-bold text-dp-accent-cta">+{entry.xp_amount} XP</span>
-              </div>
-            ))}
-            {xpLog.length === 0 && <p className="text-[12px] text-dp-text-tertiary">No XP activity yet.</p>}
+      <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-gold">Current tier</p>
+            <p className="font-display text-4xl text-dp-text-primary mt-1">{tier?.label ?? "Genin"}</p>
+            <p className="text-[13px] text-dp-text-secondary mt-1">+{saleBonus.toFixed(0)}% extra on sale products</p>
+            <p className="text-[12px] text-dp-accent-gold mt-2">{saleBonusCta}</p>
           </div>
+          <Award size={32} className="text-dp-accent-gold" />
         </div>
-        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-4">How To Earn XP</h3>
-          <div className="space-y-2">
-            {xpRules.map((rule) => (
-              <div key={rule.id} className="flex items-center justify-between text-[12px]">
-                <span className="text-dp-text-secondary">{rule.action_key.replaceAll("_", " ")}</span>
-                <span className="font-bold text-dp-success">{rule.xp_amount} XP</span>
-              </div>
-            ))}
-            {xpRules.length === 0 && <p className="text-[12px] text-dp-text-tertiary">XP rules unavailable.</p>}
+        <div className="mt-6">
+          <div className="flex items-center justify-between text-[11px] text-dp-text-tertiary mb-2">
+            <span>{spendablePoints.toLocaleString()} current points</span>
+            <span>{tier?.next_label ? `${tier.points_to_next.toLocaleString()} to ${tier.next_label}` : "Top tier reached"}</span>
+          </div>
+          <div className="h-2 rounded-full bg-dp-bg-elevated overflow-hidden">
+            <div className="h-full bg-dp-accent-gold" style={{ width: `${progress}%` }} />
           </div>
         </div>
       </div>
-
-      {/* Level XP Roadmap */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-2xl text-dp-text-primary">Level Roadmap</h2>
-          <button
-            onClick={() => setShowRoadmap((o) => !o)}
-            className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta hover:text-dp-accent-cta-hover transition-colors"
-          >
-            {showRoadmap ? "Hide" : "Show all levels"}
-          </button>
+      <div className="grid sm:grid-cols-3 gap-4">
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Spendable points</p>
+          <p className="font-display text-4xl text-dp-text-primary mt-2">{spendablePoints.toLocaleString()}</p>
+          <p className="text-[12px] text-dp-text-secondary mt-2">Available points can be spent in the market. Pending points unlock when your order ships.</p>
         </div>
-        <div className="flex flex-col gap-2">
-          {LEVEL_ROADMAP.filter((l) => showRoadmap || Math.abs(l.level - level) <= 2).map((l) => {
-            const isCurrent = l.level === level
-            const isPast = l.level < level
-            return (
-              <div
-                key={l.level}
-                className={`flex items-start gap-4 p-4 rounded-sm border transition-colors ${
-                  isCurrent
-                    ? "border-dp-accent-gold bg-dp-accent-gold/5"
-                    : isPast
-                    ? "border-dp-border bg-dp-bg-elevated opacity-60"
-                    : "border-dp-border bg-dp-bg-surface"
-                }`}
-              >
-                <div className={`flex items-center justify-center w-9 h-9 rounded-full shrink-0 font-display text-lg ${isCurrent ? "bg-dp-accent-gold text-dp-bg-base" : isPast ? "bg-dp-bg-elevated text-dp-text-tertiary" : "bg-dp-bg-elevated text-dp-text-secondary"}`}>
-                  {l.level}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`text-[13px] font-bold ${isCurrent ? "text-dp-accent-gold" : "text-dp-text-primary"}`}>
-                      Level {l.level}
-                      {isCurrent && <span className="ml-2 text-[10px] font-bold uppercase tracking-widest bg-dp-accent-gold text-dp-bg-base px-2 py-0.5 rounded-full">Current</span>}
-                    </p>
-                    <p className="text-[11px] text-dp-text-tertiary">
-                      {l.level < 10 ? `${l.minXp.toLocaleString()} – ${l.maxXp.toLocaleString()} XP` : `${l.minXp.toLocaleString()}+ XP`}
-                    </p>
-                  </div>
-                  {isCurrent && (
-                    <div className="mt-1.5 w-full bg-dp-bg-elevated rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className="h-full bg-dp-accent-gold rounded-full transition-all"
-                        style={{ width: `${Math.min(100, Math.round(((xp - l.minXp) / (l.maxXp - l.minXp)) * 100))}%` }}
-                      />
-                    </div>
-                  )}
-                  <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                    {l.perks.map((perk) => (
-                      <li key={perk} className={`text-[11px] flex items-center gap-1 ${isCurrent || isPast ? "text-dp-text-secondary" : "text-dp-text-tertiary"}`}>
-                        <CheckCircle2 size={10} className={isPast ? "text-dp-success" : isCurrent ? "text-dp-accent-gold" : "text-dp-text-tertiary"} />
-                        {perk}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )
-          })}
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Pending points</p>
+          <p className="font-display text-4xl text-dp-text-primary mt-2">{pendingPoints.toLocaleString()}</p>
+          <p className="text-[12px] text-dp-text-secondary mt-2">Recent order points waiting for the order to be marked as shipped.</p>
+        </div>
+        <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Exclusive discount rule</p>
+          <p className="text-[13px] text-dp-text-secondary mt-2">Sale products get your tier bonus. Vouchers and creator codes work only on non-sale products.</p>
+          <Link href={`${lp}/account/awards`} className="inline-flex mt-4 px-4 py-2 bg-dp-accent-cta text-white text-[11px] font-black uppercase tracking-widest rounded-sm">Open Points Market</Link>
         </div>
       </div>
     </div>
@@ -1221,17 +1022,21 @@ function InboxTab() {
 export default function AccountPage(): React.ReactElement {
   const [activeTab, setActiveTab] = useState("overview")
   const { user, logout } = useAuth()
-  const { profile, refresh } = useGamification()
+  const { profile } = useGamification()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const lp = useLocalePrefix()
   const inboxUnread = useInboxUnreadCount()
-  const unseenBadges = profile?.unseen_badge_count ?? 0
 
   useEffect(() => {
-    if (typeof window === "undefined") return
-    const tab = new URLSearchParams(window.location.search).get("tab")
+    const tab = searchParams.get("tab")
     if (tab && ACCOUNT_TABS.some((t) => t.id === tab)) setActiveTab(tab)
-  }, [])
+  }, [searchParams])
+
+  function openTab(id: string) {
+    setActiveTab(id)
+    router.replace(`${lp}/account?tab=${id}`, { scroll: false })
+  }
 
   async function handleLogout() {
     await logout()
@@ -1239,12 +1044,12 @@ export default function AccountPage(): React.ReactElement {
   }
 
   const tabContent: Record<string, React.ReactNode> = {
-    overview:      <OverviewTab onOpenCreator={() => setActiveTab("creator")} />,
+    overview:      <OverviewTab onOpenCreator={() => openTab("creator")} />,
     inbox:         <InboxTab />,
     orders:        <OrdersTab />,
     custom:        <CustomOrdersTab />,
     wishlist:      <WishlistTab />,
-    badges:        <BadgesTab onSeen={() => { void refresh() }} />,
+    loyalty:       <LoyaltyTab />,
     creator:       <CreatorPanel />,
     settings:      <SettingsTab />,
     addresses:     <AddressesTab />,
@@ -1268,7 +1073,7 @@ export default function AccountPage(): React.ReactElement {
             <div className="flex-1 min-w-0 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="font-display text-2xl sm:text-3xl text-dp-text-primary truncate">{displayName}</h1>
-                <p className="text-[12px] text-dp-text-tertiary mt-0.5">Level {profile?.level ?? 1} · {(profile?.xp ?? 0).toLocaleString()} XP</p>
+                <p className="text-[12px] text-dp-text-tertiary mt-0.5">{profile?.tier.label ?? "Genin"} · {(profile?.spendable_points ?? 0).toLocaleString()} current points</p>
               </div>
               <Link
                 href={inboxUnread > 0 ? `${lp}/inbox` : `${lp}/account/notifications`}
@@ -1293,26 +1098,24 @@ export default function AccountPage(): React.ReactElement {
       <div className="dp-container py-6 md:py-8 flex flex-col md:flex-row gap-6 md:gap-8 items-start">
         <div className="md:hidden w-full overflow-x-auto flex gap-2 pb-1 -mx-1 px-1">
           {ACCOUNT_TABS.map(({ id, label }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`shrink-0 px-3 py-1.5 rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors whitespace-nowrap flex items-center gap-1.5 ${activeTab === id ? "bg-dp-accent-cta text-white" : "bg-dp-bg-surface border border-dp-border text-dp-text-secondary hover:text-dp-text-primary"}`}>
+            <button key={id} onClick={() => openTab(id)}
+              className={`shrink-0 px-3 py-1.5 rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors whitespace-nowrap flex items-center gap-1.5 ${id === "loyalty" ? "border border-dp-accent-gold/60 bg-gradient-to-r from-dp-accent-gold/20 to-dp-accent-cta/10 text-dp-text-primary shadow-[0_0_0_1px_rgba(184,110,0,0.08)]" : activeTab === id ? "bg-dp-accent-cta text-white" : "bg-dp-bg-surface border border-dp-border text-dp-text-secondary hover:text-dp-text-primary"} ${activeTab === id && id === "loyalty" ? "ring-2 ring-dp-accent-gold/30" : ""}`}>
               {label}
               {id === "inbox" && <UnreadBadge count={inboxUnread} />}
-              {id === "badges" && unseenBadges > 0 && <UnreadBadge count={unseenBadges} />}
             </button>
           ))}
         </div>
 
         <aside className="hidden md:flex flex-col w-52 shrink-0 gap-1" aria-label="Account navigation">
           {ACCOUNT_TABS.map(({ id, label, Icon }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-sm text-[13px] font-medium text-left transition-colors w-full ${id === "creator" ? "mt-5 border border-dp-accent-gold/40 bg-dp-accent-gold/5 text-dp-text-primary hover:border-dp-accent-gold/70" : activeTab === id ? "bg-dp-bg-elevated text-dp-text-primary" : "text-dp-text-secondary hover:bg-dp-bg-elevated hover:text-dp-text-primary"}`}
+            <button key={id} onClick={() => openTab(id)}
+              className={`flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-sm text-[13px] font-medium text-left transition-colors w-full ${id === "creator" ? "mt-5 border border-dp-accent-gold/40 bg-dp-accent-gold/5 text-dp-text-primary hover:border-dp-accent-gold/70" : id === "loyalty" ? "border border-dp-accent-gold/60 bg-gradient-to-r from-dp-accent-gold/15 via-dp-bg-surface to-dp-accent-cta/10 text-dp-text-primary shadow-sm hover:border-dp-accent-gold" : activeTab === id ? "bg-dp-bg-elevated text-dp-text-primary" : "text-dp-text-secondary hover:bg-dp-bg-elevated hover:text-dp-text-primary"} ${activeTab === id && id === "loyalty" ? "ring-2 ring-dp-accent-gold/25" : ""}`}
               aria-current={activeTab === id ? "page" : undefined}>
               <span className="flex items-center gap-2.5 min-w-0">
-                <Icon size={14} className={id === "creator" ? "text-dp-accent-gold" : activeTab === id ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
+                <Icon size={14} className={id === "creator" || id === "loyalty" ? "text-dp-accent-gold" : activeTab === id ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
                 {label}
               </span>
               {id === "inbox" && <UnreadBadge count={inboxUnread} />}
-              {id === "badges" && unseenBadges > 0 && <UnreadBadge count={unseenBadges} />}
             </button>
           ))}
         </aside>

@@ -47,7 +47,7 @@ const TIMELINE = [
   { year: "2019", title: "First 1,000 Artists", body: "Word spread through online communities. Our first big artist cohort joined within 6 months." },
   { year: "2021", title: "Magnetic Mounting", body: "We invented our tool-free magnetic pin system — now shipped with every single order." },
   { year: "2023", title: "2 Million Designs", body: "Crossed 2 million active designs from artists in 80+ countries. The catalogue never stops growing." },
-  { year: "2025", title: "Koleqcia Platform", body: "Launched the full collector platform with auctions, XP rewards, and limited-edition drops." },
+  { year: "2025", title: "Koleqcia Platform", body: "Launched the full collector platform with auctions, loyalty tiers, and limited-edition drops." },
 ]
 
 const VALUES = [
@@ -74,7 +74,7 @@ const VALUES = [
   {
     icon: <Heart size={22} />,
     title: "Collector Culture",
-    body: "XP rewards, auctions, badges, and limited drops — we built a world that rewards passion and obsession.",
+    body: "Loyalty tiers, points-market rewards, auctions, and limited drops — we built a world that rewards passion and obsession.",
   },
   {
     icon: <Truck size={22} />,

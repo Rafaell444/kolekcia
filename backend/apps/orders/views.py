@@ -249,12 +249,12 @@ class PromoApplyView(APIView):
         from apps.promo.models import PromoCode
         from apps.creators.services import product_subtotal_from_cart
 
-        code = request.data.get("code", "").strip().upper()
+        code = request.data.get("code", "").strip()
         if not code:
             return Response({"detail": "Promo code is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            promo = PromoCode.objects.get(code=code)
+            promo = PromoCode.objects.get(code__iexact=code)
         except PromoCode.DoesNotExist:
             return Response({"detail": "Invalid or expired promo code."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -457,22 +457,6 @@ class CheckoutView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-        for item in items_to_process:
-            if item.variant_id:
-                ProductVariant.objects.filter(pk=item.variant_id).update(stock=F("stock") - item.quantity)
-            elif item.size_variant_id:
-                sv = locked_size_variants.get(item.size_variant_id)
-                if sv and sv.stock is not None and sv.stock > 0:
-                    new_stock = sv.stock - item.quantity
-                    if new_stock <= 0 and sv.is_ready_to_ship:
-                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
-                            stock=None, is_ready_to_ship=False,
-                        )
-                    else:
-                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
-                            stock=F("stock") - item.quantity,
-                        )
-
         # Resolve all money in checkout currency (admin market prices, no FX)
         currency = _normalize_currency(data.get("currency", "USD"))
         req_delivery_type = data.get("delivery_type", "standard")
@@ -614,31 +598,58 @@ class CheckoutView(APIView):
                 "proc_days": proc_days or item.processing_days,
             })
 
-        discount = Decimal("0")
         promo = cart.promo_code
-        if promo:
-            if promo.owner_id:
-                # Creator voucher: one shared % off products only
-                discount = promo.calculate_product_discount(product_subtotal)
-            elif promo.is_scoped:
-                # Scoped promo: only discount qualifying items
-                items_with_products = []
-                for line in priced_lines:
-                    item = line["item"]
-                    product = (
-                        item.size_variant.product if item.size_variant_id
-                        else item.variant.product if item.variant_id
-                        else None
-                    )
-                    if product:
-                        items_with_products.append((product, line["unit_price"] * item.quantity))
-                discount = promo.calculate_scoped_discount(items_with_products)
-            else:
-                # Regular promo applies to products + extras (not shipping)
-                discount = promo.calculate_discount(product_subtotal + gift_wrap_total + processing_fee_total)
+
+        from apps.gamification.services import (
+            CheckoutDiscountCalculator,
+            calculate_tier_eligible_subtotal,
+            calculate_voucher_discount_for_lines,
+            is_sale_product_line,
+        )
+
+        discount_base = product_subtotal + gift_wrap_total + processing_fee_total
+        tier_lines = []
+        for line in priced_lines:
+            item = line["item"]
+            product = (
+                item.size_variant.product if item.size_variant_id
+                else item.variant.product if item.variant_id
+                else None
+            )
+            if product:
+                is_sale = is_sale_product_line(product, item.variant, item.size_variant, item.currency)
+                tier_lines.append((product, line["unit_price"] * item.quantity, is_sale))
+        voucher_discount = calculate_voucher_discount_for_lines(promo, tier_lines)
+        tier_eligible_subtotal, tier_info = calculate_tier_eligible_subtotal(request.user, tier_lines)
+        discount_decision = CheckoutDiscountCalculator(
+            request.user,
+            discount_base,
+            promo=promo,
+            voucher_discount=voucher_discount,
+            tier_eligible_subtotal=tier_eligible_subtotal,
+            tier_info=tier_info,
+        ).evaluate()
+        discount = discount_decision.discount
 
         # subtotal = products only; extras + shipping listed separately
         total = product_subtotal + gift_wrap_total + processing_fee_total - discount + delivery_price
+
+        # Deduct inventory only after every checkout and shipping validation has passed.
+        for item in items_to_process:
+            if item.variant_id:
+                ProductVariant.objects.filter(pk=item.variant_id).update(stock=F("stock") - item.quantity)
+            elif item.size_variant_id:
+                sv = locked_size_variants.get(item.size_variant_id)
+                if sv and sv.stock is not None and sv.stock > 0:
+                    new_stock = sv.stock - item.quantity
+                    if new_stock <= 0 and sv.is_ready_to_ship:
+                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
+                            stock=None, is_ready_to_ship=False,
+                        )
+                    else:
+                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
+                            stock=F("stock") - item.quantity,
+                        )
 
         order = Order.objects.create(
             user=request.user,
@@ -779,11 +790,10 @@ class CheckoutView(APIView):
         cart.promo_code = None
         cart.save()
 
-        # Award XP for order placed
+        # Loyalty points are earned as pending until the refund window closes.
         try:
-            from apps.gamification.services import award_xp
-            award_xp(request.user, "order_placed")
-            award_xp(request.user, "first_purchase")
+            from apps.gamification.services import create_pending_purchase_points
+            create_pending_purchase_points(order)
         except Exception:
             pass
         try:

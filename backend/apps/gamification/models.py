@@ -1,103 +1,307 @@
+from django.conf import settings
 from django.db import models
-from apps.users.models import User
 
 
-class XPRule(models.Model):
-    action_key = models.CharField(max_length=50, unique=True)
-    xp_amount = models.PositiveIntegerField(default=10)
-    is_one_time = models.BooleanField(default=False)
+class LoyaltyTier(models.TextChoices):
+    GENIN = "genin", "Genin"
+    CHUNIN = "chunin", "Chunin"
+    JONIN = "jonin", "Jonin"
+
+
+class PointTransaction(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_AVAILABLE = "available"
+    STATUS_SPENT = "spent"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_AVAILABLE, "Available"),
+        (STATUS_SPENT, "Spent"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    TYPE_EARNED = "earned"
+    TYPE_SPENT = "spent"
+    TYPE_REFUNDED = "refunded"
+    TYPE_REFUND_REVERSAL = "refund_reversal"
+    TYPE_ADJUSTMENT = "adjustment"
+    TYPE_CHOICES = [
+        (TYPE_EARNED, "Earned"),
+        (TYPE_SPENT, "Spent"),
+        (TYPE_REFUNDED, "Refunded"),
+        (TYPE_REFUND_REVERSAL, "Refund Reversal"),
+        (TYPE_ADJUSTMENT, "Adjustment"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="point_transactions",
+    )
+    order = models.ForeignKey(
+        "orders.Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="point_transactions",
+    )
+    market_item = models.ForeignKey(
+        "gamification.PointsMarketItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="point_transactions",
+    )
+    transaction_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    points = models.IntegerField()
     description = models.CharField(max_length=255, blank=True)
-
-    class Meta:
-        db_table = "xp_rules"
-
-    def __str__(self):
-        return f"{self.action_key}: {self.xp_amount} XP"
-
-
-class GamificationProfile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="gamification")
-    xp = models.PositiveIntegerField(default=0)
-    points = models.PositiveIntegerField(default=0)
-    level = models.PositiveIntegerField(default=1)
-    streak_days = models.PositiveIntegerField(default=0)
-    last_active = models.DateField(null=True, blank=True)
-
-    class Meta:
-        db_table = "gamification_profiles"
-
-    def recalculate_level(self):
-        xp = self.xp
-        if xp >= 10000:
-            self.level = 10
-        elif xp >= 5000:
-            self.level = 9
-        elif xp >= 3000:
-            self.level = 8
-        elif xp >= 2000:
-            self.level = 7
-        elif xp >= 1500:
-            self.level = 6
-        elif xp >= 1000:
-            self.level = 5
-        elif xp >= 700:
-            self.level = 4
-        elif xp >= 400:
-            self.level = 3
-        elif xp >= 150:
-            self.level = 2
-        else:
-            self.level = 1
-
-    def __str__(self):
-        return f"{self.user.email} — L{self.level} ({self.xp} XP)"
-
-
-class XPLog(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="xp_logs")
-    action = models.CharField(max_length=50)
-    xp_amount = models.IntegerField()
+    available_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "xp_logs"
+        db_table = "point_transactions"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=("user", "status", "created_at")),
+            models.Index(fields=("order", "transaction_type")),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            old = type(self).objects.only("points", "transaction_type", "user_id").get(pk=self.pk)
+            immutable_changed = (
+                old.points != self.points
+                or old.transaction_type != self.transaction_type
+                or old.user_id != self.user_id
+            )
+            if immutable_changed:
+                raise ValueError("PointTransaction ledger rows are append-only.")
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.user.email}: {self.action} +{self.xp_amount}"
+        return f"{self.user_id}: {self.points} ({self.status})"
 
 
-class Badge(models.Model):
-    RARITY_CHOICES = [
-        ("common", "Common"),
-        ("rare", "Rare"),
-        ("epic", "Epic"),
-        ("legendary", "Legendary"),
+class PointsMarketItem(models.Model):
+    TYPE_PHYSICAL = "physical"
+    TYPE_DIGITAL = "digital"
+    DISCOUNT_PERCENT = "percent"
+    DISCOUNT_FIXED = "fixed"
+    ITEM_TYPE_CHOICES = [
+        (TYPE_PHYSICAL, "Physical Product"),
+        (TYPE_DIGITAL, "Digital Voucher"),
+    ]
+    DISCOUNT_TYPE_CHOICES = [
+        (DISCOUNT_PERCENT, "Percentage"),
+        (DISCOUNT_FIXED, "Fixed Amount"),
     ]
 
-    name = models.CharField(max_length=100, unique=True)
-    icon = models.CharField(max_length=10)
-    rarity = models.CharField(max_length=20, choices=RARITY_CHOICES, default="common")
-    description = models.TextField()
-    trigger_action = models.CharField(max_length=50, blank=True)
-    prize_promo = models.ForeignKey(
-        "promo.PromoCode", on_delete=models.SET_NULL, null=True, blank=True, related_name="badge_prizes"
+    name = models.CharField(max_length=160)
+    description = models.TextField(blank=True)
+    vendor = models.ForeignKey(
+        "vendors.Vendor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="points_market_items",
     )
-    prize_description = models.CharField(max_length=255, blank=True)
+    main_image_url = models.URLField(blank=True)
+    image_urls = models.JSONField(default=list, blank=True)
+    point_cost = models.PositiveIntegerField()
+    stock_quantity = models.PositiveIntegerField(default=0)
+    item_type = models.CharField(max_length=20, choices=ITEM_TYPE_CHOICES)
+    voucher_discount_type = models.CharField(max_length=10, choices=DISCOUNT_TYPE_CHOICES, default=DISCOUNT_PERCENT)
+    voucher_discount_value = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    voucher_min_order_value = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    is_active = models.BooleanField(default=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "badges"
+        db_table = "points_market_items"
+        ordering = ["name"]
+        indexes = [
+            models.Index(fields=("is_active", "stock_quantity")),
+            models.Index(fields=("item_type", "is_active")),
+        ]
+
+    @property
+    def is_locked(self) -> bool:
+        return not self.is_active or self.stock_quantity <= 0
 
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.point_cost} pts)"
 
 
-class UserBadge(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="badges")
-    badge = models.ForeignKey(Badge, on_delete=models.CASCADE)
-    earned_at = models.DateTimeField(auto_now_add=True)
-    seen_at = models.DateTimeField(null=True, blank=True)
+class PointsMarketRedemption(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_SHIPPED = "shipped"
+    STATUS_DELIVERED = "delivered"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_SHIPPED, "Shipped"),
+        (STATUS_DELIVERED, "Delivered"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="points_market_redemptions",
+    )
+    market_item = models.ForeignKey(
+        "gamification.PointsMarketItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="redemptions",
+    )
+    transaction = models.OneToOneField(
+        "gamification.PointTransaction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="redemption",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    item_name = models.CharField(max_length=160)
+    item_image_url = models.URLField(blank=True)
+    point_cost = models.PositiveIntegerField()
+    shipping_name = models.CharField(max_length=255)
+    shipping_line1 = models.CharField(max_length=255)
+    shipping_line2 = models.CharField(max_length=255, blank=True)
+    shipping_city = models.CharField(max_length=100)
+    shipping_state = models.CharField(max_length=100)
+    shipping_zip = models.CharField(max_length=20)
+    shipping_country = models.CharField(max_length=100)
+    shipping_email = models.EmailField()
+    shipping_phone = models.CharField(max_length=30, blank=True)
+    shipping_type = models.CharField(max_length=50)
+    shipping_label = models.CharField(max_length=100)
+    shipping_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    shipping_currency = models.CharField(max_length=10, default="USD")
+    tracking_code = models.CharField(max_length=100, blank=True)
+    admin_note = models.TextField(blank=True)
+    shipped_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "user_badges"
-        unique_together = ("user", "badge")
+        db_table = "points_market_redemptions"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=("status", "created_at")),
+            models.Index(fields=("user", "created_at")),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}: {self.item_name} ({self.status})"
+
+
+class PointsMarketShippingPaymentSession(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_PAID = "paid"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_EXPIRED = "expired"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_PAID, "Paid"),
+        (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_EXPIRED, "Expired"),
+    ]
+
+    token = models.UUIDField(unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="points_market_shipping_sessions",
+    )
+    market_item = models.ForeignKey(
+        "gamification.PointsMarketItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="shipping_payment_sessions",
+    )
+    redemption = models.OneToOneField(
+        "gamification.PointsMarketRedemption",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shipping_payment_session",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    item_name = models.CharField(max_length=160)
+    item_image_url = models.URLField(blank=True)
+    point_cost = models.PositiveIntegerField()
+    shipping_name = models.CharField(max_length=255)
+    shipping_line1 = models.CharField(max_length=255)
+    shipping_line2 = models.CharField(max_length=255, blank=True)
+    shipping_city = models.CharField(max_length=100)
+    shipping_state = models.CharField(max_length=100)
+    shipping_zip = models.CharField(max_length=20)
+    shipping_country = models.CharField(max_length=100)
+    shipping_email = models.EmailField()
+    shipping_phone = models.CharField(max_length=30, blank=True)
+    shipping_type = models.CharField(max_length=50)
+    shipping_label = models.CharField(max_length=100)
+    shipping_price = models.DecimalField(max_digits=8, decimal_places=2)
+    shipping_currency = models.CharField(max_length=10, default="USD")
+    expires_at = models.DateTimeField()
+    paid_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "points_market_shipping_payment_sessions"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=("user", "status", "created_at")),
+            models.Index(fields=("status", "expires_at")),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}: {self.item_name} shipping ({self.status})"
+
+
+class IdempotencyKey(models.Model):
+    STATUS_PROCESSING = "processing"
+    STATUS_SUCCEEDED = "succeeded"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PROCESSING, "Processing"),
+        (STATUS_SUCCEEDED, "Succeeded"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="points_idempotency_keys",
+    )
+    key = models.UUIDField()
+    scope = models.CharField(max_length=80)
+    request_hash = models.CharField(max_length=64)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PROCESSING)
+    transaction = models.ForeignKey(
+        "gamification.PointTransaction",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="idempotency_keys",
+    )
+    response_data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "points_idempotency_keys"
+        unique_together = [("user", "scope", "key")]
+        indexes = [
+            models.Index(fields=("user", "scope", "key")),
+            models.Index(fields=("status", "created_at")),
+        ]

@@ -53,10 +53,16 @@ class AuctionChatMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AuctionChatMessage
-        fields = ("id", "user_name", "text", "created_at")
+        fields = ("id", "user_name", "text", "created_at", "is_deleted")
 
     def get_user_name(self, obj):
         return obj.user.name or obj.user.email.split("@")[0]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.is_deleted:
+            data["text"] = "Message removed by a moderator."
+        return data
 
 
 class AuctionSerializer(serializers.ModelSerializer):

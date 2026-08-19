@@ -26,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
   shipped:    "text-dp-accent-cta bg-dp-accent-cta/10 border-dp-accent-cta/30",
   processing: "text-dp-accent-gold bg-dp-accent-gold/10 border-dp-accent-gold/30",
   cancelled:  "text-dp-accent-cta/70 bg-dp-accent-cta/5 border-dp-accent-cta/20",
+  refunded:   "text-orange-400 bg-orange-400/10 border-orange-400/30",
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -33,6 +34,7 @@ const STATUS_LABELS: Record<string, string> = {
   shipped:    "Shipped",
   delivered:  "Delivered",
   cancelled:  "Cancelled",
+  refunded:   "Refunded",
 }
 
 export default function OrdersPage(): React.ReactElement {

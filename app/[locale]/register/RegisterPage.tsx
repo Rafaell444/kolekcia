@@ -4,7 +4,7 @@ import React, { Suspense, useState } from "react"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import { useRouter } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
-import { Eye, EyeOff, Mail, Lock, User, ArrowRight, CheckCircle2, Gift } from "lucide-react"
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { storeTokens, storeUser } from "@/lib/auth-storage"
 import { useAuth } from "@/contexts/auth-context"
@@ -14,12 +14,12 @@ import { useLocalePrefix } from "@/lib/use-localized-href"
 import { getPasswordRules, isPasswordValid, validatePassword } from "@/lib/password"
 
 const PERKS = [
-  "Free shipping on your first order",
+  "Faster checkout with saved details",
   "Early access to Limited Edition drops",
-  "Earn XP & unlock exclusive badges",
   "Save favourites to wishlists",
   "Track orders in real-time",
-  "New member bonus",
+  "Manage addresses and order history",
+  "Secure account protection",
 ]
 
 function friendlyAuthMessage(message: string): string {
@@ -320,12 +320,11 @@ function RegisterPageInner(): React.ReactElement {
           </ul>
           <div className="border border-dp-accent-gold/50 rounded-sm p-5 bg-dp-bg-surface flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Gift size={16} className="text-dp-accent-gold" />
-              <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-gold">New member bonus</p>
+              <ShieldCheck size={16} className="text-dp-accent-gold" />
+              <p className="text-[11px] font-bold uppercase tracking-widest text-dp-accent-gold">Collector account</p>
             </div>
             <p className="text-[13px] text-dp-text-secondary leading-relaxed">
-              Sign up today and get <strong className="text-dp-text-primary">5 XP</strong> instantly — plus a{" "}
-              <strong className="text-dp-text-primary">10% off</strong> welcome coupon in your inbox.
+              Create an account to keep your wishlist, addresses, orders, and support messages in one secure place.
             </p>
           </div>
         </div>

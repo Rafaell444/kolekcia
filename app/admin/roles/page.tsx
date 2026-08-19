@@ -44,7 +44,7 @@ const LABEL_DISPLAY: Record<typeof PERM_LABELS[number], string> = {
   settings: "Settings",
   users: "Users",
   artists: "Artists",
-  gamification: "XP",
+  gamification: "Loyalty",
   content: "Content",
   vendors: "Vendors",
   pages: "Pages",

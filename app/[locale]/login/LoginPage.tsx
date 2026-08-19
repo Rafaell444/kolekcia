@@ -218,7 +218,7 @@ function LoginPageInner(): React.ReactElement {
           <div className="mt-6 grid grid-cols-3 gap-3">
             {[
               { icon: "🎨", label: "2.5M+ designs" },
-              { icon: "⚡", label: "Earn XP & badges" },
+              { icon: "⚡", label: "Loyalty tiers" },
               { icon: "🎁", label: "Exclusive drops" },
             ].map(({ icon, label }) => (
               <div key={label} className="flex flex-col items-center gap-1.5 py-3 bg-dp-bg-surface border border-dp-border rounded-sm">

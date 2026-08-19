@@ -2,16 +2,26 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
-import { authFetch, parseList, type PaginatedResponse } from "@/lib/api"
+import { authFetch, getApiErrorMessage, parseList, type PaginatedResponse } from "@/lib/api"
 import { productHref } from "@/lib/product-url"
 import { notifyInboxRead } from "@/components/messaging/UnreadBadge"
-import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play, Check, CheckCheck } from "lucide-react"
+import { Send, MessageSquare, ChevronLeft, Loader2, Paperclip, X, Play, Check, CheckCheck, Flag } from "lucide-react"
 import { getAccessToken, getStoredUser } from "@/lib/auth-storage"
 import { refreshAccessToken } from "@/lib/api"
 import { useChatSocket, useNotificationSocket, type ChatWsEvent } from "@/hooks/use-messaging-ws"
+import { getDeviceRiskId } from "@/lib/device-risk"
+
+const MAX_FILES_PER_MESSAGE = 3
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const MAX_VIDEO_BYTES = 25 * 1024 * 1024
+const MAX_MESSAGE_BYTES = 30 * 1024 * 1024
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "image/jpeg", "image/png", "image/webp", "image/gif",
+  "video/mp4", "video/webm", "video/quicktime",
+])
 
 export type InboxAttachment = { id: string; url: string; media_type: string; original_name: string }
-export type InboxMessage = { id: string; from_role: string; text: string; sent_at: string; read: boolean; attachments: InboxAttachment[] }
+export type InboxMessage = { id: string; from_role: string; text: string; sent_at: string; read: boolean; attachments: InboxAttachment[]; is_deleted?: boolean }
 export type InboxConversation = {
   id: string
   subject: string
@@ -62,7 +72,7 @@ function AttachmentPreview({ att }: { att: InboxAttachment }) {
 
 function mergeMsg(msgs: InboxMessage[], newMsg: InboxMessage): InboxMessage[] {
   const id = String(newMsg.id)
-  if (msgs.some((m) => String(m.id) === id)) return msgs
+  if (msgs.some((m) => String(m.id) === id)) return msgs.map((message) => String(message.id) === id ? newMsg : message)
   return [...msgs, newMsg]
 }
 
@@ -80,6 +90,8 @@ function ChatWindow({
   const [draft, setDraft] = useState("")
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
+  const [error, setError] = useState("")
+  const [reported, setReported] = useState<Set<string>>(new Set())
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const prevMsgCount = useRef(conv.messages?.length ?? 0)
@@ -118,6 +130,7 @@ function ChatWindow({
     const text = draft.trim()
     if (!text && pendingFiles.length === 0) return
     setSending(true)
+    setError("")
     try {
       let msg: InboxMessage
       if (pendingFiles.length > 0) {
@@ -128,10 +141,15 @@ function ChatWindow({
         const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
         const res = await fetch(`${base}/messaging/conversations/${conv.id}/messages/`, {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            "X-Device-ID": getDeviceRiskId(),
+          },
           body: form,
         })
-        msg = await res.json() as InboxMessage
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw { status: res.status, data }
+        msg = data as InboxMessage
       } else {
         msg = await authFetch<InboxMessage>(`/messaging/conversations/${conv.id}/messages/`, {
           method: "POST",
@@ -142,13 +160,45 @@ function ChatWindow({
       setDraft("")
       setPendingFiles([])
       requestAnimationFrame(scrollChatToBottom)
-    } catch { /* noop */ }
+    } catch (err) { setError(getApiErrorMessage(err, "Could not send message.")) }
     finally { setSending(false) }
+  }
+
+  async function reportMessage(message: InboxMessage) {
+    const reason = window.prompt("Why are you reporting this message?")
+    if (!reason?.trim()) return
+    try {
+      await authFetch("/messaging/reports/", {
+        method: "POST",
+        body: JSON.stringify({ target_type: "inbox", target_id: message.id, reason: reason.trim() }),
+      })
+      setReported((current) => new Set(current).add(String(message.id)))
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not report message."))
+    }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
-    setPendingFiles((prev) => [...prev, ...files])
+    const combined = [...pendingFiles, ...files]
+    let validationError = ""
+    if (combined.length > MAX_FILES_PER_MESSAGE) {
+      validationError = `You can attach up to ${MAX_FILES_PER_MESSAGE} files per message.`
+    } else if (combined.some((file) => !ALLOWED_ATTACHMENT_TYPES.has(file.type))) {
+      validationError = "Only JPEG, PNG, WebP, GIF, MP4, WebM, and MOV files are allowed."
+    } else if (combined.some((file) => file.type.startsWith("image/") && file.size > MAX_IMAGE_BYTES)) {
+      validationError = "Images can be up to 10 MB each."
+    } else if (combined.some((file) => file.type.startsWith("video/") && file.size > MAX_VIDEO_BYTES)) {
+      validationError = "Videos can be up to 25 MB each."
+    } else if (combined.reduce((total, file) => total + file.size, 0) > MAX_MESSAGE_BYTES) {
+      validationError = "Attachments can total up to 30 MB per message."
+    }
+    if (validationError) {
+      setError(validationError)
+    } else {
+      setError("")
+      setPendingFiles(combined)
+    }
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
@@ -192,7 +242,7 @@ function ChatWindow({
           const isOwn = m.from_role === "customer"
           return (
             <div key={m.id} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-sm text-[13px] leading-relaxed ${
+              <div className={`group relative max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-sm text-[13px] leading-relaxed ${
                 isOwn
                   ? "bg-dp-accent-cta text-white"
                   : "bg-dp-bg-elevated border border-dp-border text-dp-text-primary"
@@ -200,7 +250,7 @@ function ChatWindow({
                 {!isOwn && conv.vendor_name && (
                   <p className="text-[10px] font-bold text-dp-text-tertiary mb-1 uppercase tracking-wider">{conv.vendor_name}</p>
                 )}
-                {m.text && <p>{m.text}</p>}
+                {m.text && <p className={m.is_deleted ? "italic opacity-70" : ""}>{m.text}</p>}
                 {(m.attachments ?? []).length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {m.attachments.map((att) => (
@@ -216,6 +266,11 @@ function ChatWindow({
                       : <Check size={13} className="text-white/60" aria-label="Sent" />
                   )}
                 </p>
+                {!isOwn && !m.is_deleted && (
+                  <button type="button" disabled={reported.has(String(m.id))} onClick={() => void reportMessage(m)} className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 text-dp-text-tertiary hover:text-dp-accent-cta disabled:opacity-40" aria-label="Report message">
+                    <Flag size={11} />
+                  </button>
+                )}
               </div>
             </div>
           )
@@ -223,6 +278,7 @@ function ChatWindow({
       </div>
 
       <div className="px-3 sm:px-4 py-3 border-t border-dp-border bg-dp-bg-surface shrink-0">
+        {error && <p className="mb-2 text-[11px] text-dp-accent-cta">{error}</p>}
         {pendingFiles.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
             {pendingFiles.map((f, i) => (
@@ -270,6 +326,9 @@ function ChatWindow({
             {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={15} />}
           </button>
         </form>
+        <p className="mt-1.5 text-[10px] text-dp-text-tertiary">
+          Up to 3 files. Images 10 MB each, videos 25 MB each, 30 MB total.
+        </p>
       </div>
     </div>
   )
@@ -313,7 +372,6 @@ export default function InboxPanel({
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     loadList()
       .then((data) => {
         if (cancelled) return

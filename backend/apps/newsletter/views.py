@@ -23,15 +23,9 @@ class NewsletterSubscribeView(APIView):
 
         subscriber, created = NewsletterSubscriber.objects.get_or_create(email=email)
 
-        if created and not subscriber.xp_awarded:
-            subscriber.xp_awarded = True
-            subscriber.save(update_fields=["xp_awarded"])
-            if request.user.is_authenticated:
-                try:
-                    from apps.gamification.services import award_xp
-                    award_xp(request.user, "newsletter_signup")
-                except Exception:
-                    pass
+        if created and not subscriber.welcome_reward_sent:
+            subscriber.welcome_reward_sent = True
+            subscriber.save(update_fields=["welcome_reward_sent"])
 
         from apps.emails.default_templates import get_default_templates
         from apps.emails.models import EmailTemplate

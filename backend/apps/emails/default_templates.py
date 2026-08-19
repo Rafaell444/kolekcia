@@ -133,8 +133,11 @@ def order_shipped_html() -> str:
             ("Order", "#{{order_number}}"),
             ("Tracking", "{{tracking_code}}"),
             ("Total paid", "{{total}}"),
+            ("Points earned", "{{points_earned}}"),
         ])
         + '<p style="margin:0 0 8px;white-space:pre-wrap;">{{tracking_info}}</p>'
+        + '<p style="margin:16px 0 8px;padding:14px 16px;background:#fff8e8;border-left:3px solid ' + GOLD + ';'
+        'color:' + INK + ';font-size:13px;">{{points_message}}</p>'
         + '<p style="margin:20px 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;'
         'color:#aeaeb2;font-weight:700;">Items in this shipment</p>'
         + "{{items_html}}"
@@ -320,7 +323,7 @@ _META = [
     ("order_confirmed", "Order Confirmed", "Order #{{order_number}} confirmed - thank you!",
      ["customer_name", "order_number", "total", "currency", "items", "items_html", "totals_html", "shipping_address_html"]),
     ("order_shipped", "Order Shipped", "Your order #{{order_number}} has shipped!",
-     ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "items_html", "totals_html", "shipping_address_html"]),
+     ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "points_earned", "points_status", "points_message", "items_html", "totals_html", "shipping_address_html"]),
     ("review_request", "Review Request", "How was your Koleqcia order?",
      ["customer_name", "order_number", "google_review_url"]),
     ("custom_order_shipped", "Custom Order Shipped", "Your custom order is on the way",

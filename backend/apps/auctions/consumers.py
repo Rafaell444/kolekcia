@@ -42,13 +42,16 @@ class AuctionChatConsumer(AsyncWebsocketConsumer):
         if not text:
             return
 
-        message = await self._save_message(text)
-        if not message:
+        result = await self._save_message(text)
+        if not result:
+            return
+        if result.get("type") == "chat_error":
+            await self.send(text_data=json.dumps(result))
             return
 
         await self.channel_layer.group_send(
             self.group_name,
-            {"type": "chat_message", "message": message},
+            {"type": "chat_message", "message": result},
         )
 
     async def chat_message(self, event):
@@ -68,6 +71,7 @@ class AuctionChatConsumer(AsyncWebsocketConsumer):
     def _save_message(self, text):
         from apps.auctions.models import Auction, AuctionChatMessage
         from apps.auctions.serializers import AuctionChatMessageSerializer
+        from apps.messaging.moderation import enforce_message, log_risk_event
 
         try:
             auction = Auction.objects.get(pk=self.auction_id)
@@ -77,5 +81,25 @@ class AuctionChatConsumer(AsyncWebsocketConsumer):
         if not auction.is_biddable():
             return None
 
+        decision = enforce_message(
+            self.user,
+            text,
+            "auction",
+            auction=auction,
+            vendor=auction.vendor,
+            source=self.scope,
+            connection_id=self.channel_name,
+        )
+        if not decision.allowed:
+            return {
+                "type": "chat_error",
+                "detail": decision.detail,
+                "retry_after": decision.retry_after,
+            }
+
         msg = AuctionChatMessage.objects.create(auction=auction, user=self.user, text=text)
+        log_risk_event(
+            "chat_message", "allowed", user=self.user, auction=auction,
+            vendor=auction.vendor, source=self.scope, metadata={"channel": "auction"},
+        )
         return AuctionChatMessageSerializer(msg).data

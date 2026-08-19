@@ -32,7 +32,7 @@ async function clearRefreshCookie(): Promise<void> {
  * Refresh token is stored primarily in an httpOnly cookie; a storage copy is
  * kept as a same-origin fallback if the cookie route is unavailable.
  */
-export function storeTokens(access: string, refresh: string, rememberMe: boolean): void {
+export async function storeTokens(access: string, refresh: string, rememberMe: boolean): Promise<void> {
   if (typeof window === "undefined") return
   // Security fix #1: refresh token stored ONLY in httpOnly cookie, never in storage
   if (rememberMe) {
@@ -46,7 +46,7 @@ export function storeTokens(access: string, refresh: string, rememberMe: boolean
     localStorage.removeItem(USER_KEY)
     sessionStorage.setItem(ACCESS_KEY, access)
   }
-  void persistRefreshCookie(refresh, rememberMe)
+  await persistRefreshCookie(refresh, rememberMe)
 }
 
 export function getAccessToken(): string | null {

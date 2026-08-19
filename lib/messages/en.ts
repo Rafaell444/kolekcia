@@ -13,7 +13,7 @@ const en = {
     account: "My Account",
     inbox: "Inbox",
     wishlist: "Wishlist",
-    awards: "Awards & XP",
+    awards: "Loyalty",
     orders: "Order History",
     profile: "Profile & Orders",
     signOut: "Sign Out",

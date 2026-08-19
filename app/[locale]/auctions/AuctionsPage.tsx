@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
-import Link from "next/link"
+import LocalizedLink from "@/components/seo/LocalizedLink"
 import { Clock, Users, Trophy, Flame, CheckCircle2, Bell, ChevronLeft, ChevronRight } from "lucide-react"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
 import { useLocale } from "@/contexts/locale-context"
@@ -118,7 +118,7 @@ function AuctionCard({ a }: { a: ApiAuction }) {
   const isUpcoming = a.is_upcoming ?? (!a.is_ended && !isBiddable)
 
   return (
-    <Link
+    <LocalizedLink
       href={`/auctions/${a.slug || a.id}`}
       className="group relative flex flex-col bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden transition-shadow hover:shadow-lg hover:border-dp-border-hover"
     >
@@ -182,7 +182,7 @@ function AuctionCard({ a }: { a: ApiAuction }) {
           </div>
         </div>
       </div>
-    </Link>
+    </LocalizedLink>
   )
 }
 
@@ -375,7 +375,7 @@ export default function AuctionsPage(): React.ReactElement {
             <h1 className="font-display text-5xl text-dp-text-primary">Auctions</h1>
           </div>
           <p className="text-dp-text-secondary text-[14px] max-w-xl">
-            Bid on exclusive, one-of-a-kind pieces directly from artists. Every win earns 500 XP.
+            Bid on exclusive, one-of-a-kind pieces directly from artists. Auction purchases can build points toward your current loyalty tier after payment.
           </p>
           <p className="mt-3 inline-flex items-center gap-2 border border-dp-accent-gold/40 bg-dp-accent-gold/10 px-3 py-2 text-[12px] font-semibold text-dp-text-primary rounded-sm">
             <span aria-hidden="true">+</span>
@@ -487,7 +487,7 @@ export default function AuctionsPage(): React.ReactElement {
                   {[
                     ["Browse Drops", "Exclusive pieces go live weekly."],
                     ["Place Your Bid", "Any amount above the current bid (minimum increment 1)."],
-                    ["Win & Earn XP", "Highest bid when timer ends wins. +500 XP."],
+                    ["Win & Build Loyalty", "Highest bid when timer ends wins. Paid auction orders can add lifetime loyalty points."],
                     ["Choose Delivery", "After winning, choose from the delivery options available for that product."],
                   ].map(([title, body], i) => (
                     <li key={i} className="flex gap-3">

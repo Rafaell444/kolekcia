@@ -100,7 +100,16 @@ class LoginView(APIView):
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            from apps.messaging.moderation import log_risk_event
+
+            email = (request.data.get("email") or "").strip().lower()
+            user = User.objects.filter(email__iexact=email).first()
+            log_risk_event(
+                "login_failed", "rejected", user=user, source=request,
+                reason="Invalid email, password, or account state.",
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.validated_data["user"]
         refresh = RefreshToken.for_user(user)
         return Response(

@@ -101,6 +101,14 @@ def send_template_email(
 
     subject = _render(template.subject, context)
     html_body = _render(template.html_body, context)
+    points_message = str(context.get("points_message") or "").strip()
+    if event_key == "order_shipped" and points_message and "points_message" not in template.html_body:
+        html_body += (
+            '<div style="margin:20px 0;padding:14px 16px;background:#fff8e8;'
+            'border-left:3px solid #b86e00;color:#111113;'
+            'font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55;">'
+            f"{points_message}</div>"
+        )
     from_email = from_email_for_event(event_key)
     from_address = from_email_address_for_event(event_key)
 

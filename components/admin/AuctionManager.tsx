@@ -96,6 +96,18 @@ const EMPTY_FORM: AuctionForm = {
   status: "active",
 }
 
+const ARTIST_OPTIONS = [
+  { value: "Sculpi", label: "Sculpi" },
+  { value: "MangaMoon", label: "MangaMoon" },
+] as const
+
+function vendorArtistName(vendor?: { name?: string; slug?: string } | null): string {
+  if (!vendor) return ""
+  if (vendor.slug === "sculpi" || vendor.slug === "figure-studio") return "Sculpi"
+  if (vendor.slug === "mangamoon") return "MangaMoon"
+  return vendor.name ?? ""
+}
+
 function toLocalInput(iso: string): string {
   if (!iso) return ""
   const d = new Date(iso)
@@ -132,6 +144,7 @@ function statusBadge(a: Auction) {
 export default function AuctionManager(): React.ReactElement {
   const adminUser = getAdminUser()
   const isVendorOnly = Boolean(adminUser?.vendor) && !adminUser?.is_staff
+  const defaultArtistName = isVendorOnly ? vendorArtistName(adminUser?.vendor) : ARTIST_OPTIONS[0].value
   const auctionBase = isVendorOnly ? "/auctions/vendor" : "/admin/auctions"
   const productsUrl = isVendorOnly ? "/vendors/me/products/" : "/admin/products/"
 
@@ -176,6 +189,7 @@ export default function AuctionManager(): React.ReactElement {
     setEditing(null)
     setForm({
       ...EMPTY_FORM,
+      artist_name: defaultArtistName,
       starts_at: toLocalInput(now.toISOString()),
       ends_at: toLocalInput(ends.toISOString()),
     })
@@ -212,7 +226,7 @@ export default function AuctionManager(): React.ReactElement {
       reserved_size_variant_id: "",
       title: product?.title ?? (productId ? f.title : ""),
       title_ka: product?.title_ka ?? (productId ? f.title_ka : ""),
-      artist_name: product?.artist_name ?? f.artist_name,
+      artist_name: isVendorOnly ? defaultArtistName : f.artist_name,
       image_url: product?.image_url ?? f.image_url,
     }))
   }
@@ -229,7 +243,7 @@ export default function AuctionManager(): React.ReactElement {
       reserved_size_variant_id: form.reserved_size_variant_id ? parseInt(form.reserved_size_variant_id, 10) : null,
       title: selectedProduct?.title ?? form.title,
       title_ka: selectedProduct?.title_ka ?? form.title_ka,
-      artist_name: form.artist_name,
+      artist_name: isVendorOnly ? defaultArtistName : form.artist_name,
       image_url: form.image_url,
       starting_bid: form.starting_bid,
       shipping_price_gel: form.shipping_price_gel,
@@ -424,24 +438,42 @@ export default function AuctionManager(): React.ReactElement {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto">
-          <div className="w-full max-w-lg bg-dp-bg-surface border border-dp-border rounded-sm my-8">
+        <div className="fixed inset-0 z-50 flex items-start justify-center px-4 py-8 sm:py-12 bg-black/60 overflow-y-auto">
+          <div className="w-full max-w-lg bg-dp-bg-surface border border-dp-border rounded-sm my-auto max-h-[calc(100vh-4rem)] sm:max-h-[calc(100vh-6rem)] overflow-y-auto">
             <div className="flex items-center justify-between px-5 py-4 border-b border-dp-border">
               <h2 className="font-display text-xl text-dp-text-primary">{editing ? "Edit Auction" : "Create Auction"}</h2>
               <button type="button" onClick={() => setShowModal(false)}><X size={18} /></button>
             </div>
             <form onSubmit={saveAuction} className="p-5 flex flex-col gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Product</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Shop product</span>
                 <select
                   value={form.product_id}
                   onChange={(e) => handleProductSelect(e.target.value)}
                   className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]"
                 >
-                  <option value="">— Optional —</option>
+                  <option value="">Create auction without a shop product</option>
                   {products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
                 </select>
+                <span className="text-[10px] text-dp-text-tertiary">
+                  Choose an existing product from your shop to copy its title, image, and ready-to-ship units.
+                </span>
               </label>
+              {!isVendorOnly && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Artist Name</span>
+                  <select
+                    required
+                    value={form.artist_name}
+                    onChange={(e) => setForm((f) => ({ ...f, artist_name: e.target.value }))}
+                    className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]"
+                  >
+                    {ARTIST_OPTIONS.map((artist) => (
+                      <option key={artist.value} value={artist.value}>{artist.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {form.product_id && (() => {
                 const readyVariants = products
                   .find((p) => String(p.id) === form.product_id)
@@ -458,7 +490,7 @@ export default function AuctionManager(): React.ReactElement {
                     >
                       <option value="">Select variant</option>
                       {readyVariants.map((v) => (
-                        <option key={v.id} value={v.id}>{v.label} - {v.stock} ready</option>
+                        <option key={v.id} value={v.id}>{v.label} - stock: {v.stock ?? 0}</option>
                       ))}
                       {editing?.inventory_reserved && editing.reserved_size_variant && (
                         <option value={editing.reserved_size_variant}>{editing.reserved_variant_label || "Reserved unit"}</option>
@@ -530,10 +562,6 @@ export default function AuctionManager(): React.ReactElement {
               <p className="text-[10px] text-dp-text-tertiary">
                 Shipping is charged only after the auction is won. Self-pickup is offered on non-Sculpi auctions.
               </p>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Artist Name</span>
-                <input value={form.artist_name} onChange={(e) => setForm((f) => ({ ...f, artist_name: e.target.value }))} className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" />
-              </label>
               {!form.product_id && (
                 <AdminMediaUpload
                   label="Auction image"

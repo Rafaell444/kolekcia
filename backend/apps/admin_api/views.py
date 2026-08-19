@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 
 from django.contrib.auth import authenticate
 from django.core.cache import cache
+from django.db import transaction
 from django.db.models import Sum, Count, Q, Max
 from django.db.models.functions import TruncMonth, TruncDate
 from django.utils import timezone
@@ -110,6 +111,14 @@ class AdminLoginView(APIView):
         user = authenticate(request, username=email, password=password)
         if not user or not user.is_active:
             _record_failed_login(email)
+            from apps.messaging.moderation import log_risk_event
+            from apps.users.models import User
+
+            log_risk_event(
+                "admin_login_failed", "rejected",
+                user=User.objects.filter(email__iexact=email).first(), source=request,
+                reason="Invalid admin or vendor credentials.",
+            )
             return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
         is_vendor = hasattr(user, "vendor_profile")
@@ -450,7 +459,31 @@ class AdminOrderUpdateView(APIView):
             if should_send_shipment_email:
                 if not shipment.shipped_at:
                     shipment.shipped_at = timezone.now()
+                try:
+                    from apps.gamification.services import release_order_points_on_shipment
+                    released_points = release_order_points_on_shipment(order)
+                    if released_points:
+                        log_action(request.user, "points_released_on_shipment", "Order", order.pk, {
+                            "order_number": order.order_number,
+                            "points": released_points,
+                            "shipment_id": shipment.pk,
+                        })
+                except Exception:
+                    pass
                 _send_shipment_email(order, shipment)
+            elif shipment.status == "delivered" and prev_shipment_status != "delivered":
+                try:
+                    from apps.gamification.services import release_order_points_on_shipment
+                    released_points = release_order_points_on_shipment(order)
+                    if released_points:
+                        log_action(request.user, "points_released_on_shipment", "Order", order.pk, {
+                            "order_number": order.order_number,
+                            "points": released_points,
+                            "shipment_id": shipment.pk,
+                            "status": "delivered",
+                        })
+                except Exception:
+                    pass
 
             shipment.save()
 
@@ -509,7 +542,30 @@ class AdminOrderUpdateView(APIView):
                         })
                 except Exception:
                     pass
-            if new_status == "cancelled":
+            if new_status == "refunded":
+                try:
+                    from apps.gamification.services import reverse_order_points_for_refund
+                    reversal = reverse_order_points_for_refund(order, reason=f"Point reversal for refunded order {order.order_number}")
+                    if reversal:
+                        log_action(request.user, "points_refund_reversal", "Order", order.pk, {
+                            "order_number": order.order_number,
+                            "points": reversal.points,
+                        })
+                except Exception:
+                    pass
+            if new_status in ("shipped", "delivered"):
+                try:
+                    from apps.gamification.services import release_order_points_on_shipment
+                    released_points = release_order_points_on_shipment(order)
+                    if released_points:
+                        log_action(request.user, "points_released_on_shipment", "Order", order.pk, {
+                            "order_number": order.order_number,
+                            "points": released_points,
+                            "status": new_status,
+                        })
+                except Exception:
+                    pass
+            if new_status in ("cancelled", "refunded"):
                 try:
                     from apps.creators.services import clawback_creator_for_order
                     if clawback_creator_for_order(order):
@@ -535,6 +591,16 @@ class AdminOrderUpdateView(APIView):
             if not order.shipped_at:
                 order.shipped_at = timezone.now()
             order.save(update_fields=["shipped_at"])
+            try:
+                from apps.gamification.services import release_order_points_on_shipment
+                released_points = release_order_points_on_shipment(order)
+                if released_points:
+                    log_action(request.user, "points_released_on_shipment", "Order", order.pk, {
+                        "order_number": order.order_number,
+                        "points": released_points,
+                    })
+            except Exception:
+                pass
             _send_shipping_email(order)
 
         return Response(OrderSerializer(order).data)
@@ -719,7 +785,7 @@ class AdminProductStockView(APIView):
         return Response({"id": variant.pk, "stock": variant.stock, "surcharge": str(variant.surcharge)})
 
 
-ALLOWED_MEDIA_FOLDERS = frozenset({"blog", "hero", "categories", "auctions", "artists", "cms"})
+ALLOWED_MEDIA_FOLDERS = frozenset({"blog", "hero", "categories", "auctions", "artists", "cms", "points-market"})
 ALLOWED_VIDEO_EXTENSIONS = frozenset({".mp4", ".webm"})
 ALLOWED_VIDEO_CONTENT_TYPES = frozenset({"video/mp4", "video/webm"})
 MAX_VIDEO_UPLOAD_BYTES = 80 * 1024 * 1024
@@ -900,12 +966,58 @@ class AdminUserListView(AdminNoPaginationMixin, generics.ListAPIView):
     permission_classes = [IsAdminUser]
 
     def get_serializer_class(self):
-        from apps.users.serializers import UserSerializer
-        return UserSerializer
+        class AdminUserSerializer(serializers.ModelSerializer):
+            pending_points = serializers.IntegerField(read_only=True)
+            tier_key = serializers.SerializerMethodField()
+            tier_name = serializers.SerializerMethodField()
+
+            class Meta:
+                from apps.users.models import User
+                model = User
+                fields = (
+                    "id",
+                    "email",
+                    "name",
+                    "role",
+                    "is_active",
+                    "date_joined",
+                    "spendable_points",
+                    "lifetime_points",
+                    "pending_points",
+                    "tier_key",
+                    "tier_name",
+                )
+                read_only_fields = fields
+
+            def _tier(self, obj):
+                from apps.gamification.services import get_tier_for_points
+                return get_tier_for_points(obj.spendable_points or 0)
+
+            def get_tier_key(self, obj):
+                return self._tier(obj).key
+
+            def get_tier_name(self, obj):
+                return self._tier(obj).label
+
+        return AdminUserSerializer
 
     def get_queryset(self):
         from apps.users.models import User
-        return User.objects.all().order_by("-date_joined")
+        from apps.gamification.models import PointTransaction
+
+        return (
+            User.objects.annotate(
+                pending_points=Sum(
+                    "point_transactions__points",
+                    filter=Q(
+                        point_transactions__transaction_type=PointTransaction.TYPE_EARNED,
+                        point_transactions__status=PointTransaction.STATUS_PENDING,
+                    ),
+                    default=0,
+                )
+            )
+            .order_by("-date_joined")
+        )
 
 
 class AdminUserToggleView(APIView):
@@ -924,6 +1036,92 @@ class AdminUserToggleView(APIView):
         action = "user_activate" if user.is_active else "user_deactivate"
         log_action(request.user, action, "User", user.pk, {"email": user.email})
         return Response({"id": str(user.pk), "is_active": user.is_active})
+
+
+class AdminUserPointAdjustmentView(APIView):
+    permission_classes = [IsAdminUser]
+
+    @transaction.atomic
+    def post(self, request, pk):
+        from apps.gamification.models import PointTransaction
+        from apps.gamification.services import get_tier_for_points
+        from apps.users.models import User
+
+        try:
+            amount = int(request.data.get("amount"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Amount must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
+
+        reason = str(request.data.get("reason") or "").strip()
+        if amount == 0:
+            return Response({"detail": "Amount cannot be zero."}, status=status.HTTP_400_BAD_REQUEST)
+        if abs(amount) > 100000:
+            return Response({"detail": "Amount is too large for a single manual adjustment."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(reason) < 8:
+            return Response({"detail": "Reason is required and must be at least 8 characters."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.select_for_update().get(pk=pk)
+        except User.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        before = user.spendable_points or 0
+        after = before + amount
+        if after < 0:
+            return Response(
+                {"detail": f"Cannot reduce below zero. Current spendable balance is {before} points."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.spendable_points = after
+        user.save(update_fields=["spendable_points"])
+        tx = PointTransaction.objects.create(
+            user=user,
+            transaction_type=PointTransaction.TYPE_ADJUSTMENT,
+            status=PointTransaction.STATUS_AVAILABLE,
+            points=amount,
+            description=f"Admin points adjustment: {reason[:180]}",
+            metadata={
+                "admin_id": str(request.user.id),
+                "admin_email": request.user.email,
+                "reason": reason,
+                "balance_before": before,
+                "balance_after": after,
+            },
+        )
+        log_action(
+            request.user,
+            "points_adjustment",
+            "User",
+            user.pk,
+            {
+                "email": user.email,
+                "amount": amount,
+                "balance_before": before,
+                "balance_after": after,
+                "reason": reason,
+                "transaction_id": tx.id,
+            },
+        )
+        tier = get_tier_for_points(user.spendable_points or 0)
+        pending_points = (
+            PointTransaction.objects.filter(
+                user=user,
+                transaction_type=PointTransaction.TYPE_EARNED,
+                status=PointTransaction.STATUS_PENDING,
+            )
+            .aggregate(total=Sum("points"))
+            .get("total")
+            or 0
+        )
+        return Response({
+            "id": str(user.pk),
+            "spendable_points": user.spendable_points,
+            "pending_points": pending_points,
+            "tier_key": tier.key,
+            "tier_name": tier.label,
+            "adjustment_transaction_id": tx.id,
+        })
 
 
 # ── Promo Codes ───────────────────────────────────────────────────────────────
@@ -1226,7 +1424,7 @@ class AdminAnnouncementBarView(APIView):
                 "messages": [
                     "FREE SHIPPING on orders over $49 — use code FREESHIP",
                     "LIMITED EDITIONS: New drops every Friday at noon",
-                    "EARN XP with every purchase — unlock exclusive badges",
+                    "AUCTIONS: Bid on limited collectibles from approved vendors",
                 ],
                 "is_active": True,
             },
@@ -1292,76 +1490,148 @@ class AdminSettingsView(APIView):
         return Response({"detail": "Settings updated."})
 
 
-# ── Gamification ──────────────────────────────────────────────────────────────
+# ── Loyalty / Points Market ───────────────────────────────────────────────────
 
-class AdminBadgeListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
-    permission_classes = [IsAdminUser]
-
-    def get_serializer_class(self):
-        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
-        if self.request.method == "POST":
-            return BadgeWriteSerializer
-        return BadgeSerializer
-
-    def get_queryset(self):
-        from apps.gamification.models import Badge
-        return Badge.objects.select_related("prize_promo").all()
-
-    def create(self, request, *args, **kwargs):
-        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
-        write_ser = BadgeWriteSerializer(data=request.data)
-        write_ser.is_valid(raise_exception=True)
-        badge = write_ser.save()
-        badge = self.get_queryset().get(pk=badge.pk)
-        return Response(BadgeSerializer(badge).data, status=status.HTTP_201_CREATED)
-
-
-class AdminBadgeDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAdminUser]
+class AdminPointsMarketItemListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
+    permission_classes = [IsAdminOrVendor]
 
     def get_serializer_class(self):
-        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
-        if self.request.method in ("PUT", "PATCH"):
-            return BadgeWriteSerializer
-        return BadgeSerializer
+        from apps.gamification.serializers import PointsMarketItemSerializer
+        return PointsMarketItemSerializer
 
     def get_queryset(self):
-        from apps.gamification.models import Badge
-        return Badge.objects.select_related("prize_promo").all()
+        from apps.gamification.models import PointsMarketItem
+        qs = PointsMarketItem.objects.select_related("vendor").all()
+        if not self.request.user.is_staff:
+            vendor = getattr(self.request.user, "vendor_profile", None)
+            qs = qs.filter(vendor=vendor, item_type=PointsMarketItem.TYPE_PHYSICAL)
+        return qs.order_by("point_cost", "name")
 
-    def update(self, request, *args, **kwargs):
-        from apps.gamification.serializers import BadgeSerializer, BadgeWriteSerializer
-        partial = kwargs.pop("partial", False)
-        instance = self.get_object()
-        write_ser = BadgeWriteSerializer(instance, data=request.data, partial=partial)
-        write_ser.is_valid(raise_exception=True)
-        write_ser.save()
-        instance = self.get_queryset().get(pk=instance.pk)
-        return Response(BadgeSerializer(instance).data)
+    def perform_create(self, serializer):
+        from apps.gamification.models import PointsMarketItem
+
+        if self.request.user.is_staff:
+            serializer.save()
+            return
+        vendor = getattr(self.request.user, "vendor_profile", None)
+        if not vendor:
+            raise serializers.ValidationError({"detail": "Vendor profile is required."})
+        if serializer.validated_data.get("item_type") != PointsMarketItem.TYPE_PHYSICAL:
+            raise serializers.ValidationError({"item_type": "Vendor admins can only manage physical rewards."})
+        serializer.save(vendor=vendor, item_type=PointsMarketItem.TYPE_PHYSICAL)
 
 
-class AdminXPRuleListView(AdminNoPaginationMixin, generics.ListCreateAPIView):
-    permission_classes = [IsAdminUser]
+class AdminPointsMarketItemDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminOrVendor]
 
     def get_serializer_class(self):
-        from apps.gamification.serializers import XPRuleSerializer
-        return XPRuleSerializer
+        from apps.gamification.serializers import PointsMarketItemSerializer
+        return PointsMarketItemSerializer
 
     def get_queryset(self):
-        from apps.gamification.models import XPRule
-        return XPRule.objects.all().order_by("action_key")
+        from apps.gamification.models import PointsMarketItem
+        qs = PointsMarketItem.objects.select_related("vendor").all()
+        if not self.request.user.is_staff:
+            vendor = getattr(self.request.user, "vendor_profile", None)
+            qs = qs.filter(vendor=vendor, item_type=PointsMarketItem.TYPE_PHYSICAL)
+        return qs
+
+    def perform_update(self, serializer):
+        from apps.gamification.models import PointsMarketItem
+
+        if self.request.user.is_staff:
+            serializer.save()
+            return
+        vendor = getattr(self.request.user, "vendor_profile", None)
+        if not vendor:
+            raise serializers.ValidationError({"detail": "Vendor profile is required."})
+        if serializer.validated_data.get("item_type", serializer.instance.item_type) != PointsMarketItem.TYPE_PHYSICAL:
+            raise serializers.ValidationError({"item_type": "Vendor admins can only manage physical rewards."})
+        serializer.save(vendor=vendor, item_type=PointsMarketItem.TYPE_PHYSICAL)
 
 
-class AdminXPRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAdminUser]
+class AdminPointTransactionListView(generics.ListAPIView):
+    permission_classes = [IsAdminOrVendor]
+    pagination_class = PageNumberPagination
 
     def get_serializer_class(self):
-        from apps.gamification.serializers import XPRuleSerializer
-        return XPRuleSerializer
+        from apps.gamification.serializers import PointTransactionSerializer
+        return PointTransactionSerializer
 
     def get_queryset(self):
-        from apps.gamification.models import XPRule
-        return XPRule.objects.all()
+        from apps.gamification.models import PointTransaction
+        qs = PointTransaction.objects.select_related("user", "order", "market_item", "market_item__vendor").all()
+        if not self.request.user.is_staff:
+            vendor = getattr(self.request.user, "vendor_profile", None)
+            qs = qs.filter(market_item__vendor=vendor)
+        user_id = self.request.query_params.get("user_id")
+        status_filter = self.request.query_params.get("status")
+        if user_id:
+            qs = qs.filter(user_id=user_id)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs.order_by("-created_at")
+
+
+class AdminPointsMarketRedemptionListView(generics.ListAPIView):
+    permission_classes = [IsAdminOrVendor]
+    pagination_class = PageNumberPagination
+
+    def get_serializer_class(self):
+        from apps.gamification.serializers import PointsMarketRedemptionSerializer
+        return PointsMarketRedemptionSerializer
+
+    def get_queryset(self):
+        from apps.gamification.models import PointsMarketRedemption
+        qs = PointsMarketRedemption.objects.select_related("user", "market_item", "market_item__vendor", "transaction").all()
+        if not self.request.user.is_staff:
+            vendor = getattr(self.request.user, "vendor_profile", None)
+            qs = qs.filter(market_item__vendor=vendor)
+        status_filter = self.request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs.order_by("-created_at")
+
+
+class AdminPointsMarketRedemptionDetailView(generics.RetrieveUpdateAPIView):
+    permission_classes = [IsAdminOrVendor]
+
+    def get_serializer_class(self):
+        from apps.gamification.serializers import PointsMarketRedemptionSerializer
+        return PointsMarketRedemptionSerializer
+
+    def get_queryset(self):
+        from apps.gamification.models import PointsMarketRedemption
+        qs = PointsMarketRedemption.objects.select_related("user", "market_item", "market_item__vendor", "transaction").all()
+        if not self.request.user.is_staff:
+            vendor = getattr(self.request.user, "vendor_profile", None)
+            qs = qs.filter(market_item__vendor=vendor)
+        return qs
+
+    def patch(self, request, *args, **kwargs):
+        from django.utils import timezone
+        from apps.gamification.models import PointsMarketRedemption
+
+        redemption = self.get_object()
+        allowed = {"status", "tracking_code", "admin_note"}
+        if not set(request.data.keys()).issubset(allowed):
+            return Response({"detail": "Only status, tracking_code, and admin_note can be updated."}, status=400)
+
+        status_value = request.data.get("status")
+        if status_value:
+            valid_statuses = {choice[0] for choice in PointsMarketRedemption.STATUS_CHOICES}
+            if status_value not in valid_statuses:
+                return Response({"detail": "Invalid redemption status."}, status=400)
+            redemption.status = status_value
+            if status_value == PointsMarketRedemption.STATUS_SHIPPED and not redemption.shipped_at:
+                redemption.shipped_at = timezone.now()
+
+        if "tracking_code" in request.data:
+            redemption.tracking_code = str(request.data.get("tracking_code") or "").strip()
+        if "admin_note" in request.data:
+            redemption.admin_note = str(request.data.get("admin_note") or "").strip()
+        redemption.save(update_fields=["status", "tracking_code", "admin_note", "shipped_at", "updated_at"])
+        return Response(self.get_serializer(redemption).data)
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────

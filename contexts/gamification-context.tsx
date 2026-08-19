@@ -1,50 +1,46 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react"
-import { getAccessToken } from "@/lib/auth-storage"
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { authFetch } from "@/lib/api"
+import { getAccessToken } from "@/lib/auth-storage"
 
-export type GamificationProfile = {
-  xp: number
-  points: number
-  level: number
-  streak_days: number
-  unseen_badge_count?: number
-  recent_xp: Array<{ id: number; action: string; xp_amount: number; created_at: string }>
-  earned_badges: Array<{
-    id: number
-    badge: {
-      id: number
-      name: string
-      icon: string
-      rarity: string
-      description: string
-      prize_promo_code?: string | null
-      prize_description?: string
-    }
-    earned_at: string
-    seen_at?: string | null
-    is_new?: boolean
-    granted_promo_code?: string | null
-  }>
+export type LoyaltyTierInfo = {
+  key: "genin" | "chunin" | "jonin"
+  label: string
+  discount_percent: string
+  sale_bonus_percent: string
+  threshold: number
+  next_key: "chunin" | "jonin" | null
+  next_label: string | null
+  next_threshold: number | null
+  next_sale_bonus_percent: string | null
+  points_to_next: number
+  progress_percent: number
+  point_balance: number
 }
 
-type GamificationContextValue = {
-  profile: GamificationProfile | null
+export type LoyaltyProfile = {
+  spendable_points: number
+  lifetime_points: number
+  pending_points: number
+  tier: LoyaltyTierInfo
+}
+
+type LoyaltyContextValue = {
+  profile: LoyaltyProfile | null
   loading: boolean
   refresh: () => Promise<void>
 }
 
-const GamificationContext = createContext<GamificationContextValue | null>(null)
-
-const STORAGE_KEY_PREFIX = "kol_gamification_"
+const LoyaltyContext = createContext<LoyaltyContextValue | null>(null)
+const STORAGE_KEY_PREFIX = "kol_loyalty_"
 
 function getStorageKey(userId: string): string {
   return `${STORAGE_KEY_PREFIX}${userId}`
 }
 
-export function GamificationProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [profile, setProfile] = useState<GamificationProfile | null>(null)
+export function LoyaltyProvider({ children }: { children: React.ReactNode }): React.ReactElement {
+  const [profile, setProfile] = useState<LoyaltyProfile | null>(null)
   const [loading, setLoading] = useState(false)
   const prevTokenRef = useRef<string | null>(null)
   const userIdRef = useRef<string | null>(null)
@@ -52,13 +48,10 @@ export function GamificationProvider({ children }: { children: React.ReactNode }
   const fetchProfile = useCallback(async (userId?: string) => {
     setLoading(true)
     try {
-      const data = await authFetch<GamificationProfile>("/gamification/profile/")
+      const data = await authFetch<LoyaltyProfile>("/gamification/profile/")
       setProfile(data)
-      // Per-user localStorage cache
       const uid = userId ?? userIdRef.current
-      if (uid) {
-        localStorage.setItem(getStorageKey(uid), JSON.stringify(data))
-      }
+      if (uid) localStorage.setItem(getStorageKey(uid), JSON.stringify(data))
     } catch {
       setProfile(null)
     } finally {
@@ -71,29 +64,26 @@ export function GamificationProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     const check = () => {
       const token = getAccessToken()
-      if (token !== prevTokenRef.current) {
-        prevTokenRef.current = token
-        if (token) {
-          // Decode user id from JWT payload (base64)
-          try {
-            const payload = JSON.parse(atob(token.split(".")[1])) as { user_id?: string }
-            const uid = payload.user_id
-            if (uid && uid !== userIdRef.current) {
-              userIdRef.current = uid
-              // Try to restore cached profile for this user
-              const cached = localStorage.getItem(getStorageKey(uid))
-              if (cached) {
-                try { setProfile(JSON.parse(cached) as GamificationProfile) } catch { /* noop */ }
-              }
-            }
-            fetchProfile(uid)
-          } catch {
-            fetchProfile()
+      if (token === prevTokenRef.current) return
+      prevTokenRef.current = token
+      if (!token) {
+        setProfile(null)
+        userIdRef.current = null
+        return
+      }
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1])) as { user_id?: string }
+        const uid = payload.user_id
+        if (uid && uid !== userIdRef.current) {
+          userIdRef.current = uid
+          const cached = localStorage.getItem(getStorageKey(uid))
+          if (cached) {
+            try { setProfile(JSON.parse(cached) as LoyaltyProfile) } catch { /* noop */ }
           }
-        } else {
-          setProfile(null)
-          userIdRef.current = null
         }
+        void fetchProfile(uid)
+      } catch {
+        void fetchProfile()
       }
     }
 
@@ -103,14 +93,18 @@ export function GamificationProvider({ children }: { children: React.ReactNode }
   }, [fetchProfile])
 
   return (
-    <GamificationContext.Provider value={{ profile, loading, refresh }}>
+    <LoyaltyContext.Provider value={{ profile, loading, refresh }}>
       {children}
-    </GamificationContext.Provider>
+    </LoyaltyContext.Provider>
   )
 }
 
-export function useGamification(): GamificationContextValue {
-  const ctx = useContext(GamificationContext)
-  if (!ctx) throw new Error("useGamification must be used within GamificationProvider")
+export function useLoyalty(): LoyaltyContextValue {
+  const ctx = useContext(LoyaltyContext)
+  if (!ctx) throw new Error("useLoyalty must be used within LoyaltyProvider")
   return ctx
 }
+
+export const GamificationProvider = LoyaltyProvider
+export const useGamification = useLoyalty
+export type GamificationProfile = LoyaltyProfile

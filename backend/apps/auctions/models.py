@@ -92,6 +92,9 @@ class Auction(SEOModelMixin):
     def finalize_if_ended(self):
         if not self.is_ended() or self.status != self.STATUS_ACTIVE:
             return False
+
+        was_live = self.is_live
+        inventory_released = False
         newly_won = False
         top_bid = self.bids.filter(is_disqualified=False).order_by("-amount").first()
         if top_bid:
@@ -101,11 +104,16 @@ class Auction(SEOModelMixin):
             self.is_replacement_winner = False
             if not self.winner_payment_status:
                 self.winner_payment_status = self.PAYMENT_PENDING
+        elif self.inventory_reserved and not self.bids.exists():
+            from .services import release_auction_inventory
+
+            release_auction_inventory(self)
+            inventory_released = True
         self.refresh_live_flag()
         self.save(update_fields=["winner", "winning_amount", "winner_payment_status", "is_replacement_winner", "is_live"])
         if newly_won and self.winner_id:
             self._send_auction_won_email()
-        return True
+        return newly_won or inventory_released or was_live != self.is_live
 
     def _send_auction_won_email(self):
         try:
@@ -207,6 +215,12 @@ class AuctionChatMessage(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auction_chat_messages")
     text = models.CharField(max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="deleted_auction_chat_messages"
+    )
+    deletion_reason = models.TextField(blank=True)
 
     class Meta:
         db_table = "auction_chat_messages"

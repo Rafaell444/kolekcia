@@ -55,7 +55,7 @@ const EVENT_OPTIONS = [
 
 const EVENT_VARIABLES: Record<string, string[]> = {
   order_confirmed: ["customer_name", "order_number", "total", "currency", "items", "items_html", "totals_html", "shipping_address_html"],
-  order_shipped: ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "items_html", "totals_html", "shipping_address_html"],
+  order_shipped: ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "points_earned", "points_status", "points_message", "items_html", "totals_html", "shipping_address_html"],
   custom_order_shipped: ["customer_name", "tracking_code", "payment_link", "product_image", "total"],
   auction_new: ["auction_title", "starting_bid", "starts_at", "image_url", "auction_url"],
   auction_won: ["winner_name", "auction_title", "winning_amount", "payment_link"],

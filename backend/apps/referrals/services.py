@@ -10,26 +10,12 @@ def ensure_referral_profile(user):
 
 
 def _award_referral_signup_xp(inviter, invitee):
-    from apps.gamification.models import XPRule
-    from apps.gamification.services import award_xp
-
-    XPRule.objects.get_or_create(
-        action_key="referral_signup_inviter",
-        defaults={"xp_amount": 50, "is_one_time": False, "description": "Referral signup reward for inviter"},
-    )
-    XPRule.objects.get_or_create(
-        action_key="referral_signup_invitee",
-        defaults={"xp_amount": 25, "is_one_time": True, "description": "Referral signup reward for invitee"},
-    )
-    award_xp(inviter, "referral_signup_inviter")
-    award_xp(invitee, "referral_signup_invitee")
+    return None
 
 
 @transaction.atomic
 def process_referral_conversion(invitee_user):
     from apps.orders.models import Order
-    from apps.gamification.models import XPRule
-    from apps.gamification.services import award_xp
     from .models import ReferralInvite
 
     order_count = Order.objects.filter(user=invitee_user).count()
@@ -47,15 +33,3 @@ def process_referral_conversion(invitee_user):
 
     invite.converted_at = timezone.now()
     invite.save(update_fields=["converted_at"])
-
-    XPRule.objects.get_or_create(
-        action_key="referral_inviter_purchase",
-        defaults={"xp_amount": 300, "is_one_time": False, "description": "Referral conversion reward for inviter"},
-    )
-    XPRule.objects.get_or_create(
-        action_key="referral_invitee_purchase",
-        defaults={"xp_amount": 200, "is_one_time": True, "description": "Referral first purchase reward for invitee"},
-    )
-
-    award_xp(invite.inviter, "referral_inviter_purchase")
-    award_xp(invitee_user, "referral_invitee_purchase")

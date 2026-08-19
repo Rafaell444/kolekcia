@@ -135,6 +135,12 @@ if _redis_url:
             "CONFIG": {"hosts": [_redis_url]},
         },
     }
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _redis_url,
+        }
+    }
 
 DATABASES = {"default": env.db("DATABASE_URL")}
 
@@ -216,7 +222,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
@@ -226,7 +232,7 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
-CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
+CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key", "x-device-id")
 CORS_ALLOW_CREDENTIALS = True
 
 _csrf_origins = env("CSRF_TRUSTED_ORIGINS")
