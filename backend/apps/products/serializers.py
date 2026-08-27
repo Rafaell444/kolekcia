@@ -80,14 +80,20 @@ class SizeVariantSerializer(serializers.ModelSerializer):
         source="images",
     )
     images = ProductImageSerializer(many=True, read_only=True)
+    available_stock = serializers.SerializerMethodField()
 
     class Meta:
         model = SizeVariant
         fields = (
             "id", "sku", "label", "label_ka", "price_usd", "price_gel", "price_eur", "price_gbp",
             "sale_price_usd", "sale_price_gel",
-            "sort_order", "is_active", "stock", "is_ready_to_ship", "image_ids", "images",
+            "sort_order", "is_active", "stock", "available_stock", "is_ready_to_ship", "image_ids", "images",
         )
+
+    def get_available_stock(self, obj):
+        from apps.orders.inventory import available_quantity
+
+        return available_quantity(obj)
 
 
 class ProductVariantSerializer(serializers.ModelSerializer):
@@ -95,10 +101,16 @@ class ProductVariantSerializer(serializers.ModelSerializer):
     finish = PosterFinishSerializer()
     frame = PosterFrameSerializer()
     price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    available_stock = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductVariant
-        fields = ("id", "size", "finish", "frame", "stock", "surcharge", "price")
+        fields = ("id", "size", "finish", "frame", "stock", "available_stock", "surcharge", "price")
+
+    def get_available_stock(self, obj):
+        from apps.orders.inventory import available_quantity
+
+        return available_quantity(obj)
 
 
 class ProductListSerializer(serializers.ModelSerializer):

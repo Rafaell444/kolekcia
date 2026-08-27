@@ -15,7 +15,6 @@ import {
   X,
   CreditCard,
   MapPin,
-  Plus,
   Loader2,
   Lock,
   ChevronDown,
@@ -29,6 +28,7 @@ import AuctionLiveChat from "@/components/auctions/AuctionLiveChat"
 import GoogleAuthButton from "@/components/auth/GoogleAuthButton"
 import Breadcrumb from "@/components/seo/Breadcrumb"
 import { DEFAULT_LOCALE, isValidLocale } from "@/lib/i18n"
+import { CHECKOUT_COUNTRIES, countryName } from "@/lib/countries"
 
 // ─── Auction FAQ ─────────────────────────────────────────────
 
@@ -93,6 +93,9 @@ type ApiAuction = {
   is_ended: boolean
   is_upcoming?: boolean
   is_biddable?: boolean
+  is_current_user_winner?: boolean
+  winner_payment_status?: string
+  winning_amount?: string | null
   recent_bids: ApiBid[]
 }
 
@@ -110,15 +113,6 @@ function auctionAmount(usd: string | undefined, gel: string | null | undefined, 
 function formatAuctionMoney(amount: number, currency: AuctionCurrency): string {
   if (!Number.isFinite(amount)) return "—"
   return currency === "GEL" ? `${amount.toFixed(2)} ₾` : `$${amount.toFixed(2)}`
-}
-
-type PaymentMethod = {
-  id: number
-  brand: string
-  last4: string
-  exp_month: number
-  exp_year: number
-  is_default: boolean
 }
 
 type Address = {
@@ -302,103 +296,126 @@ type BidConfirmProps = {
   onConfirmed: (updatedAuction: ApiAuction) => void
 }
 
+function BidAddressField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  type?: string
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">{label} *</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover"
+      />
+    </div>
+  )
+}
+
 function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmProps) {
+  const { user } = useAuth()
   const { currentCur } = useLocale()
   const auctionCurrency = getAuctionCurrency(currentCur.code)
-  const [cards, setCards] = useState<PaymentMethod[]>([])
   const [addresses, setAddresses] = useState<Address[]>([])
-  const [selectedCard, setSelectedCard] = useState<number | null>(null)
-  const [selectedAddr, setSelectedAddr] = useState<number | null>(null)
+  const [selectedAddr, setSelectedAddr] = useState<number | "new" | null>(null)
   const [loadingMeta, setLoadingMeta] = useState(true)
   const [placing, setPlacing] = useState(false)
   const [error, setError] = useState("")
-  const [showAddCard, setShowAddCard] = useState(false)
-  const [showAddAddr, setShowAddAddr] = useState(false)
 
-  // New card fields
-  const [cardBrand, setCardBrand] = useState("visa")
-  const [cardLast4, setCardLast4] = useState("")
-  const [cardExpM, setCardExpM] = useState("")
-  const [cardExpY, setCardExpY] = useState("")
-
-  // New address fields
+  const [addrName, setAddrName] = useState(user?.name ?? "")
   const [addrLine1, setAddrLine1] = useState("")
-  const [addrCity, setAddrCity] = useState("")
   const [addrState, setAddrState] = useState("")
   const [addrZip, setAddrZip] = useState("")
-  const [addrCountry, setAddrCountry] = useState("US")
-  const [addrLabel, setAddrLabel] = useState("Home")
+  const [addrCountry, setAddrCountry] = useState("")
+  const [addrLabel, setAddrLabel] = useState("")
+  const [addrPhone, setAddrPhone] = useState(user?.phone ?? "")
+
+  function applyAddress(address: Address) {
+    setSelectedAddr(address.id)
+    setAddrLabel(address.label)
+    setAddrLine1(address.line1)
+    setAddrState(address.state || address.city)
+    setAddrZip(address.zip_code)
+    setAddrCountry(address.country)
+  }
+
+  function startNewAddress() {
+    setSelectedAddr("new")
+    setAddrLabel("")
+    setAddrName("")
+    setAddrLine1("")
+    setAddrState("")
+    setAddrZip("")
+    setAddrCountry("")
+    setAddrPhone("")
+    setError("")
+  }
 
   useEffect(() => {
-    Promise.all([
-      authFetch<PaymentMethod[]>("/auth/payment-methods/").catch(() => []),
-      authFetch<Address[]>("/auth/addresses/").catch(() => []),
-    ]).then(([c, a]) => {
-      const cardArr = Array.isArray(c) ? c : (c as { results?: PaymentMethod[] }).results ?? []
+    authFetch<Address[]>("/auth/addresses/")
+      .catch(() => [])
+      .then((a) => {
       const addrArr = Array.isArray(a) ? a : (a as { results?: Address[] }).results ?? []
-      setCards(cardArr)
       setAddresses(addrArr)
-      const defCard = cardArr.find((x) => x.is_default) ?? cardArr[0]
       const defAddr = addrArr.find((x) => x.is_default) ?? addrArr[0]
-      if (defCard) setSelectedCard(defCard.id)
-      if (defAddr) setSelectedAddr(defAddr.id)
+      if (defAddr) applyAddress(defAddr)
+      else setSelectedAddr("new")
       setLoadingMeta(false)
     })
   }, [])
 
-  async function addCard() {
-    if (!cardLast4.match(/^\d{4}$/) || !cardExpM || !cardExpY) {
-      setError("Please fill in all card fields correctly.")
-      return
-    }
-    const c = await authFetch<PaymentMethod>("/auth/payment-methods/", {
+  async function saveNewAddress() {
+    const address = await authFetch<Address>("/auth/addresses/", {
       method: "POST",
       body: JSON.stringify({
-        brand: cardBrand,
-        last4: cardLast4,
-        exp_month: parseInt(cardExpM),
-        exp_year: parseInt(cardExpY),
-        is_default: cards.length === 0,
-      }),
-    })
-    setCards((prev) => [...prev, c])
-    setSelectedCard(c.id)
-    setShowAddCard(false)
-    setError("")
-  }
-
-  async function addAddress() {
-    if (!addrLine1 || !addrCity || !addrZip) {
-      setError("Please fill in address line 1, city, and zip code.")
-      return
-    }
-    const a = await authFetch<Address>("/auth/addresses/", {
-      method: "POST",
-      body: JSON.stringify({
-        label: addrLabel,
+        label: addrLabel.trim(),
         line1: addrLine1,
-        city: addrCity,
+        line2: "",
+        city: addrState,
         state: addrState,
         zip_code: addrZip,
         country: addrCountry,
         is_default: addresses.length === 0,
       }),
     })
-    setAddresses((prev) => [...prev, a])
-    setSelectedAddr(a.id)
-    setShowAddAddr(false)
-    setError("")
+    setAddresses((prev) => [...prev, address])
+    setSelectedAddr(address.id)
   }
 
   async function handleConfirm() {
-    if (!selectedCard) { setError("Please select or add a payment method."); return }
     if (!selectedAddr) { setError("Please select or add a delivery address."); return }
+    if (![addrLabel, addrName, addrLine1, addrState, addrZip, addrCountry, addrPhone].every((value) => value.trim())) {
+      setError("Please complete every required delivery field.")
+      return
+    }
     setError("")
     setPlacing(true)
     try {
+      if (selectedAddr === "new") await saveNewAddress()
       const updated = await authFetch<ApiAuction>(`/auctions/${auction.slug || auction.id}/bid/`, {
         method: "POST",
-        body: JSON.stringify({ amount, currency: auctionCurrency }),
+        body: JSON.stringify({
+          amount,
+          currency: auctionCurrency,
+          shipping_name: addrName,
+          shipping_line1: addrLine1,
+          shipping_city: addrState,
+          shipping_state: addrState,
+          shipping_zip: addrZip,
+          shipping_country: addrCountry,
+          shipping_phone: addrPhone,
+        }),
       })
       onConfirmed(updated)
     } catch (err: unknown) {
@@ -408,13 +425,6 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
       setPlacing(false)
     }
   }
-
-  const BRANDS = [
-    { value: "visa", label: "Visa" },
-    { value: "mastercard", label: "Mastercard" },
-    { value: "amex", label: "Amex" },
-    { value: "other", label: "Other" },
-  ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -450,97 +460,6 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
             </div>
           </div>
 
-          {/* Payment method */}
-          <div>
-            <h3 className="text-[11px] text-dp-text-tertiary uppercase tracking-widest mb-3 flex items-center gap-1.5">
-              <CreditCard size={12} /> Payment Method
-            </h3>
-            {loadingMeta ? (
-              <div className="h-12 bg-dp-bg-elevated rounded-sm animate-pulse" />
-            ) : (
-              <div className="flex flex-col gap-2">
-                {cards.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedCard(c.id)}
-                    className={`flex items-center gap-3 p-3 rounded-sm border text-left transition-colors ${
-                      selectedCard === c.id
-                        ? "border-dp-accent-cta bg-dp-accent-cta/5"
-                        : "border-dp-border hover:border-dp-border-hover bg-dp-bg-elevated"
-                    }`}
-                  >
-                    <CreditCard size={16} className={selectedCard === c.id ? "text-dp-accent-cta" : "text-dp-text-tertiary"} />
-                    <span className="flex-1 text-[13px] text-dp-text-primary font-semibold capitalize">
-                      {c.brand} •••• {c.last4}
-                    </span>
-                    <span className="text-[11px] text-dp-text-tertiary">
-                      {c.exp_month}/{String(c.exp_year).slice(-2)}
-                    </span>
-                    {selectedCard === c.id && <CheckCircle size={14} className="text-dp-accent-cta shrink-0" />}
-                  </button>
-                ))}
-
-                {/* Add card form */}
-                {showAddCard ? (
-                  <div className="border border-dp-border rounded-sm p-4 bg-dp-bg-elevated flex flex-col gap-3">
-                    <p className="text-[12px] font-semibold text-dp-text-primary">Add a new card</p>
-                    <select
-                      value={cardBrand}
-                      onChange={(e) => setCardBrand(e.target.value)}
-                      className="px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                    >
-                      {BRANDS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
-                    </select>
-                    <div className="flex gap-2">
-                      <input
-                        placeholder="Last 4 digits"
-                        maxLength={4}
-                        value={cardLast4}
-                        onChange={(e) => setCardLast4(e.target.value.replace(/\D/g, ""))}
-                        className="flex-1 px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                      />
-                      <input
-                        placeholder="MM"
-                        maxLength={2}
-                        value={cardExpM}
-                        onChange={(e) => setCardExpM(e.target.value.replace(/\D/g, ""))}
-                        className="w-16 px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                      />
-                      <input
-                        placeholder="YYYY"
-                        maxLength={4}
-                        value={cardExpY}
-                        onChange={(e) => setCardExpY(e.target.value.replace(/\D/g, ""))}
-                        className="w-24 px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={addCard}
-                        className="flex-1 py-2 bg-dp-accent-cta text-white text-[12px] font-bold uppercase rounded-sm hover:bg-dp-accent-cta-hover transition-colors"
-                      >
-                        Save Card
-                      </button>
-                      <button
-                        onClick={() => { setShowAddCard(false); setError("") }}
-                        className="px-4 py-2 border border-dp-border text-[12px] text-dp-text-secondary rounded-sm hover:bg-dp-bg-elevated transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setShowAddCard(true)}
-                    className="flex items-center gap-2 px-3 py-2.5 border border-dashed border-dp-border rounded-sm text-[12px] text-dp-text-tertiary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
-                  >
-                    <Plus size={14} /> Add a card
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Delivery address */}
           <div>
             <h3 className="text-[11px] text-dp-text-tertiary uppercase tracking-widest mb-3 flex items-center gap-1.5">
@@ -550,94 +469,53 @@ function BidConfirmModal({ auction, amount, onClose, onConfirmed }: BidConfirmPr
               <div className="h-12 bg-dp-bg-elevated rounded-sm animate-pulse" />
             ) : (
               <div className="flex flex-col gap-2">
+                {addresses.length > 0 && <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">Saved addresses</p>}
                 {addresses.map((a) => (
-                  <button
+                  <label
                     key={a.id}
-                    onClick={() => setSelectedAddr(a.id)}
                     className={`flex items-start gap-3 p-3 rounded-sm border text-left transition-colors ${
                       selectedAddr === a.id
                         ? "border-dp-accent-cta bg-dp-accent-cta/5"
                         : "border-dp-border hover:border-dp-border-hover bg-dp-bg-elevated"
                     }`}
                   >
-                    <MapPin size={14} className={`mt-0.5 shrink-0 ${selectedAddr === a.id ? "text-dp-accent-cta" : "text-dp-text-tertiary"}`} />
+                    <input type="radio" className="mt-1 accent-dp-accent-cta" checked={selectedAddr === a.id} onChange={() => applyAddress(a)} />
                     <div className="flex-1">
                       <p className="text-[12px] font-semibold text-dp-text-primary">{a.label}</p>
                       <p className="text-[12px] text-dp-text-secondary">
-                        {a.line1}{a.line2 ? `, ${a.line2}` : ""}, {a.city}, {a.state} {a.zip_code}, {a.country}
+                        {a.line1}{a.line2 ? `, ${a.line2}` : ""}, {a.city || a.state} {a.zip_code}, {countryName(a.country)}
                       </p>
                     </div>
-                    {selectedAddr === a.id && <CheckCircle size={14} className="text-dp-accent-cta shrink-0 mt-0.5" />}
-                  </button>
+                  </label>
                 ))}
-
-                {/* Add address form */}
-                {showAddAddr ? (
-                  <div className="border border-dp-border rounded-sm p-4 bg-dp-bg-elevated flex flex-col gap-3">
-                    <p className="text-[12px] font-semibold text-dp-text-primary">Add a delivery address</p>
-                    <div className="flex gap-2">
-                      <input
-                        placeholder="Label (e.g. Home)"
-                        value={addrLabel}
-                        onChange={(e) => setAddrLabel(e.target.value)}
-                        className="flex-1 px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                      />
-                    </div>
-                    <input
-                      placeholder="Address line 1 *"
-                      value={addrLine1}
-                      onChange={(e) => setAddrLine1(e.target.value)}
-                      className="px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                    />
-                    <div className="flex gap-2">
-                      <input
-                        placeholder="City *"
-                        value={addrCity}
-                        onChange={(e) => setAddrCity(e.target.value)}
-                        className="flex-1 px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                      />
-                      <input
-                        placeholder="State"
-                        value={addrState}
-                        onChange={(e) => setAddrState(e.target.value)}
-                        className="w-24 px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                      />
-                      <input
-                        placeholder="ZIP *"
-                        value={addrZip}
-                        onChange={(e) => setAddrZip(e.target.value)}
-                        className="w-24 px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                      />
-                    </div>
-                    <input
-                      placeholder="Country"
-                      value={addrCountry}
-                      onChange={(e) => setAddrCountry(e.target.value)}
-                      className="px-3 py-2 bg-dp-bg-surface border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={addAddress}
-                        className="flex-1 py-2 bg-dp-accent-cta text-white text-[12px] font-bold uppercase rounded-sm hover:bg-dp-accent-cta-hover transition-colors"
-                      >
-                        Save Address
-                      </button>
-                      <button
-                        onClick={() => { setShowAddAddr(false); setError("") }}
-                        className="px-4 py-2 border border-dp-border text-[12px] text-dp-text-secondary rounded-sm hover:bg-dp-bg-elevated transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setShowAddAddr(true)}
-                    className="flex items-center gap-2 px-3 py-2.5 border border-dashed border-dp-border rounded-sm text-[12px] text-dp-text-tertiary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
-                  >
-                    <Plus size={14} /> Add an address
-                  </button>
+                {addresses.length > 0 && (
+                  <label className={`flex items-center gap-3 p-3 border rounded-sm cursor-pointer transition-colors ${selectedAddr === "new" ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
+                    <input type="radio" className="accent-dp-accent-cta" checked={selectedAddr === "new"} onChange={startNewAddress} />
+                    <span className="text-[13px] font-semibold text-dp-text-primary">Add a new address</span>
+                  </label>
                 )}
+
+                <div className="grid gap-3 pt-2">
+                  <BidAddressField label="Address Name" value={addrLabel} onChange={setAddrLabel} placeholder="e.g. Home, Office" />
+                  <BidAddressField label="Full Name" value={addrName} onChange={setAddrName} placeholder="First and last name" />
+                  <BidAddressField label="Street Address" value={addrLine1} onChange={setAddrLine1} placeholder="123 Main Street, Apt 4B" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">Country *</label>
+                      <select value={addrCountry} onChange={(e) => setAddrCountry(e.target.value)} className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover">
+                        <option value="" disabled>Select a country</option>
+                        {CHECKOUT_COUNTRIES.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+                      </select>
+                    </div>
+                    <BidAddressField label="State / Region" value={addrState} onChange={setAddrState} placeholder="e.g. Tbilisi" />
+                  </div>
+                  <BidAddressField label="ZIP / Postal Code" value={addrZip} onChange={setAddrZip} placeholder="e.g. 0105" />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary">Email Address *</label>
+                    <input type="email" readOnly value={user?.email ?? ""} className="px-3 py-2.5 bg-dp-bg-elevated/70 border border-dp-border rounded-sm text-[13px] text-dp-text-secondary cursor-not-allowed" />
+                  </div>
+                  <BidAddressField label="Phone Number" value={addrPhone} onChange={setAddrPhone} placeholder="+995 555 00 00 00" type="tel" />
+                </div>
               </div>
             )}
           </div>
@@ -736,6 +614,8 @@ export default function AuctionDetailPage(): React.ReactElement {
   const [pendingAmount, setPendingAmount] = useState(0)
   const [bidSuccess, setBidSuccess] = useState(false)
   const [newBidIds, setNewBidIds] = useState<Set<number>>(new Set())
+  const [payingAuction, setPayingAuction] = useState(false)
+  const [paymentError, setPaymentError] = useState("")
 
   // Track previous bid count to detect new bids from others during polling
   const prevBidCountRef = useRef(0)
@@ -743,7 +623,8 @@ export default function AuctionDetailPage(): React.ReactElement {
   const fetchAuction = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const data = await apiFetch<ApiAuction>(`/auctions/${lookup}/`)
+      const fetchAuctionDetail = getAccessToken() ? authFetch : apiFetch
+      const data = await fetchAuctionDetail<ApiAuction>(`/auctions/${lookup}/`)
       setAuction((prev) => {
         if (prev && data.bid_count > prevBidCountRef.current) {
           // Highlight the newest bids
@@ -838,6 +719,24 @@ export default function AuctionDetailPage(): React.ReactElement {
     setBidInput("")
     setBidSuccess(true)
     setTimeout(() => setBidSuccess(false), 4000)
+  }
+
+  async function handlePayAuction() {
+    if (!auction) return
+    setPaymentError("")
+    setPayingAuction(true)
+    try {
+      const result = await authFetch<{ payment_url: string }>(`/auctions/${auction.slug || auction.id}/payment/`, {
+        method: "POST",
+        body: JSON.stringify({ currency: auctionCurrency }),
+      })
+      if (!result.payment_url) throw new Error("Payment link was not returned.")
+      window.location.href = result.payment_url
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : "Payment could not be started.")
+    } finally {
+      setPayingAuction(false)
+    }
   }
 
   const { d, h, m, s, done } = useCountdown(auction?.ends_at ?? new Date(0).toISOString())
@@ -1133,6 +1032,30 @@ export default function AuctionDetailPage(): React.ReactElement {
                 </div>
               </div>
             </div>
+
+            {auction.is_ended && auction.is_current_user_winner && auction.winner_payment_status !== "paid" && (
+              <div className="bg-dp-accent-cta/10 border border-dp-accent-cta/30 rounded-sm p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.22em] text-dp-accent-cta">Winner payment</p>
+                    <h2 className="font-display text-2xl text-dp-text-primary mt-1">Complete your auction purchase</h2>
+                    <p className="text-[13px] text-dp-text-secondary mt-1">
+                      Your winning bid and auction shipping will be processed through our secure payment provider.
+                    </p>
+                    {paymentError && <p className="mt-2 text-[12px] text-dp-accent-cta">{paymentError}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handlePayAuction}
+                    disabled={payingAuction}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[12px] font-black uppercase tracking-[0.18em] rounded-sm transition-colors"
+                  >
+                    {payingAuction ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />}
+                    {payingAuction ? "Opening..." : "Pay now"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Bid history */}
             <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">

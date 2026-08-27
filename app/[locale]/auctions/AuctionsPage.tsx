@@ -320,27 +320,42 @@ export default function AuctionsPage(): React.ReactElement {
   const [filter, setFilter] = useState<Filter>("all")
   const [page, setPage] = useState(1)
 
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([
-      apiFetch<ApiAuction[] | PaginatedResponse<ApiAuction>>("/auctions/").then(parseList),
-      apiFetch<LeaderboardEntry[]>("/auctions/leaderboard/").catch(() => []),
-    ]).then(([aList, lList]) => {
-      if (!cancelled) {
-        const auctionRank = (a: ApiAuction) => {
-          const isBiddable = a.is_biddable ?? a.is_live
-          if (!a.is_ended && isBiddable) return 0
-          if (!a.is_ended) return 1
-          return 2
-        }
-        const sorted = [...aList].sort((a, b) => auctionRank(a) - auctionRank(b))
-        setAuctions(sorted)
-        setLeaderboard(Array.isArray(lList) ? lList : [])
-        setLoading(false)
+  const loadAuctions = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true)
+    try {
+      const [aList, lList] = await Promise.all([
+        apiFetch<ApiAuction[] | PaginatedResponse<ApiAuction>>("/auctions/", { cache: "no-store" }).then(parseList),
+        apiFetch<LeaderboardEntry[]>("/auctions/leaderboard/", { cache: "no-store" }).catch(() => []),
+      ])
+      const auctionRank = (auction: ApiAuction) => {
+        const isBiddable = auction.is_biddable ?? auction.is_live
+        if (!auction.is_ended && isBiddable) return 0
+        if (!auction.is_ended) return 1
+        return 2
       }
-    }).catch(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+      setAuctions([...aList].sort((a, b) => auctionRank(a) - auctionRank(b)))
+      setLeaderboard(Array.isArray(lList) ? lList : [])
+    } catch {
+      // Keep the last successful list during a transient API failure.
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    void loadAuctions(true)
+    const refresh = () => { if (document.visibilityState === "visible") void loadAuctions() }
+    const interval = window.setInterval(() => void loadAuctions(), 15_000)
+    window.addEventListener("focus", refresh)
+    window.addEventListener("pageshow", refresh)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refresh)
+      window.removeEventListener("pageshow", refresh)
+      document.removeEventListener("visibilitychange", refresh)
+    }
+  }, [loadAuctions])
 
   const filtered = auctions.filter((a) => {
     const isBiddable = a.is_biddable ?? a.is_live

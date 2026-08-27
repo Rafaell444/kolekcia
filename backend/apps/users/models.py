@@ -76,24 +76,6 @@ class Address(models.Model):
         return f"{self.user.email} — {self.label}"
 
 
-class PaymentMethod(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="payment_methods")
-    brand = models.CharField(max_length=50)
-    last4 = models.CharField(max_length=4)
-    exp_month = models.PositiveSmallIntegerField()
-    exp_year = models.PositiveSmallIntegerField()
-    is_default = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "user_payment_methods"
-
-    def save(self, *args, **kwargs):
-        if self.is_default:
-            PaymentMethod.objects.filter(user=self.user, is_default=True).exclude(pk=self.pk).update(is_default=False)
-        super().save(*args, **kwargs)
-
-
 class PasswordResetToken(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reset_tokens")
     token = models.UUIDField(default=uuid.uuid4, unique=True)

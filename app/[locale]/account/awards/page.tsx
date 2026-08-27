@@ -184,6 +184,7 @@ export default function AwardsPage(): React.ReactElement {
       const result = item.item_type === "physical"
         ? await authFetch<{
           payment_required?: boolean
+          payment_url?: string
           detail?: string
           shipping_payment_session?: { token: string }
           redemption?: { id: number; shipping_label: string }
@@ -205,6 +206,11 @@ export default function AwardsPage(): React.ReactElement {
         })
       const redemptionResult = result as { payment_required?: boolean; detail?: string }
       if (redemptionResult.payment_required) {
+        const paymentUrl = (result as { payment_url?: string }).payment_url
+        if (paymentUrl) {
+          window.location.href = paymentUrl
+          return
+        }
         const sessionToken = (result as { shipping_payment_session?: { token?: string } }).shipping_payment_session?.token
         if (sessionToken) {
           router.push(`/${locale}/account/awards/shipping-payment?session=${encodeURIComponent(sessionToken)}`)

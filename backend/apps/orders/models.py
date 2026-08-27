@@ -63,9 +63,9 @@ class CartItem(models.Model):
 
 class Order(models.Model):
     STATUS_CHOICES = [
-        # Note: "pending" is intentionally excluded — shop orders created after
-        # successful payment start as "processing". Custom orders use their own model.
+        ("pending_payment", "Pending Payment"),
         ("processing", "Processing"),
+        ("payment_failed", "Payment Failed"),
         ("shipped", "Shipped"),
         ("delivered", "Delivered"),
         ("cancelled", "Cancelled"),
@@ -220,6 +220,8 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     vendor = models.ForeignKey("vendors.Vendor", on_delete=models.SET_NULL, null=True, blank=True, related_name="order_items")
     shipment = models.ForeignKey(OrderShipment, on_delete=models.SET_NULL, null=True, blank=True, related_name="items")
+    variant = models.ForeignKey("products.ProductVariant", on_delete=models.SET_NULL, null=True, blank=True, related_name="order_items")
+    size_variant = models.ForeignKey("products.SizeVariant", on_delete=models.SET_NULL, null=True, blank=True, related_name="order_items")
     product_title = models.CharField(max_length=255)
     product_image = models.URLField(blank=True)
     artist_name = models.CharField(max_length=255, blank=True)
@@ -242,6 +244,104 @@ class OrderItem(models.Model):
     @property
     def line_total(self):
         return self.price * self.quantity
+
+
+class PaymentSession(models.Model):
+    PROVIDER_KEEPZ = "keepz"
+    PURPOSE_CHECKOUT = "checkout"
+    PURPOSE_POINTS_SHIPPING = "points_shipping"
+    PURPOSE_AUCTION = "auction"
+    PURPOSE_CUSTOM_ORDER = "custom_order"
+
+    STATUS_CREATED = "created"
+    STATUS_REDIRECTED = "redirected"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILED = "failed"
+    STATUS_CANCELED = "canceled"
+    STATUS_EXPIRED = "expired"
+    STATUS_REFUNDED = "refunded"
+
+    PURPOSE_CHOICES = [
+        (PURPOSE_CHECKOUT, "Checkout"),
+        (PURPOSE_POINTS_SHIPPING, "Points Shipping"),
+        (PURPOSE_AUCTION, "Auction"),
+        (PURPOSE_CUSTOM_ORDER, "Custom Order"),
+    ]
+    STATUS_CHOICES = [
+        (STATUS_CREATED, "Created"),
+        (STATUS_REDIRECTED, "Redirected"),
+        (STATUS_SUCCESS, "Success"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_CANCELED, "Canceled"),
+        (STATUS_EXPIRED, "Expired"),
+        (STATUS_REFUNDED, "Refunded"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=30, default=PROVIDER_KEEPZ)
+    purpose = models.CharField(max_length=30, choices=PURPOSE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_CREATED)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="payment_sessions")
+    order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True, related_name="payment_sessions")
+    related_id = models.CharField(max_length=80, blank=True)
+    integrator_order_id = models.UUIDField(default=uuid.uuid4, unique=True)
+    provider_transaction_id = models.CharField(max_length=80, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=10, default="GEL")
+    payment_url = models.URLField(blank=True)
+    request_payload = models.JSONField(default=dict, blank=True)
+    response_payload = models.JSONField(default=dict, blank=True)
+    callback_payload = models.JSONField(default=dict, blank=True)
+    last_error = models.TextField(blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    failed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "payment_sessions"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=("provider", "integrator_order_id")),
+            models.Index(fields=("purpose", "status", "created_at")),
+            models.Index(fields=("user", "created_at")),
+        ]
+
+    def __str__(self):
+        return f"{self.provider}:{self.integrator_order_id} ({self.status})"
+
+
+class StockReservation(models.Model):
+    STATUS_ACTIVE = "active"
+    STATUS_FINALIZED = "finalized"
+    STATUS_RELEASED = "released"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_FINALIZED, "Finalized"),
+        (STATUS_RELEASED, "Released"),
+    ]
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="stock_reservations")
+    order_item = models.OneToOneField(OrderItem, on_delete=models.CASCADE, related_name="stock_reservation")
+    variant = models.ForeignKey(ProductVariant, null=True, blank=True, on_delete=models.CASCADE, related_name="stock_reservations")
+    size_variant = models.ForeignKey(SizeVariant, null=True, blank=True, on_delete=models.CASCADE, related_name="stock_reservations")
+    quantity = models.PositiveIntegerField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    expires_at = models.DateTimeField()
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "stock_reservations"
+        indexes = [
+            models.Index(fields=("variant", "status", "expires_at")),
+            models.Index(fields=("size_variant", "status", "expires_at")),
+            models.Index(fields=("order", "status")),
+        ]
+
+    def __str__(self):
+        return f"Reservation {self.pk} for {self.order.order_number} ({self.status})"
 
 
 class OrderStatusHistory(models.Model):

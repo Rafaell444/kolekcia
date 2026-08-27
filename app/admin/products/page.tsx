@@ -1247,6 +1247,11 @@ function ProductModal({
               label_ka: variant.label_ka ?? "",
               sku: variant.sku?.trim() || null,
               stock: variant.stock ?? null,
+              is_ready_to_ship: variant.is_ready_to_ship ?? false,
+              price_usd: variant.price_usd,
+              price_gel: variant.price_gel || null,
+              sale_price_usd: draft.isSale ? (variant.sale_price_usd || null) : null,
+              sale_price_gel: draft.isSale ? (variant.sale_price_gel || null) : null,
             }),
           },
         )))
@@ -1683,11 +1688,13 @@ function ProductModal({
                       return (
                       <tr key={sv.id} className="border-b border-dp-border last:border-0 hover:bg-dp-bg-elevated/40 transition-colors align-top">
                         <td className="px-3 py-2">
-                          <div className="flex flex-col gap-0.5">
-                            <p className="text-[12px] font-semibold text-dp-text-primary">{sv.label || "Untitled size"}</p>
-                            {sv.label_ka && sv.label_ka !== sv.label && (
-                              <p className="text-[10px] text-dp-text-tertiary">KA: {sv.label_ka}</p>
-                            )}
+                          <div className="flex flex-col gap-1">
+                            <input value={sv.label} aria-label="Variant label in English"
+                              onChange={(e) => updateSizeVariant(sv.id, { label: e.target.value })}
+                              className="w-full px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] font-semibold text-dp-text-primary focus:outline-none focus:border-dp-border-hover" />
+                            <input value={sv.label_ka ?? ""} aria-label="Variant label in Georgian" placeholder="Georgian label"
+                              onChange={(e) => updateSizeVariant(sv.id, { label_ka: e.target.value })}
+                              className="w-full px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[10px] text-dp-text-secondary focus:outline-none focus:border-dp-border-hover" />
                           </div>
                         </td>
                         <td className="px-3 py-2">
@@ -1696,12 +1703,32 @@ function ProductModal({
                             onBlur={(e) => saveSizeVariant(sv.id, { sku: e.currentTarget.value.trim() || null })}
                             className="w-full px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm font-mono text-[10px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover" />
                         </td>
-                        <td className="px-3 py-2 text-right text-dp-text-primary">${parseFloat(sv.price_usd).toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.price_gel ? `₾${parseFloat(sv.price_gel).toFixed(2)}` : <span className="text-dp-text-tertiary">—</span>}</td>
+                        <td className="px-3 py-2">
+                          <input type="number" min="0" step="0.01" value={sv.price_usd}
+                            aria-label="Other market price in USD"
+                            onChange={(e) => updateSizeVariant(sv.id, { price_usd: e.target.value })}
+                            className="w-24 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-right text-dp-text-primary focus:outline-none focus:border-dp-border-hover" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" min="0" step="0.01" value={sv.price_gel ?? ""} placeholder="Not set"
+                            aria-label="Georgian market price in GEL"
+                            onChange={(e) => updateSizeVariant(sv.id, { price_gel: e.target.value || null })}
+                            className="w-24 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-right text-dp-text-primary focus:outline-none focus:border-dp-border-hover" />
+                        </td>
                         {draft.isSale && (
                           <>
-                            <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.sale_price_usd ? `$${parseFloat(sv.sale_price_usd).toFixed(2)}` : "—"}</td>
-                            <td className="px-3 py-2 text-right text-dp-text-secondary">{sv.sale_price_gel ? `₾${parseFloat(sv.sale_price_gel).toFixed(2)}` : "—"}</td>
+                            <td className="px-3 py-2">
+                              <input type="number" min="0" step="0.01" value={sv.sale_price_usd ?? ""} placeholder="Not set"
+                                aria-label="Sale price in USD"
+                                onChange={(e) => updateSizeVariant(sv.id, { sale_price_usd: e.target.value || null })}
+                                className="w-24 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-right text-dp-text-primary focus:outline-none focus:border-dp-border-hover" />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input type="number" min="0" step="0.01" value={sv.sale_price_gel ?? ""} placeholder="Not set"
+                                aria-label="Sale price in GEL"
+                                onChange={(e) => updateSizeVariant(sv.id, { sale_price_gel: e.target.value || null })}
+                                className="w-24 px-2 py-1 bg-dp-bg-elevated border border-dp-border rounded-sm text-[11px] text-right text-dp-text-primary focus:outline-none focus:border-dp-border-hover" />
+                            </td>
                           </>
                         )}
                         <td className="px-3 py-2">

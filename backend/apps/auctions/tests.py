@@ -60,6 +60,19 @@ class AuctionSecurityTests(TestCase):
         data.update(overrides)
         return Auction.objects.create(**data)
 
+    def bid_payload(self, amount, currency="USD"):
+        return {
+            "amount": amount,
+            "currency": currency,
+            "shipping_name": "Auction Bidder",
+            "shipping_line1": "12 Test Street",
+            "shipping_city": "Tbilisi",
+            "shipping_state": "Tbilisi",
+            "shipping_zip": "0105",
+            "shipping_country": "GE",
+            "shipping_phone": "+995555000000",
+        }
+
     def test_final_ready_unit_becomes_made_to_order_and_can_be_restored(self):
         auction = self.make_auction(status=Auction.STATUS_INACTIVE)
 
@@ -166,7 +179,7 @@ class AuctionSecurityTests(TestCase):
         client.force_authenticate(usd_bidder)
         usd_response = client.post(
             f"/api/auctions/{auction.slug}/bid/",
-            {"amount": "12.00", "currency": "USD"},
+            self.bid_payload("12.00"),
             format="json",
         )
         self.assertEqual(usd_response.status_code, 201, usd_response.data)
@@ -174,7 +187,7 @@ class AuctionSecurityTests(TestCase):
         client.force_authenticate(gel_bidder)
         gel_response = client.post(
             f"/api/auctions/{auction.slug}/bid/",
-            {"amount": "35.10", "currency": "GEL"},
+            self.bid_payload("35.10", "GEL"),
             format="json",
         )
         self.assertEqual(gel_response.status_code, 201, gel_response.data)
@@ -188,11 +201,48 @@ class AuctionSecurityTests(TestCase):
         self.assertEqual(winning_bid.submitted_amount, Decimal("35.10"))
         self.assertEqual(winning_bid.submitted_currency, "GEL")
         self.assertEqual(winning_bid.fx_rate_used, Decimal("2.700000"))
+        self.assertEqual(winning_bid.shipping_name, "Auction Bidder")
+        self.assertEqual(winning_bid.shipping_country, "GE")
+        self.assertEqual(winning_bid.shipping_email, gel_bidder.email)
+        self.assertEqual(winning_bid.shipping_phone, "+995555000000")
 
         public_bid = gel_response.data["recent_bids"][0]
         self.assertEqual(public_bid["amount_usd"], "13.00")
         self.assertEqual(public_bid["amount_gel"], "35.10")
         self.assertNotIn("submitted_currency", public_bid)
+        self.assertNotIn("shipping_line1", public_bid)
+
+    def test_detail_request_finalizes_ended_auction_for_winner(self):
+        winner = User.objects.create_user(email="winner@example.com", password="test-password")
+        auction = self.make_auction()
+        AuctionBid.objects.create(auction=auction, user=winner, amount="25.00")
+        client = APIClient()
+        client.force_authenticate(winner)
+
+        response = client.get(f"/api/auctions/{auction.slug}/")
+
+        self.assertEqual(response.status_code, 200)
+        auction.refresh_from_db()
+        self.assertEqual(auction.winner, winner)
+        self.assertEqual(auction.winner_payment_status, Auction.PAYMENT_PENDING)
+        self.assertTrue(response.data["is_current_user_winner"])
+
+    def test_non_winner_cannot_start_winner_payment(self):
+        winner = User.objects.create_user(email="winner-pay@example.com", password="test-password")
+        other_user = User.objects.create_user(email="other-pay@example.com", password="test-password")
+        auction = self.make_auction()
+        AuctionBid.objects.create(auction=auction, user=winner, amount="25.00")
+        client = APIClient()
+        client.force_authenticate(other_user)
+
+        response = client.post(
+            f"/api/auctions/{auction.slug}/payment/",
+            {"currency": "USD"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["detail"], "Only the auction winner can start payment.")
 
     def test_admin_can_disqualify_and_promote_previous_bidder(self):
         first = User.objects.create_user(email="first@example.com", password="test-password")

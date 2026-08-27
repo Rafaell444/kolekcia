@@ -10,13 +10,17 @@ from .views import (
     CustomOrderCreateView,
     CustomOrderListView,
     CustomOrderDetailView,
+    CustomOrderPaymentView,
     CustomOrderImageUploadView,
     DeliveryOptionListView,
     CartShippingOptionListView,
     ProcessingOptionListView,
     ShopSettingsPublicView,
     GiftWrapImageUploadView,
+    KeepzCallbackView,
 )
+
+app_name = "orders"
 
 urlpatterns = [
     path("cart/", CartView.as_view(), name="cart"),
@@ -25,12 +29,14 @@ urlpatterns = [
     path("cart/promo/", PromoApplyView.as_view(), name="promo-apply"),
     path("cart/reprice/", CartRepriceView.as_view(), name="cart-reprice"),
     path("checkout/", CheckoutView.as_view(), name="checkout"),
+    path("payments/keepz/callback/", KeepzCallbackView.as_view(), name="keepz-callback"),
     path("", OrderListView.as_view(), name="order-list"),
     path("<uuid:pk>/", OrderDetailView.as_view(), name="order-detail"),
     path("custom/", CustomOrderCreateView.as_view(), name="custom-order"),
     path("custom/upload/", CustomOrderImageUploadView.as_view(), name="custom-order-upload"),
     path("custom/mine/", CustomOrderListView.as_view(), name="custom-order-list"),
     path("custom/mine/<uuid:pk>/", CustomOrderDetailView.as_view(), name="custom-order-detail"),
+    path("custom/mine/<uuid:pk>/payment/", CustomOrderPaymentView.as_view(), name="custom-order-payment"),
     path("delivery-options/", DeliveryOptionListView.as_view(), name="delivery-options"),
     path("cart/shipping-options/", CartShippingOptionListView.as_view(), name="cart-shipping-options"),
     path("processing-options/", ProcessingOptionListView.as_view(), name="processing-options"),

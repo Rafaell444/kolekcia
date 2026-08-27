@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Address, PaymentMethod
+from .models import User, Address
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -59,17 +59,6 @@ class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address
         fields = ("id", "label", "line1", "line2", "city", "state", "zip_code", "country", "is_default")
-
-    def create(self, validated_data):
-        validated_data["user"] = self.context["request"].user
-        return super().create(validated_data)
-
-
-class PaymentMethodSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PaymentMethod
-        fields = ("id", "brand", "last4", "exp_month", "exp_year", "is_default", "created_at")
-        read_only_fields = ("id", "created_at")
 
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user

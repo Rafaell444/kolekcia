@@ -200,6 +200,43 @@ class PointsMarketPhysicalRedemptionView(APIView):
             return Response({"detail": "Selected address or shipping option was not found."}, status=status.HTTP_404_NOT_FOUND)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if result.response_data.get("payment_required"):
+            from django.conf import settings
+            if getattr(settings, "KEEPZ_ENABLED", False):
+                from apps.orders.keepz import KeepzGatewayError, create_keepz_order_for_points_shipping
+                from apps.orders.models import PaymentSession
+
+                session_data = result.response_data.get("shipping_payment_session") or {}
+                token = session_data.get("token")
+                payment = PaymentSession.objects.create(
+                    provider=PaymentSession.PROVIDER_KEEPZ,
+                    purpose=PaymentSession.PURPOSE_POINTS_SHIPPING,
+                    status=PaymentSession.STATUS_CREATED,
+                    user=request.user,
+                    related_id=str(token),
+                    amount=session_data.get("shipping_price") or 0,
+                    currency=session_data.get("shipping_currency") or "GEL",
+                )
+                try:
+                    keepz_result = create_keepz_order_for_points_shipping(payment)
+                except (KeepzGatewayError, ValueError) as exc:
+                    payment.status = PaymentSession.STATUS_FAILED
+                    payment.last_error = str(exc)
+                    payment.save(update_fields=["status", "last_error", "updated_at"])
+                    provider_message = ""
+                    if isinstance(exc, KeepzGatewayError):
+                        provider_message = str(exc.payload.get("message") or "")
+                    detail = "Payment gateway rejected the reward shipping order."
+                    if provider_message:
+                        detail = f"{detail} {provider_message}"
+                    return Response({"detail": detail}, status=status.HTTP_502_BAD_GATEWAY)
+                payment.payment_url = keepz_result.payment_url
+                payment.request_payload = keepz_result.request_payload
+                payment.response_payload = keepz_result.provider_payload
+                payment.status = PaymentSession.STATUS_REDIRECTED
+                payment.save(update_fields=["payment_url", "request_payload", "response_payload", "status", "updated_at"])
+                result.response_data["payment_url"] = payment.payment_url
+                result.response_data["payment_id"] = str(payment.id)
         return Response(result.response_data, status=status.HTTP_200_OK if result.replayed else status.HTTP_201_CREATED)
 
 

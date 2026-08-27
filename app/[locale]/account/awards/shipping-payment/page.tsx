@@ -28,6 +28,7 @@ type ShippingPaymentSession = {
   shipping_label: string
   shipping_price: string
   shipping_currency: string
+  payment_url?: string
   expires_at: string
 }
 
@@ -57,6 +58,10 @@ export default function PointsShippingPaymentPage(): React.ReactElement {
 
   async function completePayment() {
     if (!token) return
+    if (session?.payment_url) {
+      window.location.href = session.payment_url
+      return
+    }
     setPaying(true)
     setError("")
     try {

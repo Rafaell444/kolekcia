@@ -95,6 +95,7 @@ type ApiVariant = {
   finish: { id: string; label: string; surcharge: number }
   frame: { id: string; label: string; surcharge: number }
   stock: number
+  available_stock?: number | null
 }
 type SizeVariant = {
   id: number
@@ -108,6 +109,7 @@ type SizeVariant = {
   sort_order: number
   is_active: boolean
   stock?: number | null
+  available_stock?: number | null
 }
 type ProcessingOpt = { id: number; slug: string; label: string; price_usd: string; price_gel: string; est_days_min: number; est_days_max: number; is_active?: boolean }
 type ApiProduct = {
@@ -321,15 +323,31 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     if (giftWrapLocalPreview) URL.revokeObjectURL(giftWrapLocalPreview)
   }, [giftWrapLocalPreview])
 
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        window.location.reload()
+      }
+    }
+
+    window.addEventListener("pageshow", handlePageShow)
+    return () => window.removeEventListener("pageshow", handlePageShow)
+  }, [])
+
   // New size variant system
   const selectedSizeVariant = activeSizeVariants.find((sv) => sv.id === selectedSizeVariantId) ?? null
   const hasSizeVariants = activeSizeVariants.length > 0
-  const svStock = (sv: unknown) => (sv as { stock?: number | null }).stock
+  const svAvailableStock = (sv: unknown) => {
+    const variant = sv as { available_stock?: number | null; stock?: number | null } | null
+    return variant?.available_stock ?? variant?.stock
+  }
   const svReadyToShip = (sv: unknown) => (sv as { is_ready_to_ship?: boolean }).is_ready_to_ship === true
+  const hasMadeToOrderProcessing = processingOptions.length > 0
+  const canMakeSizeVariantToOrder = () => hasMadeToOrderProcessing
   const isSoldOut = selectedSizeVariant
-    ? svStock(selectedSizeVariant) === 0 && !svReadyToShip(selectedSizeVariant)
-    : activeSizeVariants.length > 0 && activeSizeVariants.every((sv) => svStock(sv) === 0 && !svReadyToShip(sv))
-  const variantIsReadyToShip = selectedSizeVariant ? svReadyToShip(selectedSizeVariant) && (svStock(selectedSizeVariant) ?? 0) > 0 : false
+    ? svAvailableStock(selectedSizeVariant) === 0 && !canMakeSizeVariantToOrder()
+    : activeSizeVariants.length > 0 && activeSizeVariants.every((sv) => svAvailableStock(sv) === 0 && !canMakeSizeVariantToOrder())
+  const variantIsReadyToShip = selectedSizeVariant ? svReadyToShip(selectedSizeVariant) && (svAvailableStock(selectedSizeVariant) ?? 0) > 0 : false
 
   // Thumbnails always show the full product gallery
   const thumbMedia = (product.images ?? []).map((i) => ({
@@ -399,8 +417,8 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     (variant) => variant.size?.id == selectedSize && variant.finish?.id == selectedFinish && variant.frame?.id == selectedFrame,
   )
   const selectedStock = hasSizeVariants
-    ? (svReadyToShip(selectedSizeVariant) ? null : selectedSizeVariant?.stock)
-    : selectedLegacyVariant?.stock
+    ? (variantIsReadyToShip ? svAvailableStock(selectedSizeVariant) : null)
+    : (selectedLegacyVariant?.available_stock ?? selectedLegacyVariant?.stock)
   const maxQuantity = selectedStock == null ? null : Math.max(0, selectedStock)
 
   useEffect(() => {
@@ -1339,12 +1357,19 @@ export default function ProductDetail({ product, categoryContext }: { product: A
             </p>
           </div>
           <button
-            onClick={handleAddToCart}
-            className={`w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-6 sm:px-8 py-4 rounded-sm text-[12px] sm:text-[13px] font-black uppercase tracking-widest transition-colors ${
-              added ? "bg-dp-success text-white" : "bg-white text-dp-accent-cta hover:bg-dp-bg-elevated"
+            onClick={() => { if (!isSoldOut) void handleAddToCart() }}
+            disabled={adding || isSoldOut}
+            className={`w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-6 sm:px-8 py-4 rounded-sm text-[12px] sm:text-[13px] font-black uppercase tracking-widest transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+              isSoldOut
+                ? "bg-white/80 text-dp-text-tertiary"
+                : added
+                  ? "bg-dp-success text-white"
+                  : "bg-white text-dp-accent-cta hover:bg-dp-bg-elevated"
             }`}
           >
-            {added
+            {isSoldOut
+              ? <>Sold Out</>
+              : added
               ? <><Check size={16} className="shrink-0" /> Added!</>
               : <><ShoppingCart size={16} className="shrink-0" /> <span className="truncate">Add to Cart — {formatLocalized(cartTotal * qty)}</span></>}
           </button>

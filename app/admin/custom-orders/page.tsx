@@ -178,22 +178,21 @@ function ManageModal({
       setError("Price is required when approving.")
       return
     }
-    if (mode === "approve" && !paymentUrl.trim()) {
-      setError("Payment link is required when approving.")
-      return
-    }
     setSaving(true)
     setError("")
     try {
+      const payload: Partial<CustomOrder> & { status: string; price?: string; currency: string; tracking_code: string } = {
+        status: lockedStatus ?? status,
+        ...(price ? { price } : {}),
+        currency,
+        tracking_code: trackingCode,
+      }
+      if (mode !== "approve") {
+        payload.payment_url = paymentUrl
+      }
       const updated = await adminFetch<CustomOrder>(`/vendors/me/custom-orders/${order.id}/`, {
         method: "PATCH",
-        body: JSON.stringify({
-          status: lockedStatus ?? status,
-          ...(price ? { price } : {}),
-          currency,
-          payment_url: paymentUrl,
-          tracking_code: trackingCode,
-        }),
+        body: JSON.stringify(payload),
       })
       onSaved(updated)
       onClose()
@@ -245,19 +244,26 @@ function ManageModal({
               <label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Currency</label>
               <select value={currency} onChange={(e) => setCurrency(e.target.value)}
                 className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary">
-                {["USD", "GEL", "EUR", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
+                {(mode === "approve" ? ["USD", "GEL"] : ["USD", "GEL", "EUR", "GBP"]).map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">
-              Payment link {mode === "approve" && <span className="text-red-400">*</span>}
-            </label>
-            <input value={paymentUrl} onChange={(e) => setPaymentUrl(e.target.value)}
-              placeholder="https://pay.example.com/..."
-              className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary" />
-            {order.paid_at && <p className="text-[11px] text-dp-success">Paid {new Date(order.paid_at).toLocaleString()}</p>}
-          </div>
+          {mode === "approve" ? (
+            <div className="border border-dp-border bg-dp-bg-elevated rounded-sm px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Payment link</p>
+              <p className="text-[12px] text-dp-text-secondary mt-1">
+                A secure payment link will be generated automatically after approval.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Payment link</label>
+              <input value={paymentUrl} onChange={(e) => setPaymentUrl(e.target.value)}
+                placeholder="https://pay.example.com/..."
+                className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary" />
+              {order.paid_at && <p className="text-[11px] text-dp-success">Paid {new Date(order.paid_at).toLocaleString()}</p>}
+            </div>
+          )}
           {mode !== "approve" && (
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">Tracking code</label>

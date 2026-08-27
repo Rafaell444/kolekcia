@@ -12,13 +12,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.exceptions import TokenError
 
-from .models import User, Address, PaymentMethod, PasswordResetToken
+from .models import User, Address, PasswordResetToken
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
     UserSerializer,
     AddressSerializer,
-    PaymentMethodSerializer,
     ForgotPasswordSerializer,
     ResetPasswordSerializer,
     ChangePasswordSerializer,
@@ -229,22 +228,6 @@ class AddressDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Address.objects.filter(user=self.request.user)
-
-
-class PaymentMethodListCreateView(generics.ListCreateAPIView):
-    serializer_class = PaymentMethodSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return PaymentMethod.objects.filter(user=self.request.user)
-
-
-class PaymentMethodDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = PaymentMethodSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return PaymentMethod.objects.filter(user=self.request.user)
 
 
 class ChangePasswordView(APIView):

@@ -8,8 +8,6 @@ from .views import (
     AvatarUploadView,
     AddressListCreateView,
     AddressDetailView,
-    PaymentMethodListCreateView,
-    PaymentMethodDetailView,
     ForgotPasswordView,
     ResetPasswordView,
     ChangePasswordView,
@@ -27,8 +25,6 @@ urlpatterns = [
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
     path("addresses/", AddressListCreateView.as_view(), name="address-list"),
     path("addresses/<int:pk>/", AddressDetailView.as_view(), name="address-detail"),
-    path("payment-methods/", PaymentMethodListCreateView.as_view(), name="payment-list"),
-    path("payment-methods/<int:pk>/", PaymentMethodDetailView.as_view(), name="payment-detail"),
     path("forgot-password/", ForgotPasswordView.as_view(), name="forgot-password"),
     path("reset-password/", ResetPasswordView.as_view(), name="reset-password"),
 ]

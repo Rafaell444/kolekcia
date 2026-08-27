@@ -374,18 +374,54 @@ class VendorCustomOrderListView(APIView):
         prev_status = order.status
         new_status = data.get("status", order.status)
 
+        if new_status == "approved":
+            currency = str(data.get("currency", order.currency)).upper()
+            if currency not in {"GEL", "USD"}:
+                return Response({"detail": "Approved custom orders must use GEL or USD."}, status=400)
+            data["currency"] = currency
+
         if new_status == "paid":
             data["paid_at"] = timezone.now()
             data["payment_url"] = ""
         if new_status == "cancelled" and not (data.get("cancel_reason") or order.cancel_reason):
             return Response({"detail": "cancel_reason is required when cancelling."}, status=400)
-        if new_status == "approved" and data.get("price") and not data.get("payment_url"):
-            # Auto-generate a placeholder payment link vendors can replace
-            data.setdefault("payment_url", f"/custom?pay={order.payment_ref}")
-
         ser = CustomOrderSerializer(order, data=data, partial=True)
         ser.is_valid(raise_exception=True)
         order = ser.save()
+
+        if order.status == "approved" and order.price and not order.payment_url:
+            from django.conf import settings as django_settings
+
+            if django_settings.KEEPZ_ENABLED:
+                from apps.orders.keepz import KeepzGatewayError, create_keepz_order_for_custom_order
+                from apps.orders.models import PaymentSession
+
+                payment = PaymentSession.objects.create(
+                    provider=PaymentSession.PROVIDER_KEEPZ,
+                    purpose=PaymentSession.PURPOSE_CUSTOM_ORDER,
+                    status=PaymentSession.STATUS_CREATED,
+                    user=order.user,
+                    related_id=str(order.pk),
+                    amount=order.price,
+                    currency=order.currency,
+                )
+                try:
+                    result = create_keepz_order_for_custom_order(payment)
+                except (KeepzGatewayError, ValueError) as exc:
+                    payment.status = PaymentSession.STATUS_FAILED
+                    payment.last_error = str(exc)
+                    payment.save(update_fields=["status", "last_error", "updated_at"])
+                    return Response({"detail": "Payment link could not be created.", "error": str(exc)}, status=502)
+                payment.payment_url = result.payment_url
+                payment.request_payload = result.request_payload
+                payment.response_payload = result.provider_payload
+                payment.status = PaymentSession.STATUS_REDIRECTED
+                payment.save(update_fields=["payment_url", "request_payload", "response_payload", "status", "updated_at"])
+                order.payment_url = payment.payment_url
+            else:
+                order.payment_url = f"/custom?pay={order.payment_ref}"
+            order.save(update_fields=["payment_url"])
+            ser = CustomOrderSerializer(order)
 
         if new_status == "shipped" and prev_status != "shipped":
             _send_custom_order_shipped_email(order)

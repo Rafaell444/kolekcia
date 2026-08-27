@@ -12,6 +12,7 @@ export type AuthUser = {
   avatar: string
   is_active: boolean
   date_joined: string
+  phone?: string
 }
 
 type AuthContextValue = {

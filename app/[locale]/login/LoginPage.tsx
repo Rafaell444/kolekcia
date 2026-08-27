@@ -13,15 +13,22 @@ import { claimPendingReferral } from "@/lib/referral"
 import { useLocalePrefix } from "@/lib/use-localized-href"
 import { isValidLocale } from "@/lib/i18n"
 
-function friendlyLoginMessage(message?: string): string {
+function friendlyLoginMessage(message?: unknown): string {
   if (!message) return "We could not sign you in. Please check your email and password."
-  const lower = message.toLowerCase()
+  const text = typeof message === "string"
+    ? message
+    : Array.isArray(message)
+      ? message.join(" ")
+      : typeof message === "object" && message && "detail" in message
+        ? String((message as { detail?: unknown }).detail ?? "")
+        : String(message)
+  const lower = text.toLowerCase()
   if (lower.includes("invalid") || lower.includes("credentials")) {
     return "The email or password is incorrect. Please check it and try again."
   }
   if (lower.includes("deactivated")) return "This account is deactivated. Please contact support."
   if (lower.includes("locked")) return "Too many failed attempts. Please try again later."
-  return message
+  return text
 }
 
 function LoginPageInner(): React.ReactElement {

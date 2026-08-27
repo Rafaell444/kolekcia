@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { Award, ChevronLeft, ChevronRight, Gift, ImagePlus, Pencil, Plus, ScrollText, ShoppingBag, Star, Trash2, X } from "lucide-react"
+import { Award, ChevronLeft, ChevronRight, CreditCard, Gift, ImagePlus, Pencil, Plus, ScrollText, ShoppingBag, Star, Trash2, X } from "lucide-react"
 import { adminFetch, getAdminToken, getAdminUser, type AdminUser } from "@/lib/admin-auth"
 import { parseList, type PaginatedResponse } from "@/lib/api"
 
@@ -66,6 +66,25 @@ type PointsMarketRedemption = {
   created_at: string
 }
 
+type PaymentSession = {
+  id: string
+  provider: string
+  purpose: string
+  status: string
+  user_email?: string | null
+  order_number?: string | null
+  related_id: string
+  integrator_order_id: string
+  provider_transaction_id?: string
+  amount: string
+  currency: string
+  payment_url: string
+  last_error: string
+  paid_at?: string | null
+  failed_at?: string | null
+  created_at: string
+}
+
 type LoyaltyTier = {
   tier_key: "genin" | "chunin" | "jonin"
   label: string
@@ -89,7 +108,7 @@ type MarketForm = {
   is_active: boolean
 }
 
-type LoyaltyAdminTab = "overview" | "market" | "redemptions" | "ledger"
+type LoyaltyAdminTab = "overview" | "market" | "redemptions" | "ledger" | "payments"
 
 type VendorOption = {
   id: number
@@ -135,6 +154,7 @@ export default function AdminGamificationPage(): React.ReactElement {
   const [vendors, setVendors] = useState<VendorOption[]>([])
   const [transactions, setTransactions] = useState<PointTransaction[]>([])
   const [redemptions, setRedemptions] = useState<PointsMarketRedemption[]>([])
+  const [payments, setPayments] = useState<PaymentSession[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [showModal, setShowModal] = useState(false)
@@ -156,12 +176,14 @@ export default function AdminGamificationPage(): React.ReactElement {
       adminFetch<PointsMarketItem[] | PaginatedResponse<PointsMarketItem>>("/admin/gamification/market/"),
       adminFetch<PointTransaction[] | PaginatedResponse<PointTransaction>>("/admin/gamification/transactions/"),
       adminFetch<PointsMarketRedemption[] | PaginatedResponse<PointsMarketRedemption>>("/admin/gamification/redemptions/"),
+      adminFetch<PaymentSession[] | PaginatedResponse<PaymentSession>>("/admin/payments/sessions/"),
       adminFetch<VendorOption[] | PaginatedResponse<VendorOption> | VendorOption>("/vendors/me/"),
     ])
-      .then(([marketData, transactionData, redemptionData, vendorData]) => {
+      .then(([marketData, transactionData, redemptionData, paymentData, vendorData]) => {
         setItems(parseList(marketData))
         setTransactions(parseList(transactionData).slice(0, 12))
         setRedemptions(parseList(redemptionData).slice(0, 20))
+        setPayments(parseList(paymentData).slice(0, 30))
         setVendors(normalizeVendors(vendorData))
       })
       .catch((err) => setError(getAdminErrorMessage(err, "Failed to load loyalty data.")))
@@ -360,6 +382,7 @@ export default function AdminGamificationPage(): React.ReactElement {
           { id: "market", label: "Points Market", Icon: Gift },
           { id: "redemptions", label: "Points Redemptions", Icon: ShoppingBag },
           { id: "ledger", label: "Points Ledger", Icon: ScrollText },
+          { id: "payments", label: "Payments", Icon: CreditCard },
         ].map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -580,6 +603,50 @@ export default function AdminGamificationPage(): React.ReactElement {
               ))}
               {transactions.length === 0 && (
                 <tr><td colSpan={6} className="py-8 text-center text-dp-text-tertiary">No ledger entries yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>}
+
+      {activeTab === "payments" && <section className="bg-dp-bg-surface border border-dp-border rounded-sm p-6">
+        <h2 className="font-display text-2xl text-dp-text-primary flex items-center gap-2 mb-4"><CreditCard size={17} className="text-dp-accent-gold" /> Payment Sessions</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1080px] text-left text-[12px]">
+            <thead className="text-dp-text-tertiary uppercase tracking-widest">
+              <tr className="border-b border-dp-border">
+                <th className="py-2 pr-4">Created</th>
+                <th className="py-2 pr-4">Purpose</th>
+                <th className="py-2 pr-4">Status</th>
+                <th className="py-2 pr-4">Amount</th>
+                <th className="py-2 pr-4">Customer</th>
+                <th className="py-2 pr-4">Reference</th>
+                <th className="py-2 pr-4">Gateway</th>
+                <th className="py-2 pr-4">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((payment) => (
+                <tr key={payment.id} className="border-b border-dp-border/70 align-top last:border-b-0">
+                  <td className="py-3 pr-4 text-dp-text-secondary">{new Date(payment.created_at).toLocaleString()}</td>
+                  <td className="py-3 pr-4 text-dp-text-primary">{payment.purpose.replaceAll("_", " ")}</td>
+                  <td className="py-3 pr-4">
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-widest ${payment.status === "success" || payment.status === "refunded" ? "bg-dp-success/10 text-dp-success" : payment.status === "failed" || payment.status === "canceled" ? "bg-dp-accent-cta/10 text-dp-accent-cta" : "bg-dp-bg-elevated text-dp-text-secondary"}`}>
+                      {payment.status}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 font-black text-dp-text-primary">{payment.amount} {payment.currency}</td>
+                  <td className="py-3 pr-4 text-dp-text-secondary">{payment.user_email || "-"}</td>
+                  <td className="py-3 pr-4 text-dp-text-tertiary">{payment.order_number || payment.related_id || "-"}</td>
+                  <td className="py-3 pr-4 text-dp-text-tertiary">
+                    <span className="block">{payment.provider}</span>
+                    {payment.provider_transaction_id && <span className="block text-[10px]">{payment.provider_transaction_id}</span>}
+                  </td>
+                  <td className="py-3 pr-4 text-dp-accent-cta max-w-[260px] truncate">{payment.last_error || "-"}</td>
+                </tr>
+              ))}
+              {payments.length === 0 && (
+                <tr><td colSpan={8} className="py-8 text-center text-dp-text-tertiary">No payment sessions yet.</td></tr>
               )}
             </tbody>
           </table>

@@ -544,6 +544,33 @@ class AdminOrderUpdateView(APIView):
                     pass
             if new_status == "refunded":
                 try:
+                    from django.conf import settings as django_settings
+                    from apps.orders.keepz import KeepzGatewayError, request_keepz_refund
+                    from apps.orders.models import PaymentSession
+
+                    if django_settings.KEEPZ_ENABLED:
+                        payment = order.payment_sessions.filter(
+                            provider=PaymentSession.PROVIDER_KEEPZ,
+                            purpose=PaymentSession.PURPOSE_CHECKOUT,
+                            status=PaymentSession.STATUS_SUCCESS,
+                        ).order_by("-paid_at", "-created_at").first()
+                        if payment:
+                            refund_payload = request_keepz_refund(payment, order.total)
+                            payment.status = PaymentSession.STATUS_REFUNDED
+                            payment.response_payload = {
+                                **(payment.response_payload or {}),
+                                "refund": refund_payload,
+                            }
+                            payment.save(update_fields=["status", "response_payload", "updated_at"])
+                            log_action(request.user, "keepz_refund_requested", "Order", order.pk, {
+                                "order_number": order.order_number,
+                                "payment_id": str(payment.pk),
+                                "amount": str(order.total),
+                                "currency": order.currency,
+                            })
+                except (KeepzGatewayError, ValueError) as exc:
+                    return Response({"detail": "Keepz refund request failed.", "error": str(exc)}, status=502)
+                try:
                     from apps.gamification.services import reverse_order_points_for_refund
                     reversal = reverse_order_points_for_refund(order, reason=f"Point reversal for refunded order {order.order_number}")
                     if reversal:
@@ -1632,6 +1659,77 @@ class AdminPointsMarketRedemptionDetailView(generics.RetrieveUpdateAPIView):
             redemption.admin_note = str(request.data.get("admin_note") or "").strip()
         redemption.save(update_fields=["status", "tracking_code", "admin_note", "shipped_at", "updated_at"])
         return Response(self.get_serializer(redemption).data)
+
+
+class AdminPaymentSessionSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source="user.email", read_only=True, allow_null=True)
+    order_number = serializers.CharField(source="order.order_number", read_only=True, allow_null=True)
+
+    class Meta:
+        from apps.orders.models import PaymentSession
+
+        model = PaymentSession
+        fields = (
+            "id",
+            "provider",
+            "purpose",
+            "status",
+            "user_email",
+            "order_number",
+            "related_id",
+            "integrator_order_id",
+            "provider_transaction_id",
+            "amount",
+            "currency",
+            "payment_url",
+            "last_error",
+            "paid_at",
+            "failed_at",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AdminPaymentSessionListView(generics.ListAPIView):
+    serializer_class = AdminPaymentSessionSerializer
+    permission_classes = [IsAdminOrVendor]
+    pagination_class = PageNumberPagination
+
+    def get_queryset(self):
+        from apps.auctions.models import Auction
+        from apps.gamification.models import PointsMarketShippingPaymentSession
+        from apps.orders.models import CustomOrder, PaymentSession
+
+        qs = PaymentSession.objects.select_related("user", "order").order_by("-created_at")
+        if not self.request.user.is_staff:
+            vendor = getattr(self.request.user, "vendor_profile", None)
+            if not vendor:
+                return qs.none()
+            custom_ids = [str(pk) for pk in CustomOrder.objects.filter(vendor=vendor).values_list("pk", flat=True)]
+            auction_ids = [str(pk) for pk in Auction.objects.filter(vendor=vendor).values_list("pk", flat=True)]
+            shipping_tokens = [
+                str(token)
+                for token in PointsMarketShippingPaymentSession.objects.filter(
+                    market_item__vendor=vendor
+                ).values_list("token", flat=True)
+            ]
+            qs = qs.filter(
+                Q(order__items__vendor=vendor)
+                | Q(purpose=PaymentSession.PURPOSE_CUSTOM_ORDER, related_id__in=custom_ids)
+                | Q(purpose=PaymentSession.PURPOSE_AUCTION, related_id__in=auction_ids)
+                | Q(purpose=PaymentSession.PURPOSE_POINTS_SHIPPING, related_id__in=shipping_tokens)
+            ).distinct()
+
+        purpose = self.request.query_params.get("purpose")
+        status_filter = self.request.query_params.get("status")
+        provider = self.request.query_params.get("provider")
+        if purpose:
+            qs = qs.filter(purpose=purpose)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if provider:
+            qs = qs.filter(provider=provider)
+        return qs
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────

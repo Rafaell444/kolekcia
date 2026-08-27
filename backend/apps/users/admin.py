@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Address, PaymentMethod
+from .models import User, Address
 
 
 @admin.register(User)
@@ -22,8 +22,3 @@ class UserAdmin(BaseUserAdmin):
 @admin.register(Address)
 class AddressAdmin(admin.ModelAdmin):
     list_display = ("user", "label", "city", "country", "is_default")
-
-
-@admin.register(PaymentMethod)
-class PaymentMethodAdmin(admin.ModelAdmin):
-    list_display = ("user", "brand", "last4", "is_default")

@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.db.models import Q
+from django.conf import settings as django_settings
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -59,7 +60,12 @@ class AuctionDetailView(generics.RetrieveAPIView):
     lookup_url_kwarg = "lookup"
 
     def get_object(self):
-        return resolve_auction(self.kwargs["lookup"])
+        with transaction.atomic():
+            resolved = resolve_auction(self.kwargs["lookup"])
+            auction = Auction.objects.select_for_update().get(pk=resolved.pk)
+            auction.finalize_if_ended()
+            auction.refresh_from_db()
+            return auction
 
 
 class PlaceBidView(APIView):
@@ -155,6 +161,14 @@ class PlaceBidView(APIView):
             submitted_amount=submitted_amount,
             submitted_currency=submitted_currency,
             fx_rate_used=fx_rate,
+            shipping_name=serializer.validated_data["shipping_name"],
+            shipping_line1=serializer.validated_data["shipping_line1"],
+            shipping_city=serializer.validated_data["shipping_city"],
+            shipping_state=serializer.validated_data["shipping_state"],
+            shipping_zip=serializer.validated_data["shipping_zip"],
+            shipping_country=serializer.validated_data["shipping_country"],
+            shipping_email=request.user.email,
+            shipping_phone=serializer.validated_data["shipping_phone"],
         )
         auction.refresh_live_flag()
         auction.save(update_fields=["is_live"])
@@ -392,6 +406,101 @@ class VendorAuctionMarkPaidView(VendorAuctionMixin, APIView):
             "include_all_bids": True,
             "include_bidder_private_data": True,
         }).data)
+
+
+class AuctionWinnerPaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, lookup):
+        from apps.orders.keepz import KeepzGatewayError, create_keepz_order_for_auction
+        from apps.orders.models import PaymentSession
+        from .services import get_usd_gel_rate, usd_to_gel
+
+        try:
+            resolved_auction = resolve_auction(lookup)
+        except Auction.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        auction = Auction.objects.select_for_update().select_related("vendor", "winner").filter(
+            pk=resolved_auction.pk
+        ).first()
+        if not auction:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if auction.ends_at <= timezone.now():
+            auction.finalize_if_ended()
+            auction.refresh_from_db()
+        if not auction.is_ended() or auction.winner_id != request.user.id:
+            return Response({"detail": "Only the auction winner can start payment."}, status=status.HTTP_403_FORBIDDEN)
+        if auction.winner_payment_status == Auction.PAYMENT_PAID:
+            return Response({"detail": "This auction is already paid."}, status=status.HTTP_400_BAD_REQUEST)
+        if auction.winner_payment_status not in ("", Auction.PAYMENT_PENDING, Auction.PAYMENT_FAILED):
+            return Response({"detail": "This auction is not ready for payment."}, status=status.HTTP_400_BAD_REQUEST)
+        if not django_settings.KEEPZ_ENABLED:
+            return Response({"detail": "Payment gateway is not enabled."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        currency = str(request.data.get("currency") or "USD").upper()
+        if currency not in {"GEL", "USD"}:
+            return Response({"detail": "currency must be GEL or USD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        winning_usd = auction.winning_amount or auction.current_bid
+        if currency == "GEL":
+            rate = get_usd_gel_rate()
+            if not rate:
+                return Response({"detail": "The official exchange rate is temporarily unavailable."}, status=503)
+            bid_amount = usd_to_gel(winning_usd, rate)
+            shipping_amount = auction.shipping_price_gel
+        else:
+            bid_amount = winning_usd
+            shipping_amount = auction.shipping_price_usd
+        payable_amount = bid_amount + shipping_amount
+
+        existing = PaymentSession.objects.filter(
+            provider=PaymentSession.PROVIDER_KEEPZ,
+            purpose=PaymentSession.PURPOSE_AUCTION,
+            user=request.user,
+            related_id=str(auction.pk),
+            status__in=(PaymentSession.STATUS_CREATED, PaymentSession.STATUS_REDIRECTED),
+        ).order_by("-created_at").first()
+        if existing and existing.payment_url and existing.currency == currency and existing.amount == payable_amount:
+            return Response({
+                "payment_required": True,
+                "payment_id": str(existing.id),
+                "payment_url": existing.payment_url,
+                "amount": str(existing.amount),
+                "currency": existing.currency,
+            })
+
+        payment = PaymentSession.objects.create(
+            provider=PaymentSession.PROVIDER_KEEPZ,
+            purpose=PaymentSession.PURPOSE_AUCTION,
+            status=PaymentSession.STATUS_CREATED,
+            user=request.user,
+            related_id=str(auction.pk),
+            amount=payable_amount,
+            currency=currency,
+        )
+        try:
+            result = create_keepz_order_for_auction(payment)
+        except (KeepzGatewayError, ValueError) as exc:
+            payment.status = PaymentSession.STATUS_FAILED
+            payment.last_error = str(exc)
+            payment.save(update_fields=["status", "last_error", "updated_at"])
+            return Response({"detail": "Payment could not be created.", "error": str(exc)}, status=502)
+
+        payment.payment_url = result.payment_url
+        payment.request_payload = result.request_payload
+        payment.response_payload = result.provider_payload
+        payment.status = PaymentSession.STATUS_REDIRECTED
+        payment.save(update_fields=["payment_url", "request_payload", "response_payload", "status", "updated_at"])
+        auction.winner_payment_status = Auction.PAYMENT_PENDING
+        auction.save(update_fields=["winner_payment_status"])
+        return Response({
+            "payment_required": True,
+            "payment_id": str(payment.id),
+            "payment_url": payment.payment_url,
+            "amount": str(payment.amount),
+            "currency": payment.currency,
+        })
 
 
 def _managed_auction_response(auction):

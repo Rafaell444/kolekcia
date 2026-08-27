@@ -1,11 +1,11 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useRef } from "react"
+import React, { useState, useEffect, useMemo, useCallback } from "react"
 import SiteShell from "@/components/layout/SiteShell"
 import Image from "next/image"
 import LocalizedLink from "@/components/seo/LocalizedLink"
-import { ChevronRight, CreditCard, CheckCircle, Lock, Truck, ArrowLeft, MapPin, Package } from "lucide-react"
-import { useCart } from "@/contexts/cart-context"
+import { ChevronRight, CheckCircle, Lock, Truck, ArrowLeft, MapPin, Package } from "lucide-react"
+import { useCart, type CartType } from "@/contexts/cart-context"
 import { authFetch, getApiErrorMessage } from "@/lib/api"
 import { useRequireAuth } from "@/hooks/useRequireAuth"
 import { useLocale } from "@/contexts/locale-context"
@@ -29,8 +29,43 @@ type DeliveryOpt = {
   is_pickup?: boolean
 }
 
-type Step = "shipping" | "payment" | "review" | "confirmed"
+type Step = "shipping" | "payment" | "confirmed"
+const CHECKOUT_HANDOFF_KEY = "kolekcia_checkout_handoff"
+type CheckoutHandoff = {
+  savedAt: number
+  cart: CartType
+  shippingData: Record<string, string>
+  shippingSelections: Record<string, string>
+  deliveryOptions: DeliveryOpt[]
+  shippingCountry: string
+  checkoutCurrency: string
+  idempotencyKey: string
+  paymentUrl: string
+}
 type Address = { id: number; label: string; line1: string; line2: string; city: string; state: string; zip_code: string; country: string; is_default: boolean }
+type ShippingFormValues = {
+  addressLabel: string
+  name: string
+  streetAddress: string
+  country: string
+  state: string
+  zipCode: string
+  email: string
+  phone: string
+}
+
+function shippingDataToFormValues(data: Record<string, string>, fallbackEmail = ""): ShippingFormValues {
+  return {
+    addressLabel: data.address_label ?? "",
+    name: data.shipping_name ?? "",
+    streetAddress: data.shipping_line1 ?? "",
+    country: data.shipping_country ?? "US",
+    state: data.shipping_state ?? data.shipping_city ?? "",
+    zipCode: data.shipping_zip ?? "",
+    email: data.shipping_email ?? fallbackEmail,
+    phone: data.shipping_phone ?? "",
+  }
+}
 
 function discountLabel(cart: ReturnType<typeof useCart>["cart"]): string {
   if (!cart) return "Discount"
@@ -56,7 +91,6 @@ function StepBar({ current }: { current: Step }) {
   const steps: { id: Step; label: string }[] = [
     { id: "shipping", label: "Shipping" },
     { id: "payment",  label: "Payment"  },
-    { id: "review",   label: "Review"   },
     { id: "confirmed",label: "Done"     },
   ]
   const idx = steps.findIndex((s) => s.id === current)
@@ -246,33 +280,55 @@ function PerVendorShippingSelector({
 
 function ShippingForm({
   onNext, onCountryChange,
-  deliveryOptions, shippingSelections, onShippingSelectionChange,
-  deliveryLoading, vendorGroups,
+  shippingSelections, onShippingSelectionChange,
+  deliveryLoading, vendorGroups, initialData,
 }: {
   onNext: (data: Record<string, string>, country: string) => void
   onCountryChange: (country: string) => void
-  deliveryOptions: DeliveryOpt[]
   shippingSelections: Record<string, string>
   onShippingSelectionChange: (vendorId: number, slug: string) => void
   deliveryLoading: boolean
   vendorGroups: VendorGroup[]
+  initialData: Record<string, string>
 }) {
   const { user } = useAuth()
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<number | "new">("new")
-  const [f, setF] = useState({
-    name: "", streetAddress: "", country: "US", state: "", zipCode: "",
-    email: user?.email ?? "", phone: "",
-  })
+  const [f, setF] = useState<ShippingFormValues>(() => shippingDataToFormValues(initialData, user?.email ?? ""))
+  const hasInitialData = Boolean(initialData.shipping_line1 || initialData.shipping_country)
   const set = (key: keyof typeof f) => (v: string) => {
     setF((p) => ({ ...p, [key]: v }))
     if (key === "country") onCountryChange(v)
   }
   const shippingCurrency = f.country === "GE" ? "GEL" : "USD"
 
-  useEffect(() => {
-    setF((prev) => ({ ...prev, email: user?.email ?? prev.email }))
-  }, [user?.email])
+  const applyAddress = useCallback((addr: Address) => {
+    setSelectedAddressId(addr.id)
+    setF((prev) => ({
+      ...prev,
+      addressLabel: addr.label,
+      streetAddress: addr.line1,
+      country: addr.country,
+      state: addr.state || addr.city,
+      zipCode: addr.zip_code,
+    }))
+    onCountryChange(addr.country)
+  }, [onCountryChange])
+
+  const startNewAddress = useCallback(() => {
+    setSelectedAddressId("new")
+    setF({
+      addressLabel: "",
+      name: "",
+      streetAddress: "",
+      country: "",
+      state: "",
+      zipCode: "",
+      email: user?.email ?? "",
+      phone: "",
+    })
+    onCountryChange("")
+  }, [onCountryChange, user?.email])
 
   useEffect(() => {
     let cancelled = false
@@ -281,31 +337,20 @@ function ShippingForm({
         if (cancelled) return
         const list = Array.isArray(d) ? d : (d as { results?: Address[] }).results ?? []
         setAddresses(list)
+        if (hasInitialData) return
         const def = list.find((addr) => addr.is_default) ?? list[0]
         if (def) applyAddress(def)
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [])
-
-  function applyAddress(addr: Address) {
-    setSelectedAddressId(addr.id)
-    setF((prev) => ({
-      ...prev,
-      streetAddress: addr.line1,
-      country: addr.country,
-      state: addr.state || addr.city,
-      zipCode: addr.zip_code,
-    }))
-    onCountryChange(addr.country)
-  }
+  }, [applyAddress, hasInitialData])
 
   async function saveCheckoutAddress() {
     if (selectedAddressId !== "new") return
     await authFetch("/auth/addresses/", {
       method: "POST",
       body: JSON.stringify({
-        label: "Checkout",
+        label: f.addressLabel.trim(),
         line1: f.streetAddress,
         line2: "",
         city: f.state,
@@ -356,12 +401,13 @@ function ShippingForm({
             </label>
           ))}
           <label className={`flex items-center gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${selectedAddressId === "new" ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
-            <input type="radio" className="accent-dp-accent-cta" checked={selectedAddressId === "new"} onChange={() => setSelectedAddressId("new")} />
+            <input type="radio" className="accent-dp-accent-cta" checked={selectedAddressId === "new"} onChange={startNewAddress} />
             <span className="text-[13px] font-semibold text-dp-text-primary">Add a new address</span>
           </label>
         </div>
       )}
 
+      <Field label="Address Name" id="addressLabel" autoComplete="off" placeholder="e.g. Home, Office" value={f.addressLabel} onChange={set("addressLabel")} />
       <Field label="Full Name" id="name" autoComplete="name" placeholder="First and last name" value={f.name} onChange={set("name")} />
       <Field label="Street Address" id="streetAddress" autoComplete="street-address" placeholder="123 Main Street, Apt 4B" value={f.streetAddress} onChange={set("streetAddress")} />
 
@@ -376,6 +422,7 @@ function ShippingForm({
             onChange={(e) => set("country")(e.target.value)}
             className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover transition-colors"
           >
+            <option value="" disabled>Select a country</option>
             {CHECKOUT_COUNTRIES.map((country) => (
               <option key={country.code} value={country.code}>{country.name}</option>
             ))}
@@ -429,186 +476,26 @@ function ShippingForm({
   )
 }
 
-type PaymentMethod = { id: number; brand: string; last4: string; exp_month: number; exp_year: number; is_default: boolean }
-
-export type CheckoutPaymentData = {
-  paymentMethodId?: number | null
-  saveCard?: boolean
-  brand?: string
-  last4?: string
-  exp_month?: number
-  exp_year?: number
-  is_default?: boolean
-}
-
-function cardBrandFromNumber(num: string): string {
-  const d = num.replace(/\D/g, "")
-  if (d.startsWith("4")) return "visa"
-  if (d.startsWith("5")) return "mastercard"
-  if (d.startsWith("3")) return "amex"
-  return "visa"
-}
-
-function PaymentForm({
-  onNext, onBack,
-}: {
-  onNext: (data: CheckoutPaymentData) => void
-  onBack: () => void
-}) {
-  const [f, setF] = useState({ cardNumber: "", name: "", expiry: "", cvc: "" })
-  const [cards, setCards] = useState<PaymentMethod[]>([])
-  const [selectedCardId, setSelectedCardId] = useState<number | null>(null)
-  const [useNewCard, setUseNewCard] = useState(false)
-  const [saveCard, setSaveCard] = useState(true)
-  const [setDefault, setSetDefault] = useState(false)
-  const set = (key: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [key]: v }))
-  const validNew = Object.values(f).every(Boolean)
-  const valid = useNewCard ? validNew : selectedCardId != null
-
-  useEffect(() => {
-    authFetch<PaymentMethod[]>("/auth/payment-methods/")
-      .then((d) => {
-        const list = Array.isArray(d) ? d : (d as { results?: PaymentMethod[] }).results ?? []
-        setCards(list)
-        const def = list.find((c) => c.is_default) ?? list[0]
-        if (def) {
-          setSelectedCardId(def.id)
-          setUseNewCard(false)
-        } else {
-          setUseNewCard(true)
-        }
-      })
-      .catch(() => setUseNewCard(true))
-  }, [])
-
-  const handleCard = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 16)
-    const groups = digits.match(/.{1,4}/g) ?? []
-    setF((p) => ({ ...p, cardNumber: groups.join(" ") }))
-  }
-  const handleExpiry = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 4)
-    const formatted = digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits
-    setF((p) => ({ ...p, expiry: formatted }))
-  }
-
-  function submitPayment(e: React.FormEvent) {
-    e.preventDefault()
-    if (!valid) return
-    if (!useNewCard && selectedCardId != null) {
-      onNext({ paymentMethodId: selectedCardId })
-      return
-    }
-    const digits = f.cardNumber.replace(/\D/g, "")
-    const [mm, yy] = f.expiry.split("/")
-    onNext({
-      saveCard,
-      brand: cardBrandFromNumber(digits),
-      last4: digits.slice(-4),
-      exp_month: parseInt(mm, 10),
-      exp_year: 2000 + parseInt(yy, 10),
-      is_default: setDefault || cards.length === 0,
-    })
-  }
-
-  return (
-    <form onSubmit={submitPayment} className="flex flex-col gap-4" aria-label="Payment information">
-      <h2 className="font-display text-3xl text-dp-text-primary">Payment</h2>
-
-      <div className="flex items-center gap-2 text-[12px] text-dp-text-tertiary">
-        <Lock size={13} className="text-dp-success" aria-hidden />
-        <span>All transactions are encrypted and secure</span>
-      </div>
-
-      {cards.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary">Saved cards</p>
-          {cards.map((c) => (
-            <label key={c.id} className={`flex items-center justify-between gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${!useNewCard && selectedCardId === c.id ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
-              <div className="flex items-center gap-3">
-                <input type="radio" name="savedCard" checked={!useNewCard && selectedCardId === c.id} onChange={() => { setUseNewCard(false); setSelectedCardId(c.id) }} />
-                <span className="text-[13px] font-semibold text-dp-text-primary uppercase">{c.brand}</span>
-                <span className="text-[13px] text-dp-text-secondary">•••• {c.last4}</span>
-                {c.is_default && <span className="text-[10px] font-bold uppercase text-dp-accent-gold">Default</span>}
-              </div>
-              <span className="text-[12px] text-dp-text-tertiary">{String(c.exp_month).padStart(2, "0")}/{c.exp_year}</span>
-            </label>
-          ))}
-          <label className={`flex items-center gap-3 px-4 py-3 border rounded-sm cursor-pointer transition-colors ${useNewCard ? "border-dp-accent-cta bg-dp-accent-cta/5" : "border-dp-border hover:border-dp-border-hover"}`}>
-            <input type="radio" name="savedCard" checked={useNewCard} onChange={() => setUseNewCard(true)} />
-            <span className="text-[13px] font-semibold text-dp-text-primary">Use a new card</span>
-          </label>
-        </div>
-      )}
-
-      {useNewCard && (
-        <>
-          <div className="relative">
-            <Field label="Card Number" id="cardNumber" type="text" autoComplete="cc-number" placeholder="1234 5678 9012 3456" value={f.cardNumber} onChange={handleCard} />
-            <CreditCard size={16} className="absolute right-3 bottom-2.5 text-dp-text-tertiary" aria-hidden />
-          </div>
-          <Field label="Name on Card" id="cardName" autoComplete="cc-name" placeholder="Full name as on card" value={f.name} onChange={set("name")} />
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Expiry (MM/YY)" id="expiry" autoComplete="cc-exp" placeholder="MM/YY" value={f.expiry} onChange={handleExpiry} />
-            <Field label="CVC" id="cvc" autoComplete="cc-sc" placeholder="123" value={f.cvc} onChange={set("cvc")} />
-          </div>
-          <label className="flex items-center gap-2 text-[13px] text-dp-text-secondary">
-            <input type="checkbox" checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} />
-            Save this card for future purchases
-          </label>
-          {saveCard && (
-            <label className="flex items-center gap-2 text-[13px] text-dp-text-secondary">
-              <input type="checkbox" checked={setDefault} onChange={(e) => setSetDefault(e.target.checked)} />
-              Set as default payment method
-            </label>
-          )}
-        </>
-      )}
-
-      <div className="flex items-center gap-3 pt-1">
-        <span className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Accepted:</span>
-        {["Visa", "MC", "Amex", "PayPal"].map((c) => (
-          <span key={c} className="px-2.5 py-0.5 border border-dp-border rounded-sm text-[10px] font-bold text-dp-text-tertiary uppercase tracking-widest">{c}</span>
-        ))}
-      </div>
-
-      <div className="flex gap-3 mt-2">
-        <button type="button" onClick={onBack} className="flex items-center gap-1 px-4 py-3 border border-dp-border rounded-sm text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
-          <ArrowLeft size={13} /> Back
-        </button>
-        <button type="submit" disabled={!valid} className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-40 text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-          Review Order <ChevronRight size={14} aria-hidden />
-        </button>
-      </div>
-    </form>
-  )
-}
-
 function ReviewStep({
-  onConfirm, onBack, shippingData, checkoutCurrency, paymentData,
-  shippingSelections, deliveryOptions,
+  onConfirm, onBack, shippingData, checkoutCurrency,
+  shippingSelections, deliveryOptions, cartSnapshot, checkoutIdempotencyKey, onPaymentHandoff,
 }: {
   onConfirm: (orderNum: string, orderId: string) => void
   onBack: () => void
   shippingData: Record<string, string>
   checkoutCurrency: string
-  paymentData: CheckoutPaymentData | null
   shippingSelections: Record<string, string>
   deliveryOptions: DeliveryOpt[]
+  cartSnapshot?: CartType | null
+  checkoutIdempotencyKey: string
+  onPaymentHandoff: (cart: CartType, paymentUrl: string) => void
 }) {
-  const { cart, refresh } = useCart()
+  const { cart } = useCart()
+  const displayCart = (cart?.items.length ? cart : cartSnapshot) ?? null
   const { formatPrice } = useLocale()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const checkoutIdempotencyKey = useRef("")
-
-  if (!checkoutIdempotencyKey.current) {
-    checkoutIdempotencyKey.current = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  }
-
-  const items = cart?.items ?? []
+  const items = displayCart?.items ?? []
   const giftWrapTotal = items.reduce((sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0), 0)
   const processingTotal = items.reduce((sum, item) => sum + (item.processing_option ? parseFloat(item.processing_fee || "0") : 0), 0)
   const productsTotal = items.reduce((sum, item) => {
@@ -630,7 +517,7 @@ function ReviewStep({
     return total
   }, [shippingSelections, deliveryOptions, checkoutCurrency])
 
-  const discount = parseFloat(cart?.discount || "0")
+  const discount = parseFloat(displayCart?.discount || "0")
   const total = Math.max(0, productsTotal + giftWrapTotal + processingTotal - discount + deliveryPrice)
 
   const hasVendorShippingSelection = Object.keys(shippingSelections).length > 0
@@ -639,19 +526,12 @@ function ReviewStep({
     setLoading(true)
     setError("")
     try {
-      if (paymentData?.saveCard && paymentData.last4 && paymentData.exp_month && paymentData.exp_year) {
-        await authFetch("/auth/payment-methods/", {
-          method: "POST",
-          body: JSON.stringify({
-            brand: paymentData.brand ?? "visa",
-            last4: paymentData.last4,
-            exp_month: paymentData.exp_month,
-            exp_year: paymentData.exp_year,
-            is_default: paymentData.is_default ?? false,
-          }),
-        }).catch(() => {})
-      }
       type OrderResponse = { id: string; order_number: string }
+      type PaymentResponse = {
+        payment_required: true
+        payment_url: string
+        order: OrderResponse
+      }
       const checkoutBody: Record<string, unknown> = {
         ...shippingData,
         currency: checkoutCurrency,
@@ -664,13 +544,18 @@ function ReviewStep({
         checkoutBody.delivery_type = "standard"
       }
 
-      const order = await authFetch<OrderResponse>("/orders/checkout/", {
+      const result = await authFetch<OrderResponse | PaymentResponse>("/orders/checkout/", {
         method: "POST",
-        headers: { "Idempotency-Key": checkoutIdempotencyKey.current },
+        headers: { "Idempotency-Key": checkoutIdempotencyKey },
         body: JSON.stringify(checkoutBody),
       })
-      await authFetch("/orders/cart/", { method: "DELETE" }).catch(() => {})
-      await refresh()
+      if ("payment_required" in result && result.payment_required) {
+        if (displayCart) onPaymentHandoff(displayCart, result.payment_url)
+        const locale = window.location.pathname.split("/").filter(Boolean)[0] || "en"
+        window.location.replace(`/${locale}/payment-handoff`)
+        return
+      }
+      const order = result as OrderResponse
       onConfirm(order.order_number, order.id)
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, "Checkout failed. Please check your connection and try again."))
@@ -696,8 +581,14 @@ function ReviewStep({
   }, [shippingSelections, deliveryOptions, checkoutCurrency])
 
   return (
-    <div className="flex flex-col gap-5" aria-label="Order review">
-      <h2 className="font-display text-3xl text-dp-text-primary">Review Order</h2>
+    <div className="flex flex-col gap-5" aria-label="Secure payment handoff">
+      <h2 className="font-display text-3xl text-dp-text-primary">Secure Payment</h2>
+      <div className="flex items-start gap-3 rounded-sm border border-dp-border bg-dp-bg-elevated px-4 py-3">
+        <Lock size={16} className="mt-0.5 text-dp-success shrink-0" aria-hidden />
+        <p className="text-[13px] text-dp-text-secondary leading-relaxed">
+          Review your shipping and order total below. When you continue, you will be redirected to our secure payment page where you can choose an available payment method.
+        </p>
+      </div>
       {error && <p className="text-[12px] text-dp-accent-cta bg-dp-accent-cta/10 px-4 py-2 rounded-sm">{error}</p>}
 
       <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-hidden">
@@ -738,13 +629,13 @@ function ReviewStep({
             <div className="flex flex-col gap-1">
               <div className="flex justify-between text-[13px] text-dp-success">
                 <span>
-                  {discountLabel(cart)}
-                  {cart?.promo_products_only && cart.applied_discount_source === "voucher" ? " · products" : ""}
+                  {discountLabel(displayCart)}
+                  {displayCart?.promo_products_only && displayCart.applied_discount_source === "voucher" ? " · products" : ""}
                 </span>
                 <span className="font-semibold">−{formatPrice(discount)}</span>
               </div>
-              {cart?.discount_message && (
-                <p className="text-[11px] text-dp-text-tertiary leading-relaxed">{cart.discount_message}</p>
+              {displayCart?.discount_message && (
+                <p className="text-[11px] text-dp-text-tertiary leading-relaxed">{displayCart.discount_message}</p>
               )}
             </div>
           )}
@@ -784,11 +675,11 @@ function ReviewStep({
         </button>
         <button
           onClick={handlePlaceOrder}
-          disabled={loading}
+          disabled={loading || !checkoutIdempotencyKey || items.length === 0}
           className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[13px] font-bold uppercase tracking-widest rounded-sm transition-colors"
         >
           {loading ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Lock size={14} />}
-          {loading ? "Placing…" : "Place Order"}
+          {loading ? "Opening secure payment..." : "Continue to Payment"}
         </button>
       </div>
     </div>
@@ -830,13 +721,16 @@ function Confirmed({ orderNumber, orderId }: { orderNumber: string; orderId?: st
 function OrderAside({
   deliveryPrice = 0,
   showShipping = false,
+  cartSnapshot = null,
 }: {
   deliveryPrice?: number
   showShipping?: boolean
+  cartSnapshot?: CartType | null
 }) {
   const { cart } = useCart()
+  const displayCart = (cart?.items.length ? cart : cartSnapshot) ?? null
   const { formatPrice } = useLocale()
-  const items = cart?.items ?? []
+  const items = displayCart?.items ?? []
   const giftWrapTotal = items.reduce((sum, item) => sum + (item.gift_wrap ? parseFloat(item.gift_wrap_price || "0") : 0), 0)
   const processingTotal = items.reduce((sum, item) => sum + (item.processing_option ? parseFloat(item.processing_fee || "0") : 0), 0)
   const productsTotal = items.reduce((sum, item) => {
@@ -847,7 +741,7 @@ function OrderAside({
     const proc = item.processing_option ? parseFloat(item.processing_fee || "0") : 0
     return sum + Math.max(0, line - wrap - proc)
   }, 0)
-  const discount = parseFloat(cart?.discount || "0")
+  const discount = parseFloat(displayCart?.discount || "0")
   const shipping = showShipping ? deliveryPrice : 0
   const total = Math.max(0, productsTotal + giftWrapTotal + processingTotal - discount + shipping)
 
@@ -895,13 +789,13 @@ function OrderAside({
               <div className="flex flex-col gap-1">
                 <div className="flex justify-between text-[12px] text-dp-success">
                   <span>
-                    {discountLabel(cart)}
-                    {cart?.promo_products_only && cart.applied_discount_source === "voucher" ? " · products" : ""}
+                    {discountLabel(displayCart)}
+                    {displayCart?.promo_products_only && displayCart.applied_discount_source === "voucher" ? " · products" : ""}
                   </span>
                   <span>−{formatPrice(discount)}</span>
                 </div>
-                {cart?.discount_message && (
-                  <p className="text-[11px] text-dp-text-tertiary leading-relaxed">{cart.discount_message}</p>
+              {displayCart?.discount_message && (
+                <p className="text-[11px] text-dp-text-tertiary leading-relaxed">{displayCart.discount_message}</p>
                 )}
               </div>
             )}
@@ -937,7 +831,8 @@ export default function CheckoutPage(): React.ReactElement {
   const [pendingShippingData, setPendingShippingData] = useState<Record<string, string>>({})
   const [pendingCountry, setPendingCountry] = useState("")
   const [checkoutCurrency, setCheckoutCurrency] = useState("USD")
-  const [paymentData, setPaymentData] = useState<CheckoutPaymentData | null>(null)
+  const [cartSnapshot, setCartSnapshot] = useState<CartType | null>(null)
+  const [checkoutIdempotencyKey, setCheckoutIdempotencyKey] = useState("")
 
   // Per-vendor shipping
   const [shippingSelections, setShippingSelections] = useState<Record<string, string>>({})
@@ -945,14 +840,17 @@ export default function CheckoutPage(): React.ReactElement {
   const [deliveryLoading, setDeliveryLoading] = useState(false)
   const [shippingCountryDraft, setShippingCountryDraft] = useState("US")
 
+  useEffect(() => {
+    const newKey = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    setCheckoutIdempotencyKey(newKey)
+  }, [])
+
   const vendorGroups = useMemo(() => groupOptionsByVendor(deliveryOptions), [deliveryOptions])
 
   useEffect(() => {
-    if (!shippingCountryDraft) {
-      setDeliveryOptions([])
-      setShippingSelections({})
-      return
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDeliveryLoading(true)
     authFetch<DeliveryOpt[]>(`/orders/cart/shipping-options/?country=${encodeURIComponent(shippingCountryDraft)}`)
       .then((d) => {
@@ -985,6 +883,22 @@ export default function CheckoutPage(): React.ReactElement {
 
   const handleShippingSelectionChange = (vendorId: number, slug: string) => {
     setShippingSelections((prev) => ({ ...prev, [String(vendorId)]: slug }))
+  }
+
+  function handlePaymentHandoff(cartForDisplay: CartType, paymentUrl: string) {
+    const snapshot: CheckoutHandoff = {
+      savedAt: Date.now(),
+      cart: cartForDisplay,
+      shippingData,
+      shippingSelections,
+      deliveryOptions,
+      shippingCountry: shippingData.shipping_country || shippingCountryDraft,
+      checkoutCurrency,
+      idempotencyKey: checkoutIdempotencyKey,
+      paymentUrl,
+    }
+    setCartSnapshot(cartForDisplay)
+    sessionStorage.setItem(CHECKOUT_HANDOFF_KEY, JSON.stringify(snapshot))
   }
 
   // Total delivery price from all vendor selections
@@ -1059,29 +973,31 @@ export default function CheckoutPage(): React.ReactElement {
                 <ShippingForm
                   onNext={handleShippingNext}
                   onCountryChange={setShippingCountryDraft}
-                  deliveryOptions={deliveryOptions}
                   shippingSelections={shippingSelections}
                   onShippingSelectionChange={handleShippingSelectionChange}
                   deliveryLoading={deliveryLoading}
                   vendorGroups={vendorGroups}
+                  initialData={shippingData}
                 />
               )}
-              {step === "payment" && <PaymentForm onNext={(data) => { setPaymentData(data); setStep("review") }} onBack={() => setStep("shipping")} />}
-              {step === "review" && (
+              {step === "payment" && (
                 <ReviewStep
                   shippingData={shippingData}
                   checkoutCurrency={checkoutCurrency}
-                  paymentData={paymentData}
                   shippingSelections={shippingSelections}
                   deliveryOptions={deliveryOptions}
-                  onConfirm={(num, id) => { setConfirmedOrder(num); setConfirmedOrderId(id); setStep("confirmed") }}
-                  onBack={() => setStep("payment")}
+                  cartSnapshot={cartSnapshot}
+                  checkoutIdempotencyKey={checkoutIdempotencyKey}
+                  onPaymentHandoff={handlePaymentHandoff}
+                  onConfirm={(num, id) => { sessionStorage.removeItem(CHECKOUT_HANDOFF_KEY); setConfirmedOrder(num); setConfirmedOrderId(id); setStep("confirmed") }}
+                  onBack={() => setStep("shipping")}
                 />
               )}
             </div>
             <OrderAside
               showShipping={deliveryOptions.length > 0}
               deliveryPrice={deliveryPrice}
+              cartSnapshot={cartSnapshot}
             />
           </div>
         )}

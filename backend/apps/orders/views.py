@@ -6,14 +6,13 @@ import json
 from decimal import Decimal
 from django.conf import settings as django_settings
 from django.db import transaction
-from django.db.models import F
 from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import Cart, CartItem, Order, OrderItem, OrderShipment, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
+from .models import Cart, CartItem, Order, OrderItem, OrderShipment, OrderStatusHistory, CustomOrder, DeliveryOption, PaymentSession, ProcessingOption, VendorShippingOption
 from .pricing import (
     normalize_currency,
     resolve_gift_wrap_price,
@@ -28,6 +27,13 @@ from .serializers import (
     CustomOrderSerializer,
 )
 from apps.products.models import ProductVariant, SizeVariant
+from .inventory import (
+    InsufficientInventoryError,
+    available_quantity,
+    finalize_order_stock,
+    release_order_stock,
+    reserve_order_stock,
+)
 
 
 def _absolute_product_image(url: str, request=None) -> str:
@@ -102,14 +108,16 @@ class CartItemView(APIView):
                 size_variant = SizeVariant.objects.select_for_update().select_related("product").get(pk=size_variant_id, is_active=True)
             except SizeVariant.DoesNotExist:
                 return Response({"detail": "Size variant not found."}, status=status.HTTP_404_NOT_FOUND)
-            if not size_variant.is_ready_to_ship and size_variant.stock is not None and size_variant.stock < quantity:
+            available = available_quantity(size_variant)
+            is_made_to_order = bool(processing_option)
+            if available is not None and available < quantity and not is_made_to_order:
                 return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
         elif variant_id:
             try:
                 variant = ProductVariant.objects.select_for_update().select_related("product").get(pk=variant_id)
             except ProductVariant.DoesNotExist:
                 return Response({"detail": "Variant not found."}, status=status.HTTP_404_NOT_FOUND)
-            if variant.stock < quantity:
+            if available_quantity(variant) < quantity:
                 return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
 
         currency = _normalize_currency(currency)
@@ -153,9 +161,11 @@ class CartItemView(APIView):
             item = CartItem.objects.select_for_update().filter(cart=cart, size_variant=size_variant).first()
             if item:
                 new_quantity = item.quantity + quantity
-                if size_variant.stock is not None and new_quantity > size_variant.stock:
+                available = available_quantity(size_variant)
+                is_made_to_order = bool(processing_option or item.processing_option)
+                if available is not None and new_quantity > available and not is_made_to_order:
                     return Response(
-                        {"detail": f"Only {size_variant.stock} item(s) available. You already have {item.quantity} in your cart."},
+                        {"detail": f"Only {available} item(s) available. You already have {item.quantity} in your cart."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 item.quantity = new_quantity
@@ -176,9 +186,10 @@ class CartItemView(APIView):
             item = CartItem.objects.select_for_update().filter(cart=cart, variant=variant).first()
             if item:
                 new_quantity = item.quantity + quantity
-                if new_quantity > variant.stock:
+                available = available_quantity(variant)
+                if new_quantity > available:
                     return Response(
-                        {"detail": f"Only {variant.stock} item(s) available. You already have {item.quantity} in your cart."},
+                        {"detail": f"Only {available} item(s) available. You already have {item.quantity} in your cart."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 item.quantity = new_quantity
@@ -222,11 +233,11 @@ class CartItemView(APIView):
             if requested_quantity <= 0:
                 item.delete()
             else:
-                is_rts = item.size_variant.is_ready_to_ship if item.size_variant_id else False
-                stock = item.size_variant.stock if item.size_variant_id else item.variant.stock
-                if not is_rts and stock is not None and requested_quantity > stock:
+                target = item.size_variant if item.size_variant_id else item.variant
+                available = available_quantity(target)
+                if available is not None and requested_quantity > available:
                     return Response(
-                        {"detail": f"Only {stock} item(s) available."},
+                        {"detail": f"Only {available} item(s) available."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 item.quantity = requested_quantity
@@ -375,6 +386,75 @@ def _vendor_allows_self_pickup(vendor) -> bool:
     )
 
 
+def _payment_response(payment: PaymentSession, order: Order) -> Response:
+    return Response(
+        {
+            "payment_required": True,
+            "provider": payment.provider,
+            "payment_id": str(payment.id),
+            "payment_url": payment.payment_url,
+            "integrator_order_id": str(payment.integrator_order_id),
+            "order": OrderSerializer(order).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+def _finalize_paid_order(order: Order, payment: PaymentSession | None = None) -> None:
+    if order.status == "processing":
+        return
+    finalize_order_stock(order)
+    order.status = "processing"
+    order.save(update_fields=["status"])
+    OrderStatusHistory.objects.create(
+        order=order,
+        status="processing",
+        note="Payment successful — order is being processed.",
+        changed_by=order.user,
+    )
+    try:
+        from apps.creators.services import credit_creator_for_paid_order
+        credit_creator_for_paid_order(order)
+    except Exception:
+        pass
+    if order.promo_code_id and order.user_id:
+        from apps.promo.models import PromoCodeUsage
+        PromoCodeUsage.objects.get_or_create(promo=order.promo_code, user=order.user, order=order)
+    try:
+        from apps.gamification.services import create_pending_purchase_points
+        create_pending_purchase_points(order)
+    except Exception:
+        pass
+    try:
+        from apps.referrals.services import process_referral_conversion
+        process_referral_conversion(order.user)
+    except Exception:
+        pass
+    try:
+        from apps.emails.service import send_template_email, get_template
+        from apps.emails.order_context import build_order_email_context
+        first_item = order.items.select_related("vendor").first()
+        vendor_obj = first_item.vendor if first_item else None
+        if get_template("order_confirmed", vendor=vendor_obj):
+            send_template_email(
+                "order_confirmed",
+                order.shipping_email,
+                build_order_email_context(order),
+                vendor=vendor_obj,
+            )
+    except Exception:
+        pass
+
+
+def _mark_order_payment_failed(order: Order, note: str = "Payment failed or was cancelled.") -> None:
+    if order.status in ("processing", "shipped", "delivered", "refunded", "payment_failed", "cancelled"):
+        return
+    release_order_stock(order)
+    order.status = "payment_failed"
+    order.save(update_fields=["status"])
+    OrderStatusHistory.objects.create(order=order, status="payment_failed", note=note, changed_by=order.user)
+
+
 class CheckoutView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_classes = [CheckoutThrottle]
@@ -402,6 +482,13 @@ class CheckoutView(APIView):
                         {"detail": "This checkout key was already used with different order details."},
                         status=status.HTTP_409_CONFLICT,
                     )
+                if django_settings.KEEPZ_ENABLED and existing_order.status == "pending_payment":
+                    existing_payment = existing_order.payment_sessions.filter(
+                        provider=PaymentSession.PROVIDER_KEEPZ,
+                        status__in=(PaymentSession.STATUS_CREATED, PaymentSession.STATUS_REDIRECTED),
+                    ).order_by("-created_at").first()
+                    if existing_payment and existing_payment.payment_url:
+                        return _payment_response(existing_payment, existing_order)
                 return Response(OrderSerializer(existing_order).data, status=status.HTTP_200_OK)
 
         cart = Cart.objects.prefetch_related(
@@ -444,14 +531,17 @@ class CheckoutView(APIView):
         for item in items_to_process:
             if item.variant_id:
                 variant = locked_variants.get(item.variant_id)
-                if variant and variant.stock < item.quantity:
+                available = available_quantity(variant) if variant else None
+                if variant and available is not None and available < item.quantity:
                     return Response(
                         {"detail": f"'{variant.product.title}' has insufficient stock."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
             elif item.size_variant_id:
                 sv = locked_size_variants.get(item.size_variant_id)
-                if sv and not sv.is_ready_to_ship and sv.stock is not None and sv.stock < item.quantity:
+                available = available_quantity(sv) if sv else None
+                is_made_to_order = bool(item.processing_option)
+                if sv and available is not None and available < item.quantity and not is_made_to_order:
                     return Response(
                         {"detail": f"'{sv.product.title}' has insufficient stock."},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -634,23 +724,7 @@ class CheckoutView(APIView):
         # subtotal = products only; extras + shipping listed separately
         total = product_subtotal + gift_wrap_total + processing_fee_total - discount + delivery_price
 
-        # Deduct inventory only after every checkout and shipping validation has passed.
-        for item in items_to_process:
-            if item.variant_id:
-                ProductVariant.objects.filter(pk=item.variant_id).update(stock=F("stock") - item.quantity)
-            elif item.size_variant_id:
-                sv = locked_size_variants.get(item.size_variant_id)
-                if sv and sv.stock is not None and sv.stock > 0:
-                    new_stock = sv.stock - item.quantity
-                    if new_stock <= 0 and sv.is_ready_to_ship:
-                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
-                            stock=None, is_ready_to_ship=False,
-                        )
-                    else:
-                        SizeVariant.objects.filter(pk=item.size_variant_id).update(
-                            stock=F("stock") - item.quantity,
-                        )
-
+        payment_required = bool(django_settings.KEEPZ_ENABLED)
         order = Order.objects.create(
             user=request.user,
             order_number=f"KOL-{2024}-{random.randint(100000, 999999)}",
@@ -672,7 +746,7 @@ class CheckoutView(APIView):
             processing_fee_total=processing_fee_total,
             currency=currency,
             total=total,
-            status="processing",
+            status="pending_payment" if payment_required else "processing",
             checkout_idempotency_key=idempotency_key or None,
             checkout_request_fingerprint=request_fingerprint if idempotency_key else "",
         )
@@ -716,6 +790,7 @@ class CheckoutView(APIView):
                     order=order,
                     vendor=product.vendor,
                     shipment=item_shipment,
+                    size_variant=sv,
                     product_title=product.title,
                     product_image=_absolute_product_image(image_url, request),
                     artist_name=product.artist.name if product.artist else "",
@@ -732,6 +807,7 @@ class CheckoutView(APIView):
                     processing_label=line["proc_label"],
                     processing_days=line["proc_days"],
                 )
+
             elif item.variant_id:
                 variant = item.variant
                 img = variant.product.images.first()
@@ -742,6 +818,7 @@ class CheckoutView(APIView):
                     order=order,
                     vendor=variant.product.vendor,
                     shipment=item_shipment,
+                    variant=variant,
                     product_title=variant.product.title,
                     product_image=_absolute_product_image(image_url, request),
                     artist_name=variant.product.artist.name if variant.product.artist else "",
@@ -759,16 +836,71 @@ class CheckoutView(APIView):
                     processing_days=line["proc_days"],
                 )
 
+        try:
+            reserve_order_stock(order)
+        except InsufficientInventoryError as exc:
+            transaction.set_rollback(True)
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         OrderStatusHistory.objects.create(
-            order=order, status="processing", note="Payment successful — order is being processed.", changed_by=request.user
+            order=order,
+            status=order.status,
+            note="Payment is pending — customer redirected to Keepz." if payment_required else "Payment successful — order is being processed.",
+            changed_by=request.user,
         )
 
-        # Creator voucher earnings credit on paid checkout
-        try:
-            from apps.creators.services import credit_creator_for_paid_order
-            credit_creator_for_paid_order(order)
-        except Exception:
-            pass
+        if payment_required:
+            from .keepz import KeepzGatewayError, create_keepz_order_for_checkout
+            payment = PaymentSession.objects.create(
+                provider=PaymentSession.PROVIDER_KEEPZ,
+                purpose=PaymentSession.PURPOSE_CHECKOUT,
+                status=PaymentSession.STATUS_CREATED,
+                user=request.user,
+                order=order,
+                amount=total,
+                currency=currency,
+            )
+            try:
+                keepz_result = create_keepz_order_for_checkout(payment, request=request)
+            except KeepzGatewayError as exc:
+                payment.status = PaymentSession.STATUS_FAILED
+                payment.last_error = str(exc)
+                payment.response_payload = exc.payload
+                payment.save(update_fields=["status", "last_error", "response_payload", "updated_at"])
+                provider_detail = (
+                    exc.payload.get("message")
+                    or exc.payload.get("error")
+                    or exc.payload.get("detail")
+                    or str(exc)
+                )
+                # The checkout view is atomic. A rejected provider order must
+                # not consume stock, clear the cart, or leave a pending order.
+                transaction.set_rollback(True)
+                return Response(
+                    {
+                        "detail": f"Payment gateway rejected the order: {provider_detail}",
+                        "provider_detail": provider_detail,
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+            except Exception as exc:
+                payment.status = PaymentSession.STATUS_FAILED
+                payment.last_error = str(exc)
+                payment.save(update_fields=["status", "last_error", "updated_at"])
+                raise
+            payment.payment_url = keepz_result.payment_url
+            payment.request_payload = keepz_result.request_payload
+            payment.response_payload = keepz_result.provider_payload
+            payment.status = PaymentSession.STATUS_REDIRECTED
+            payment.save(update_fields=["payment_url", "request_payload", "response_payload", "status", "updated_at"])
+        else:
+            finalize_order_stock(order)
+            # Creator voucher earnings credit on paid checkout
+            try:
+                from apps.creators.services import credit_creator_for_paid_order
+                credit_creator_for_paid_order(order)
+            except Exception:
+                pass
 
         try:
             from apps.admin_api.audit import log_action
@@ -777,12 +909,12 @@ class CheckoutView(APIView):
                 "total": str(order.total),
                 "currency": currency,
                 "item_count": len(items_to_process),
-                "status": "processing",
+                "status": order.status,
             })
         except Exception:
             pass
 
-        if promo:
+        if promo and not payment_required:
             from apps.promo.models import PromoCodeUsage
             PromoCodeUsage.objects.create(promo=promo, user=request.user, order=order)
 
@@ -790,34 +922,37 @@ class CheckoutView(APIView):
         cart.promo_code = None
         cart.save()
 
-        # Loyalty points are earned as pending until the refund window closes.
-        try:
-            from apps.gamification.services import create_pending_purchase_points
-            create_pending_purchase_points(order)
-        except Exception:
-            pass
-        try:
-            from apps.referrals.services import process_referral_conversion
-            process_referral_conversion(request.user)
-        except Exception:
-            pass
+        if not payment_required:
+            # Loyalty points are earned as pending until shipment.
+            try:
+                from apps.gamification.services import create_pending_purchase_points
+                create_pending_purchase_points(order)
+            except Exception:
+                pass
+            try:
+                from apps.referrals.services import process_referral_conversion
+                process_referral_conversion(request.user)
+            except Exception:
+                pass
 
-        # Branded order confirmation email
-        try:
-            from apps.emails.service import send_template_email, get_template
-            from apps.emails.order_context import build_order_email_context
-            vendor = order.items.select_related("vendor").first()
-            vendor_obj = vendor.vendor if vendor else None
-            if get_template("order_confirmed", vendor=vendor_obj):
-                send_template_email(
-                    "order_confirmed",
-                    order.shipping_email,
-                    build_order_email_context(order),
-                    vendor=vendor_obj,
-                )
-        except Exception:
-            pass
+            # Branded order confirmation email
+            try:
+                from apps.emails.service import send_template_email, get_template
+                from apps.emails.order_context import build_order_email_context
+                vendor = order.items.select_related("vendor").first()
+                vendor_obj = vendor.vendor if vendor else None
+                if get_template("order_confirmed", vendor=vendor_obj):
+                    send_template_email(
+                        "order_confirmed",
+                        order.shipping_email,
+                        build_order_email_context(order),
+                        vendor=vendor_obj,
+                    )
+            except Exception:
+                pass
 
+        if payment_required:
+            return _payment_response(payment, order)
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
@@ -826,7 +961,11 @@ class OrderListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related("items__vendor", "shipments__vendor", "status_history")
+        return (
+            Order.objects.filter(user=self.request.user)
+            .exclude(status__in=("pending_payment", "payment_failed"))
+            .prefetch_related("items__vendor", "shipments__vendor", "status_history")
+        )
 
 
 class OrderDetailView(generics.RetrieveAPIView):
@@ -834,7 +973,131 @@ class OrderDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related("items__vendor", "shipments__vendor", "status_history")
+        return (
+            Order.objects.filter(user=self.request.user)
+            .exclude(status__in=("pending_payment", "payment_failed"))
+            .prefetch_related("items__vendor", "shipments__vendor", "status_history")
+        )
+
+
+class KeepzCallbackView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        integrator_order_id = request.data.get("integratorOrderId")
+        integrator_id = request.data.get("integratorId")
+        if not integrator_order_id:
+            return Response({"detail": "integratorOrderId is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if integrator_id and str(integrator_id) != str(django_settings.KEEPZ_INTEGRATOR_ID):
+            return Response({"detail": "Invalid integratorId."}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment = (
+            PaymentSession.objects
+            .filter(provider=PaymentSession.PROVIDER_KEEPZ, integrator_order_id=integrator_order_id)
+            .first()
+        )
+        if not payment:
+            return Response({"detail": "Payment session not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        callback_amount = request.data.get("amount")
+        if callback_amount is not None:
+            try:
+                if Decimal(str(callback_amount)).quantize(Decimal("0.01")) != payment.amount:
+                    return Response({"detail": "Callback amount mismatch."}, status=status.HTTP_400_BAD_REQUEST)
+            except (ArithmeticError, ValueError):
+                return Response({"detail": "Invalid callback amount."}, status=status.HTTP_400_BAD_REQUEST)
+        callback_currency = str(request.data.get("initialCurrency") or "").upper()
+        if callback_currency and callback_currency != payment.currency.upper():
+            return Response({"detail": "Callback currency mismatch."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Keepz callbacks are not signed. Verify every terminal update against
+        # Keepz's encrypted status endpoint before changing local payment state.
+        from .keepz import KeepzGatewayError, get_keepz_order_status
+        try:
+            provider_status = get_keepz_order_status(str(payment.integrator_order_id))
+        except KeepzGatewayError:
+            return Response(
+                {"detail": "Could not verify payment status with Keepz."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if str(provider_status.get("integratorOrderId") or "") != str(payment.integrator_order_id):
+            return Response({"detail": "Keepz status identifier mismatch."}, status=status.HTTP_400_BAD_REQUEST)
+
+        keepz_status = str(provider_status.get("status") or "").upper()
+        terminal_failed_statuses = {"FAILED", "CANCELED", "EXPIRED"}
+
+        with transaction.atomic():
+            payment = (
+                PaymentSession.objects.select_for_update()
+                .select_related("order", "user")
+                .get(pk=payment.pk)
+            )
+            payment.callback_payload = request.data
+            payment.response_payload = {
+                **(payment.response_payload or {}),
+                "verified_status": provider_status,
+            }
+            transaction_id = provider_status.get("transactionId") or request.data.get("transactionId")
+            if transaction_id:
+                payment.provider_transaction_id = str(transaction_id)
+
+            if keepz_status == "SUCCESS":
+                from django.utils import timezone
+                payment.status = PaymentSession.STATUS_SUCCESS
+                payment.paid_at = payment.paid_at or timezone.now()
+                payment.save(update_fields=[
+                    "status", "paid_at", "provider_transaction_id", "callback_payload",
+                    "response_payload", "updated_at",
+                ])
+                if payment.order_id:
+                    _finalize_paid_order(payment.order, payment)
+                elif payment.purpose == PaymentSession.PURPOSE_POINTS_SHIPPING and payment.related_id:
+                    from apps.gamification.services import complete_shipping_payment_session
+                    complete_shipping_payment_session(payment.user, payment.related_id)
+                elif payment.purpose == PaymentSession.PURPOSE_CUSTOM_ORDER and payment.related_id:
+                    custom_order = CustomOrder.objects.select_for_update().filter(pk=payment.related_id).first()
+                    if custom_order:
+                        custom_order.status = "paid"
+                        custom_order.paid_at = payment.paid_at
+                        custom_order.payment_url = ""
+                        custom_order.save(update_fields=["status", "paid_at", "payment_url"])
+                elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
+                    from apps.auctions.models import Auction
+
+                    auction = Auction.objects.select_for_update().filter(pk=payment.related_id).first()
+                    if auction:
+                        auction.winner_payment_status = Auction.PAYMENT_PAID
+                        auction.status = Auction.STATUS_BOUGHT
+                        auction.paid_at = payment.paid_at
+                        if not auction.winning_amount:
+                            auction.winning_amount = auction.current_bid
+                        auction.save(update_fields=["winner_payment_status", "status", "paid_at", "winning_amount"])
+            elif keepz_status in terminal_failed_statuses:
+                from django.utils import timezone
+                if keepz_status == "CANCELED":
+                    payment.status = PaymentSession.STATUS_CANCELED
+                elif keepz_status == "EXPIRED":
+                    payment.status = PaymentSession.STATUS_EXPIRED
+                else:
+                    payment.status = PaymentSession.STATUS_FAILED
+                payment.failed_at = payment.failed_at or timezone.now()
+                payment.save(update_fields=[
+                    "status", "failed_at", "provider_transaction_id", "callback_payload",
+                    "response_payload", "updated_at",
+                ])
+                if payment.order_id:
+                    _mark_order_payment_failed(payment.order, f"Keepz payment status: {keepz_status}")
+                elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
+                    from apps.auctions.models import Auction
+
+                    Auction.objects.filter(pk=payment.related_id).update(winner_payment_status=Auction.PAYMENT_FAILED)
+            else:
+                payment.save(update_fields=[
+                    "provider_transaction_id", "callback_payload", "response_payload", "updated_at",
+                ])
+
+        return Response({"detail": "ok", "verified_status": keepz_status})
 
 
 class DeliveryOptionListView(APIView):
@@ -1059,3 +1322,57 @@ class CustomOrderDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return CustomOrder.objects.filter(user=self.request.user).select_related("vendor")
+
+
+class CustomOrderPaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.conf import settings as django_settings
+        from .keepz import KeepzGatewayError, create_keepz_order_for_custom_order
+
+        order = CustomOrder.objects.filter(user=request.user, pk=pk).first()
+        if not order:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if order.status != "approved":
+            return Response({"detail": "Only approved custom orders can be paid."}, status=status.HTTP_400_BAD_REQUEST)
+        if not order.price:
+            return Response({"detail": "Custom order price is not set yet."}, status=status.HTTP_400_BAD_REQUEST)
+        if order.currency.upper() not in {"GEL", "USD"}:
+            return Response({"detail": "Custom order payment currency must be GEL or USD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not django_settings.KEEPZ_ENABLED:
+            payment_url = f"/custom?pay={order.payment_ref}"
+            order.payment_url = payment_url
+            order.save(update_fields=["payment_url"])
+            return Response({"payment_url": payment_url})
+
+        payment = PaymentSession.objects.create(
+            provider=PaymentSession.PROVIDER_KEEPZ,
+            purpose=PaymentSession.PURPOSE_CUSTOM_ORDER,
+            status=PaymentSession.STATUS_CREATED,
+            user=order.user,
+            related_id=str(order.pk),
+            amount=order.price,
+            currency=order.currency,
+        )
+        try:
+            result = create_keepz_order_for_custom_order(payment)
+        except (KeepzGatewayError, ValueError) as exc:
+            payment.status = PaymentSession.STATUS_FAILED
+            payment.last_error = str(exc)
+            payment.save(update_fields=["status", "last_error", "updated_at"])
+            provider_message = str(exc.payload.get("message") or "") if isinstance(exc, KeepzGatewayError) else ""
+            detail = "Payment link could not be created."
+            if provider_message:
+                detail = f"{detail} {provider_message}"
+            return Response({"detail": detail}, status=status.HTTP_502_BAD_GATEWAY)
+
+        payment.payment_url = result.payment_url
+        payment.request_payload = result.request_payload
+        payment.response_payload = result.provider_payload
+        payment.status = PaymentSession.STATUS_REDIRECTED
+        payment.save(update_fields=["payment_url", "request_payload", "response_payload", "status", "updated_at"])
+        order.payment_url = payment.payment_url
+        order.save(update_fields=["payment_url"])
+        return Response({"payment_url": payment.payment_url})

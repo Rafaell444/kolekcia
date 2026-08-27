@@ -184,6 +184,8 @@ class PointsMarketRedemptionSerializer(serializers.ModelSerializer):
 
 
 class PointsMarketShippingPaymentSessionSerializer(serializers.ModelSerializer):
+    payment_url = serializers.SerializerMethodField()
+
     class Meta:
         model = PointsMarketShippingPaymentSession
         fields = (
@@ -207,6 +209,19 @@ class PointsMarketShippingPaymentSessionSerializer(serializers.ModelSerializer):
             "shipping_currency",
             "expires_at",
             "paid_at",
+            "payment_url",
             "created_at",
         )
         read_only_fields = fields
+
+    def get_payment_url(self, obj):
+        try:
+            from apps.orders.models import PaymentSession
+            payment = PaymentSession.objects.filter(
+                purpose=PaymentSession.PURPOSE_POINTS_SHIPPING,
+                related_id=str(obj.token),
+                status__in=(PaymentSession.STATUS_CREATED, PaymentSession.STATUS_REDIRECTED),
+            ).order_by("-created_at").first()
+            return payment.payment_url if payment else ""
+        except Exception:
+            return ""

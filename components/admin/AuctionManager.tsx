@@ -158,16 +158,16 @@ export default function AuctionManager(): React.ReactElement {
   const [form, setForm] = useState<AuctionForm>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
 
-  const loadAuctions = useCallback(() => {
-    setLoading(true)
-    adminFetch<Auction[] | PaginatedResponse<Auction>>(`${auctionBase}/`)
+  const loadAuctions = useCallback((showLoading = false) => {
+    if (showLoading) setLoading(true)
+    adminFetch<Auction[] | PaginatedResponse<Auction>>(`${auctionBase}/`, { cache: "no-store" })
       .then((data) => setAuctions(parseList(data)))
       .catch((err) => setError(getAdminErrorMessage(err, "Failed to load auctions.")))
       .finally(() => setLoading(false))
   }, [auctionBase])
 
   useEffect(() => {
-    loadAuctions()
+    loadAuctions(true)
     adminFetch<ProductOption[] | PaginatedResponse<ProductOption>>(productsUrl)
       .then((data) => {
         const list = parseList(data) as Array<{ id: number; title?: string; title_ka?: string; artist_name?: string; image_url?: string; images?: Array<{ url?: string; src?: string }>; size_variants?: ProductOption["size_variants"] }>
@@ -182,6 +182,20 @@ export default function AuctionManager(): React.ReactElement {
       })
       .catch(() => {})
   }, [loadAuctions, productsUrl])
+
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === "visible") loadAuctions() }
+    const interval = window.setInterval(() => loadAuctions(), 15_000)
+    window.addEventListener("focus", refresh)
+    window.addEventListener("pageshow", refresh)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refresh)
+      window.removeEventListener("pageshow", refresh)
+      document.removeEventListener("visibilitychange", refresh)
+    }
+  }, [loadAuctions])
 
   function openCreate() {
     const now = new Date()

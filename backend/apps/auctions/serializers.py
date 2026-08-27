@@ -19,6 +19,8 @@ class AuctionBidSerializer(serializers.ModelSerializer):
         fields = (
             "id", "user_id", "user_name", "user_email", "amount", "amount_usd", "amount_gel", "placed_at",
             "submitted_amount", "submitted_currency", "fx_rate_used",
+            "shipping_name", "shipping_line1", "shipping_city", "shipping_state",
+            "shipping_zip", "shipping_country", "shipping_email", "shipping_phone",
             "is_disqualified", "disqualified_at", "disqualification_reason",
         )
 
@@ -42,6 +44,14 @@ class AuctionBidSerializer(serializers.ModelSerializer):
             data.pop("submitted_amount", None)
             data.pop("submitted_currency", None)
             data.pop("fx_rate_used", None)
+            data.pop("shipping_name", None)
+            data.pop("shipping_line1", None)
+            data.pop("shipping_city", None)
+            data.pop("shipping_state", None)
+            data.pop("shipping_zip", None)
+            data.pop("shipping_country", None)
+            data.pop("shipping_email", None)
+            data.pop("shipping_phone", None)
             data.pop("is_disqualified", None)
             data.pop("disqualified_at", None)
             data.pop("disqualification_reason", None)
@@ -82,6 +92,7 @@ class AuctionSerializer(serializers.ModelSerializer):
     is_upcoming = serializers.SerializerMethodField()
     is_biddable = serializers.SerializerMethodField()
     winner_name = serializers.SerializerMethodField()
+    is_current_user_winner = serializers.SerializerMethodField()
     reserved_variant_label = serializers.CharField(
         source="reserved_size_variant.label", read_only=True, allow_null=True
     )
@@ -137,6 +148,7 @@ class AuctionSerializer(serializers.ModelSerializer):
             "is_upcoming",
             "is_biddable",
             "winner_name",
+            "is_current_user_winner",
             "winning_amount",
             "winner_payment_status",
             "is_replacement_winner",
@@ -186,6 +198,11 @@ class AuctionSerializer(serializers.ModelSerializer):
         if not obj.winner_id:
             return None
         return obj.winner.name or obj.winner.email.split("@")[0]
+
+    def get_is_current_user_winner(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(user and user.is_authenticated and obj.winner_id == user.id)
 
     def get_vendor_slug(self, obj):
         if obj.vendor_id:
@@ -382,6 +399,13 @@ def _notify_auction_subscribers(auction) -> None:
 class PlaceBidSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"))
     currency = serializers.ChoiceField(choices=("USD", "GEL"), default="USD", required=False)
+    shipping_name = serializers.CharField(max_length=255)
+    shipping_line1 = serializers.CharField(max_length=255)
+    shipping_city = serializers.CharField(max_length=100)
+    shipping_state = serializers.CharField(max_length=100)
+    shipping_zip = serializers.CharField(max_length=20)
+    shipping_country = serializers.CharField(max_length=100)
+    shipping_phone = serializers.CharField(max_length=30)
 
 
 class AuctionChatPostSerializer(serializers.Serializer):

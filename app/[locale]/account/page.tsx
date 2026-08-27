@@ -8,7 +8,7 @@ import {
   Package, Heart, Star, Settings, LogOut, ChevronRight,
   Truck, CheckCircle2, Clock, XCircle, RotateCcw,
   Award, ShoppingBag, User, MapPin, BellRing, MessageSquare,
-  Plus, Pencil, Trash2, Home, Building2, FileText, ExternalLink, CreditCard, Check,
+  Plus, Pencil, Trash2, Home, Building2, FileText, ExternalLink, Check,
   Megaphone,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
@@ -71,7 +71,6 @@ const ACCOUNT_TABS = [
   { id: "loyalty",       label: "Loyalty",        Icon: Award },
   { id: "settings",      label: "Settings",       Icon: Settings },
   { id: "addresses",     label: "Addresses",      Icon: MapPin },
-  { id: "payments",      label: "Payments",       Icon: CreditCard },
   { id: "creator",       label: "Creator",        Icon: Megaphone },
 ]
 
@@ -315,6 +314,8 @@ function CustomOrdersTab() {
   const lp = useLocalePrefix()
   const [orders, setOrders] = useState<CustomOrder[]>([])
   const [loading, setLoading] = useState(true)
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null)
+  const [paymentError, setPaymentError] = useState("")
 
   useEffect(() => {
     let cancelled = false
@@ -325,9 +326,29 @@ function CustomOrdersTab() {
     return () => { cancelled = true }
   }, [])
 
+  async function handlePay(orderId: string) {
+    setPaymentError("")
+    setPayingOrderId(orderId)
+    try {
+      const result = await authFetch<{ payment_url: string }>(`/orders/custom/mine/${orderId}/payment/`, {
+        method: "POST",
+      })
+      if (!result.payment_url) throw new Error("Payment link was not returned.")
+      window.location.href = result.payment_url
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : "Payment link could not be created.")
+      setPayingOrderId(null)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h2 className="font-display text-3xl text-dp-text-primary">Custom Orders</h2>
+      {paymentError && (
+        <p className="text-[12px] text-dp-accent-cta bg-dp-accent-cta/10 border border-dp-accent-cta/25 px-4 py-2 rounded-sm">
+          {paymentError}
+        </p>
+      )}
       {loading ? (
         <div className="animate-pulse space-y-3">{[1, 2].map((i) => <div key={i} className="h-24 bg-dp-bg-elevated rounded-sm" />)}</div>
       ) : orders.length === 0 ? (
@@ -372,11 +393,15 @@ function CustomOrdersTab() {
               {formatAmount(parseFloat(order.price), (order.currency ?? "USD") as Currency)}
             </p>
           )}
-          {order.status === "approved" && order.payment_url && (
-            <a href={order.payment_url} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 self-start px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors">
-              <ExternalLink size={12} /> Pay Now
-            </a>
+          {order.status === "approved" && order.price && (
+            <button
+              type="button"
+              onClick={() => handlePay(order.id)}
+              disabled={payingOrderId === order.id}
+              className="inline-flex items-center gap-1.5 self-start px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm transition-colors"
+            >
+              <ExternalLink size={12} /> {payingOrderId === order.id ? "Opening..." : "Pay Now"}
+            </button>
           )}
           {order.paid_at && <p className="text-[12px] text-dp-success">Paid on {new Date(order.paid_at).toLocaleDateString()}</p>}
           {order.tracking_code && (
@@ -862,151 +887,6 @@ function SettingsTab() {
   )
 }
 
-type PaymentMethod = { id: number; brand: string; last4: string; exp_month: number; exp_year: number; is_default: boolean }
-
-const EMPTY_CARD = { brand: "visa", last4: "", exp_month: "", exp_year: "", is_default: false }
-
-function PaymentsTab() {
-  const [methods, setMethods] = useState<PaymentMethod[]>([])
-  const [loading, setLoading] = useState(true)
-  const [adding, setAdding] = useState(false)
-  const [form, setForm] = useState(EMPTY_CARD)
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    authFetch<PaymentMethod[]>("/auth/payment-methods/")
-      .then((d) => { if (!cancelled) setMethods(Array.isArray(d) ? d : (d as { results: PaymentMethod[] }).results ?? []) })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [])
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.last4.match(/^\d{4}$/) || !form.exp_month || !form.exp_year) return
-    setSaving(true)
-    try {
-      const created = await authFetch<PaymentMethod>("/auth/payment-methods/", {
-        method: "POST",
-        body: JSON.stringify({
-          brand: form.brand,
-          last4: form.last4,
-          exp_month: parseInt(form.exp_month, 10),
-          exp_year: parseInt(form.exp_year, 10),
-          is_default: form.is_default || methods.length === 0,
-        }),
-      })
-      setMethods((prev) => {
-        const cleared = created.is_default ? prev.map((m) => ({ ...m, is_default: false })) : prev
-        return [...cleared, created]
-      })
-      setForm(EMPTY_CARD)
-      setAdding(false)
-    } catch {
-      // keep form open
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDelete(id: number) {
-    await authFetch(`/auth/payment-methods/${id}/`, { method: "DELETE" }).catch(() => {})
-    setMethods((prev) => prev.filter((m) => m.id !== id))
-  }
-
-  async function makeDefault(id: number) {
-    const updated = await authFetch<PaymentMethod>(`/auth/payment-methods/${id}/`, {
-      method: "PATCH",
-      body: JSON.stringify({ is_default: true }),
-    }).catch(() => null)
-    if (!updated) return
-    setMethods((prev) => prev.map((m) => ({ ...m, is_default: m.id === updated.id })))
-  }
-
-  const inputCls = "w-full px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover"
-  const labelCls = "block text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary mb-1.5"
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-3xl text-dp-text-primary">Payment Methods</h2>
-        {!adding && (
-          <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-black uppercase tracking-widest rounded-sm transition-colors">
-            <Plus size={13} /> Add Card
-          </button>
-        )}
-      </div>
-
-      {adding && (
-        <form onSubmit={handleAdd} className="bg-dp-bg-surface border border-dp-border rounded-sm p-6 grid grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Brand</label>
-            <select value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} className={inputCls}>
-              <option value="visa">Visa</option>
-              <option value="mastercard">Mastercard</option>
-              <option value="amex">Amex</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Last 4 digits *</label>
-            <input required maxLength={4} value={form.last4} onChange={(e) => setForm((f) => ({ ...f, last4: e.target.value.replace(/\D/g, "").slice(0, 4) }))} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Exp. month *</label>
-            <input required type="number" min={1} max={12} value={form.exp_month} onChange={(e) => setForm((f) => ({ ...f, exp_month: e.target.value }))} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Exp. year *</label>
-            <input required type="number" min={2024} max={2099} value={form.exp_year} onChange={(e) => setForm((f) => ({ ...f, exp_year: e.target.value }))} className={inputCls} />
-          </div>
-          <div className="col-span-2 flex items-center gap-2">
-            <input type="checkbox" id="card_default" checked={form.is_default} onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))} />
-            <label htmlFor="card_default" className="text-[13px] text-dp-text-secondary">Set as default payment method</label>
-          </div>
-          <div className="col-span-2 flex gap-3">
-            <button type="submit" disabled={saving} className="px-6 py-2.5 bg-dp-accent-cta text-white text-[12px] font-black uppercase tracking-widest rounded-sm">{saving ? "Saving…" : "Save Card"}</button>
-            <button type="button" onClick={() => { setAdding(false); setForm(EMPTY_CARD) }} className="px-6 py-2.5 border border-dp-border text-[12px] font-bold uppercase tracking-widest text-dp-text-secondary rounded-sm">Cancel</button>
-          </div>
-        </form>
-      )}
-
-      {loading ? (
-        <div className="animate-pulse space-y-3">{[1, 2].map((i) => <div key={i} className="h-20 bg-dp-bg-elevated rounded-sm" />)}</div>
-      ) : methods.length === 0 && !adding ? (
-        <div className="flex flex-col items-center gap-4 py-16 text-dp-text-tertiary">
-          <CreditCard size={40} className="opacity-30" />
-          <p className="text-[13px]">No saved payment methods yet.</p>
-        </div>
-      ) : (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {methods.map((m) => (
-            <div key={m.id} className={`relative bg-dp-bg-surface border rounded-sm p-5 ${m.is_default ? "border-dp-accent-gold" : "border-dp-border"}`}>
-              {m.is_default && <span className="absolute top-3 right-3 text-[9px] font-bold uppercase tracking-widest bg-dp-accent-gold/20 text-dp-accent-gold px-2 py-0.5 rounded-full">Default</span>}
-              <div className="flex items-center gap-3 mb-2">
-                <CreditCard size={18} className="text-dp-text-tertiary" />
-                <p className="text-[14px] font-bold text-dp-text-primary uppercase">{m.brand}</p>
-              </div>
-              <p className="text-[13px] text-dp-text-secondary">•••• •••• •••• {m.last4}</p>
-              <p className="text-[12px] text-dp-text-tertiary mt-1">Expires {String(m.exp_month).padStart(2, "0")}/{m.exp_year}</p>
-              <div className="flex gap-2 mt-4 flex-wrap">
-                {!m.is_default && (
-                  <button onClick={() => makeDefault(m.id)} className="flex items-center gap-1 px-3 py-1.5 border border-dp-accent-gold/50 rounded-sm text-[11px] font-bold text-dp-accent-gold hover:bg-dp-accent-gold/10 transition-colors">
-                    <Check size={11} /> Make Default
-                  </button>
-                )}
-                <button onClick={() => handleDelete(m.id)} className="flex items-center gap-1 px-3 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold text-dp-text-secondary hover:text-dp-accent-cta hover:border-dp-accent-cta/50 transition-colors">
-                  <Trash2 size={11} /> Delete
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function InboxTab() {
   return (
     <div className="flex flex-col gap-4">
@@ -1053,7 +933,6 @@ export default function AccountPage(): React.ReactElement {
     creator:       <CreatorPanel />,
     settings:      <SettingsTab />,
     addresses:     <AddressesTab />,
-    payments:      <PaymentsTab />,
   }
 
   const displayName = user?.name || user?.email || "Account"

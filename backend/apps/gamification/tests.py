@@ -1,6 +1,8 @@
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 
+from django.test import override_settings
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -329,6 +331,64 @@ class LoyaltyServiceTests(TestCase):
         self.assertEqual(session.status, PointsMarketShippingPaymentSession.STATUS_PAID)
         self.assertEqual(PointsMarketRedemption.objects.count(), 1)
         self.assertEqual(PointTransaction.objects.filter(transaction_type=PointTransaction.TYPE_SPENT).count(), 1)
+
+    @override_settings(KEEPZ_ENABLED=True)
+    @patch("apps.orders.keepz.create_keepz_order_for_points_shipping")
+    def test_paid_shipping_keepz_failure_does_not_spend_points_or_stock(self, create_keepz_order):
+        from apps.orders.keepz import KeepzGatewayError
+        from apps.orders.models import PaymentSession
+
+        self.user.spendable_points = 500
+        self.user.save(update_fields=["spendable_points"])
+        item = PointsMarketItem.objects.create(
+            name="Collector Pack",
+            point_cost=200,
+            stock_quantity=2,
+            item_type=PointsMarketItem.TYPE_PHYSICAL,
+        )
+        delivery = DeliveryOption.objects.create(
+            slug="paid-test",
+            label="Courier",
+            price_gel=Decimal("9.00"),
+            price_usd=Decimal("5.00"),
+            is_active=True,
+        )
+        create_keepz_order.side_effect = KeepzGatewayError(
+            "Keepz points shipping order creation failed.",
+            {"message": "You don't have permission to use split functionality"},
+        )
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.post(
+            "/api/gamification/market/redeem-physical/",
+            {
+                "item_id": item.id,
+                "shipping_slug": f"delivery-{delivery.id}",
+                "country": "GE",
+                "address": {
+                    "line1": "1 Test Street",
+                    "city": "Tbilisi",
+                    "state": "Tbilisi",
+                    "zip_code": "0101",
+                    "country": "GE",
+                },
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("Payment gateway rejected the reward shipping order", response.data["detail"])
+        self.user.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(self.user.spendable_points, 500)
+        self.assertEqual(item.stock_quantity, 2)
+        self.assertEqual(PointsMarketRedemption.objects.count(), 0)
+        self.assertEqual(PointTransaction.objects.filter(transaction_type=PointTransaction.TYPE_SPENT).count(), 0)
+        payment = PaymentSession.objects.get(purpose=PaymentSession.PURPOSE_POINTS_SHIPPING)
+        self.assertEqual(payment.status, PaymentSession.STATUS_FAILED)
+        self.assertEqual(payment.last_error, "Keepz points shipping order creation failed.")
 
     def test_free_pickup_physical_redemption_deducts_points_stock_and_creates_fulfillment(self):
         self.user.spendable_points = 500
