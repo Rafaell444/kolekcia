@@ -231,10 +231,13 @@ class OrderItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=1)
     gift_wrap = models.BooleanField(default=False)
+    gift_wrap_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     gift_wrap_note = models.CharField(max_length=500, blank=True, default="")
     gift_wrap_image_url = models.URLField(blank=True, default="")
     processing_option = models.CharField(max_length=50, blank=True, default="")
     processing_fee = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    tier_discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    voucher_discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     processing_label = models.CharField(max_length=100, blank=True, default="")
     processing_days = models.CharField(max_length=50, blank=True, default="")
 

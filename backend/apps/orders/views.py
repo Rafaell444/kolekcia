@@ -679,9 +679,17 @@ class CheckoutView(APIView):
             product_subtotal += unit_price * item.quantity
             gift_wrap_total += wrap
             processing_fee_total += proc_fee
+            product = (
+                item.size_variant.product if item.size_variant_id
+                else item.variant.product if item.variant_id
+                else None
+            )
             priced_lines.append({
                 "item": item,
+                "product": product,
+                "is_sale": False,
                 "unit_price": unit_price,
+                "product_subtotal": unit_price * item.quantity,
                 "wrap": wrap,
                 "proc_fee": proc_fee,
                 "proc_label": proc_label or item.processing_label,
@@ -701,13 +709,10 @@ class CheckoutView(APIView):
         tier_lines = []
         for line in priced_lines:
             item = line["item"]
-            product = (
-                item.size_variant.product if item.size_variant_id
-                else item.variant.product if item.variant_id
-                else None
-            )
+            product = line["product"]
             if product:
                 is_sale = is_sale_product_line(product, item.variant, item.size_variant, item.currency)
+                line["is_sale"] = is_sale
                 tier_lines.append((product, line["unit_price"] * item.quantity, is_sale))
         voucher_discount = calculate_voucher_discount_for_lines(promo, tier_lines)
         tier_eligible_subtotal, tier_info = calculate_tier_eligible_subtotal(request.user, tier_lines)
@@ -720,6 +725,17 @@ class CheckoutView(APIView):
             tier_info=tier_info,
         ).evaluate()
         discount = discount_decision.discount
+
+        from .allocations import allocate_checkout_discounts
+
+        line_discounts = allocate_checkout_discounts(
+            priced_lines,
+            promo,
+            discount_decision.tier_discount,
+            discount_decision.voucher_discount,
+        )
+        for line, allocation in zip(priced_lines, line_discounts):
+            line.update(allocation)
 
         # subtotal = products only; extras + shipping listed separately
         total = product_subtotal + gift_wrap_total + processing_fee_total - discount + delivery_price
@@ -800,10 +816,13 @@ class CheckoutView(APIView):
                     price=line["unit_price"],
                     quantity=item.quantity,
                     gift_wrap=item.gift_wrap,
+                    gift_wrap_price=line["wrap"],
                     gift_wrap_note=item.gift_wrap_note,
                     gift_wrap_image_url=_absolute_product_image(item.gift_wrap_image_url, request),
                     processing_option=item.processing_option,
                     processing_fee=line["proc_fee"],
+                    tier_discount=line["tier_discount"],
+                    voucher_discount=line["voucher_discount"],
                     processing_label=line["proc_label"],
                     processing_days=line["proc_days"],
                 )
@@ -828,10 +847,13 @@ class CheckoutView(APIView):
                     price=line["unit_price"],
                     quantity=item.quantity,
                     gift_wrap=item.gift_wrap,
+                    gift_wrap_price=line["wrap"],
                     gift_wrap_note=item.gift_wrap_note,
                     gift_wrap_image_url=_absolute_product_image(item.gift_wrap_image_url, request),
                     processing_option=item.processing_option,
                     processing_fee=line["proc_fee"],
+                    tier_discount=line["tier_discount"],
+                    voucher_discount=line["voucher_discount"],
                     processing_label=line["proc_label"],
                     processing_days=line["proc_days"],
                 )

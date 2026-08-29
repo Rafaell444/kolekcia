@@ -203,18 +203,38 @@ def _split_details_for_order(order) -> list[dict[str, Any]]:
     without a merchant ID are routed through the main platform receiver.
     """
     receiver_type = settings.KEEPZ_VENDOR_RECEIVER_TYPE or "BRANCH"
-    platform_id = settings.KEEPZ_RECEIVER_ID
+    platform_id, platform_type, _ = _market_receiver(
+        country=order.shipping_country,
+        currency=order.currency,
+    )
     totals: dict[tuple[str, str], Decimal] = {}
 
-    for item in order.items.select_related("vendor").all():
+    items = list(order.items.select_related("vendor").all())
+    item_discount_total = sum(
+        (_money(item.tier_discount) + _money(item.voucher_discount) for item in items),
+        Decimal("0"),
+    )
+    item_wrap_total = sum((_money(item.gift_wrap_price) for item in items), Decimal("0"))
+    snapshots_complete = (
+        item_discount_total == _money(order.discount)
+        and item_wrap_total == _money(order.gift_wrap_total)
+    )
+
+    for item in items:
         receiver_id = item.vendor.merchant_id if item.vendor and item.vendor.merchant_id else platform_id
-        key = (receiver_type if receiver_id != platform_id else settings.KEEPZ_RECEIVER_TYPE, receiver_id)
-        line_total = _money((item.price * item.quantity) + item.processing_fee)
+        key = (receiver_type if receiver_id != platform_id else platform_type, receiver_id)
+        line_total = _money(
+            (item.price * item.quantity)
+            + item.gift_wrap_price
+            + item.processing_fee
+            - item.tier_discount
+            - item.voucher_discount
+        )
         totals[key] = totals.get(key, Decimal("0")) + line_total
 
     for shipment in order.shipments.select_related("vendor").all():
         receiver_id = shipment.vendor.merchant_id if shipment.vendor and shipment.vendor.merchant_id else platform_id
-        key = (receiver_type if receiver_id != platform_id else settings.KEEPZ_RECEIVER_TYPE, receiver_id)
+        key = (receiver_type if receiver_id != platform_id else platform_type, receiver_id)
         totals[key] = totals.get(key, Decimal("0")) + _money(shipment.delivery_price)
 
     gross = sum(totals.values(), Decimal("0"))
@@ -222,6 +242,27 @@ def _split_details_for_order(order) -> list[dict[str, Any]]:
         return []
 
     target_total = _money(order.total)
+    if snapshots_complete:
+        difference = target_total - gross
+        if abs(difference) > Decimal("0.01"):
+            raise KeepzConfigurationError(
+                f"Order split allocations differ from the order total by {difference}."
+            )
+        if difference:
+            first_key = next(iter(totals))
+            totals[first_key] += difference
+        return [
+            {
+                "receiverType": split_receiver_type,
+                "receiverIdentifier": receiver_id,
+                "amount": float(_money(amount)),
+            }
+            for (split_receiver_type, receiver_id), amount in totals.items()
+            if receiver_id and amount > 0
+        ]
+
+    # Older pending orders predate line-level discount and gift-wrap snapshots.
+    # Preserve their payable total using the historical proportional fallback.
     scaled: list[tuple[tuple[str, str], Decimal]] = []
     allocated = Decimal("0")
     items = list(totals.items())

@@ -89,9 +89,6 @@ def calculate_voucher_discount_for_lines(promo, line_items) -> Decimal:
     non_sale_lines = [(product, Decimal(subtotal or 0)) for product, subtotal, is_sale in line_items if product and not is_sale]
     if not non_sale_lines:
         return Decimal("0")
-    if promo.owner_id:
-        subtotal = sum((subtotal for _, subtotal in non_sale_lines), Decimal("0"))
-        return promo.calculate_product_discount(subtotal).quantize(Decimal("0.01"))
     if promo.is_scoped:
         return promo.calculate_scoped_discount(non_sale_lines).quantize(Decimal("0.01"))
     subtotal = sum((subtotal for _, subtotal in non_sale_lines), Decimal("0"))
