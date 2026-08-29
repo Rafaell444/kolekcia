@@ -55,16 +55,16 @@ class KeepzReceiverRoutingTests(SimpleTestCase):
             for item in payload["splitDetails"]
         ))
 
-    def test_foreign_single_vendor_uses_foreign_market_receiver_when_split_enabled(self):
+    def test_foreign_single_vendor_uses_direct_vendor_payment_when_usd_is_enabled(self):
         payload = {}
         split_details = [self.split(SCULPI_RECEIVER, 25.0)]
 
         _apply_receiver_routing(payload, split_details, country="US", currency="USD")
 
-        self.assertEqual(payload["receiverId"], FOREIGN_RECEIVER)
+        self.assertEqual(payload["receiverId"], SCULPI_RECEIVER)
         self.assertNotIn("splitDetails", payload)
 
-    def test_foreign_mixed_vendor_payment_uses_foreign_market_receiver(self):
+    def test_foreign_mixed_vendor_payment_is_split_with_main_receiver_in_details(self):
         payload = {}
         split_details = [
             self.split(MANGAMOON_RECEIVER, 55.0),
@@ -73,8 +73,12 @@ class KeepzReceiverRoutingTests(SimpleTestCase):
 
         _apply_receiver_routing(payload, split_details, country="DE", currency="USD")
 
-        self.assertEqual(payload["receiverId"], FOREIGN_RECEIVER)
-        self.assertNotIn("splitDetails", payload)
+        self.assertEqual(payload["receiverId"], MANGAMOON_RECEIVER)
+        self.assertEqual(payload["splitDetails"], split_details)
+        self.assertTrue(any(
+            item["receiverIdentifier"] == payload["receiverId"]
+            for item in payload["splitDetails"]
+        ))
 
     def test_shipping_country_takes_precedence_over_currency(self):
         payload = {}

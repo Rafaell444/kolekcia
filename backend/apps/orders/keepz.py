@@ -175,27 +175,21 @@ def _apply_receiver_routing(
     currency: str = "",
 ) -> None:
     """Select the market merchant while preserving vendor payout allocations."""
-    market_receiver_id, market_receiver_type, is_georgian = _market_receiver(
+    market_receiver_id, market_receiver_type, _ = _market_receiver(
         country=country,
         currency=currency,
     )
     payload["receiverId"] = market_receiver_id
     payload["receiverType"] = market_receiver_type
 
-    # The dedicated foreign-market receiver owns USD initiation permission.
-    # Vendor receivers are GEL branches and must not replace it when split
-    # payments are enabled, otherwise Keepz rejects the USD currency.
-    if not is_georgian or not getattr(settings, "KEEPZ_SPLIT_ENABLED", False):
+    if not getattr(settings, "KEEPZ_SPLIT_ENABLED", False):
         return
 
-    if is_georgian and len(split_details) == 1:
+    if len(split_details) == 1:
         receiver = split_details[0]
         payload["receiverId"] = receiver["receiverIdentifier"]
         payload["receiverType"] = receiver["receiverType"]
-    elif len(split_details) > 1 or (
-        split_details
-        and split_details[0]["receiverIdentifier"] != market_receiver_id
-    ):
+    elif len(split_details) > 1:
         main_receiver = split_details[0]
         payload["receiverId"] = main_receiver["receiverIdentifier"]
         payload["receiverType"] = main_receiver["receiverType"]
