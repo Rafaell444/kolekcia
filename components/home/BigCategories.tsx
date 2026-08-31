@@ -50,7 +50,7 @@ export default function BigCategories() {
             </div>
             <div className="absolute bottom-4 left-4 right-4">
               <span
-                className="inline-block px-4 py-2 border border-white/80 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm hover:bg-white hover:text-black transition-colors"
+                className="inline-block max-w-full whitespace-nowrap px-2.5 py-2 sm:px-4 border border-white/80 text-white text-[9px] min-[380px]:text-[10px] sm:text-[11px] font-bold uppercase tracking-widest rounded-sm hover:bg-white hover:text-black transition-colors"
               >
                 {cat.cta}
               </span>
