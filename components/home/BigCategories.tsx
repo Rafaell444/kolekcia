@@ -29,9 +29,10 @@ export default function BigCategories() {
       </h2>
       <div className="grid grid-cols-2 gap-4 sm:gap-6">
         {BIG_CATS.map((cat) => (
-          <article
+          <LocalizedLink
             key={cat.slug}
-            className="group relative rounded-xl overflow-hidden aspect-[4/3] sm:aspect-[16/9] bg-dp-bg-elevated"
+            href={`/catalog?category=${cat.slug}`}
+            className="group relative rounded-xl overflow-hidden aspect-[4/3] sm:aspect-[16/9] bg-dp-bg-elevated block cursor-pointer"
             style={{ background: cat.accent }}
           >
             <Image
@@ -48,14 +49,13 @@ export default function BigCategories() {
               </p>
             </div>
             <div className="absolute bottom-4 left-4 right-4">
-              <LocalizedLink
-                href={`/catalog?category=${cat.slug}`}
+              <span
                 className="inline-block px-4 py-2 border border-white/80 text-white text-[11px] font-bold uppercase tracking-widest rounded-sm hover:bg-white hover:text-black transition-colors"
               >
                 {cat.cta}
-              </LocalizedLink>
+              </span>
             </div>
-          </article>
+          </LocalizedLink>
         ))}
       </div>
     </section>

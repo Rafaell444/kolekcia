@@ -3,17 +3,18 @@
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { Truck, CheckCircle, Clock, Package, XCircle, Search, Eye, X, CreditCard } from "lucide-react"
+import { AlertTriangle, Truck, CheckCircle, Clock, Package, XCircle, Search, Eye, X, CreditCard, RotateCcw } from "lucide-react"
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
 
-type OrderStatus = "pending_payment" | "payment_failed" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded"
+type OrderStatus = "pending_payment" | "payment_failed" | "expired" | "processing" | "shipped" | "delivered" | "cancelled" | "partially_refunded" | "refunded"
 type OrderItem = { id: number; processing_option: string }
 type AdminOrder = {
   id: string; order_number: string; status: OrderStatus
   shipping_name: string; shipping_email: string; shipping_country?: string
   total: string; currency?: string; created_at: string; tracking_code: string
   payment_status: string; payment_paid_at?: string | null
+  payment_review_reason?: string
   items?: OrderItem[]
 }
 
@@ -46,6 +47,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   shipped:    { label: "Shipped",    color: "text-dp-accent-cta",   bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30",    Icon: Truck       },
   delivered:  { label: "Delivered",  color: "text-dp-success",      bg: "bg-dp-success/10 border-dp-success/30",          Icon: CheckCircle },
   cancelled:  { label: "Cancelled",  color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",             Icon: XCircle     },
+  expired:    { label: "Expired",    color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",             Icon: Clock       },
+  partially_refunded: { label: "Partially refunded", color: "text-orange-300", bg: "bg-orange-300/10 border-orange-300/30", Icon: RotateCcw },
   refunded:   { label: "Refunded",   color: "text-orange-400",      bg: "bg-orange-400/10 border-orange-400/30",           Icon: XCircle     },
 }
 
@@ -57,6 +60,7 @@ const PAYMENT_STATUS_CONFIG: Record<string, { label: string; color: string }> = 
   canceled: { label: "Canceled", color: "text-dp-text-tertiary" },
   expired: { label: "Expired", color: "text-dp-text-tertiary" },
   refunded: { label: "Refunded", color: "text-orange-400" },
+  needs_review: { label: "Needs review", color: "text-amber-400" },
   not_required: { label: "Not required", color: "text-dp-text-tertiary" },
 }
 
@@ -130,6 +134,7 @@ export default function AdminOrdersPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [reviewOnly, setReviewOnly] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
   const [shipTarget, setShipTarget] = useState<AdminOrder | null>(null)
 
@@ -146,17 +151,33 @@ export default function AdminOrdersPage(): React.ReactElement {
     return () => { cancelled = true }
   }, [listEndpoint])
 
-  async function updateStatus(orderId: string, newStatus: string, trackingCode?: string) {
+  async function updateStatus(
+    orderId: string,
+    newStatus: string,
+    trackingCode?: string,
+    confirmKeepPayment?: boolean,
+  ) {
     setUpdating(orderId)
     try {
-      const body: Record<string, string> = { status: newStatus }
+      const body: Record<string, string | boolean> = { status: newStatus }
       if (trackingCode !== undefined) body.tracking_code = trackingCode
+      if (confirmKeepPayment) body.confirm_keep_payment = true
       const updated = await adminFetch<AdminOrder>(`/admin/orders/${orderId}/`, {
         method: "PATCH",
         body: JSON.stringify(body),
       })
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: updated.status, tracking_code: updated.tracking_code } : o))
-    } catch { /* noop */ }
+    } catch (err) {
+      const e = err as { status?: number; data?: { code?: string; detail?: string } }
+      if (e?.data?.code === "paid_order_cancel_requires_confirmation") {
+        setUpdating(null)
+        if (window.confirm(`${e.data.detail}\n\nCancel anyway and keep the payment?`)) {
+          await updateStatus(orderId, newStatus, trackingCode, true)
+        }
+        return
+      }
+      if (e?.data?.detail) window.alert(e.data.detail)
+    }
     finally { setUpdating(null) }
   }
 
@@ -174,12 +195,15 @@ export default function AdminOrdersPage(): React.ReactElement {
     setShipTarget(null)
   }
 
+  const needsReview = orders.filter((o) => o.payment_status === "needs_review")
+
   const filtered = orders.filter((o) => {
     const matchSearch = !search
       || o.order_number.toLowerCase().includes(search.toLowerCase())
       || o.shipping_name.toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === "all" || o.status === statusFilter
-    return matchSearch && matchStatus
+    const matchReview = !reviewOnly || o.payment_status === "needs_review"
+    return matchSearch && matchStatus && matchReview
   })
 
   return (
@@ -199,6 +223,25 @@ export default function AdminOrdersPage(): React.ReactElement {
             {isVendor ? "Orders containing your products." : "All orders across the platform."}
           </p>
         </div>
+
+        {needsReview.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setReviewOnly((v) => !v)}
+            className="flex items-start gap-3 w-full text-left rounded-sm border border-amber-500/40 bg-amber-500/10 px-4 py-3 hover:bg-amber-500/15 transition-colors"
+          >
+            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-400" />
+            <div>
+              <p className="text-[13px] font-semibold text-dp-text-primary">
+                {needsReview.length} payment{needsReview.length === 1 ? "" : "s"} held for manual review
+              </p>
+              <p className="text-[12px] text-dp-text-secondary">
+                Money may have been taken without the order being fulfilled. Stock stays reserved until resolved.
+                {" "}{reviewOnly ? "Showing only these — click to show all." : "Click to show only these."}
+              </p>
+            </div>
+          </button>
+        )}
 
         <div className="flex gap-3 flex-wrap">
           <div className="relative flex-1 min-w-0 sm:flex-none">
@@ -254,6 +297,11 @@ export default function AdminOrdersPage(): React.ReactElement {
                         <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${paymentCfg.color}`}>
                           <CreditCard size={11} /> {paymentCfg.label}
                         </span>
+                        {o.payment_review_reason && (
+                          <p className="mt-1 max-w-[220px] text-[10px] leading-snug text-amber-400/80">
+                            {o.payment_review_reason}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-bold">
                         {formatAmount(parseFloat(o.total), (o.currency ?? "USD") as Currency)}

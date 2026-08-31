@@ -3,11 +3,24 @@ from corsheaders.defaults import default_headers
 from datetime import timedelta
 import environ
 import os
-import certifi
 from django.core.exceptions import ImproperlyConfigured
 
-os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
-os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+# Verify TLS against the operating system's trust store rather than a bundled
+# CA list. Networks that inspect TLS (corporate proxies, antivirus HTTPS
+# scanning) present certificates signed by a root that only exists in the OS
+# store, so pinning certifi here breaks every outbound HTTPS call — Keepz,
+# Google's OAuth certs, and S3 among them. The OS store is also correct in
+# production, where it holds the standard public roots.
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:
+    # Fall back to certifi so a machine without truststore still has a CA set.
+    import certifi
+
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -32,7 +45,6 @@ env = environ.Env(
     KEEPZ_FOREIGN_RECEIVER_ID=(str, ""),
     KEEPZ_RECEIVER_TYPE=(str, "BRANCH"),
     KEEPZ_SPLIT_ENABLED=(bool, False),
-    PAYMENT_STOCK_RESERVATION_MINUTES=(int, 5),
     KEEPZ_VENDOR_RECEIVER_TYPE=(str, "BRANCH"),
     KEEPZ_PUBLIC_KEY=(str, ""),
     KEEPZ_PRIVATE_KEY=(str, ""),
@@ -60,8 +72,23 @@ KEEPZ_RECEIVER_ID = env("KEEPZ_RECEIVER_ID")
 KEEPZ_FOREIGN_RECEIVER_ID = env("KEEPZ_FOREIGN_RECEIVER_ID")
 KEEPZ_RECEIVER_TYPE = env("KEEPZ_RECEIVER_TYPE")
 KEEPZ_SPLIT_ENABLED = env("KEEPZ_SPLIT_ENABLED")
-PAYMENT_STOCK_RESERVATION_MINUTES = env("PAYMENT_STOCK_RESERVATION_MINUTES")
 KEEPZ_VENDOR_RECEIVER_TYPE = env("KEEPZ_VENDOR_RECEIVER_TYPE")
+
+# How long a customer has to complete payment at Keepz. Sent as `validUntil`
+# only when KEEPZ_ORDER_EXPIRY_ENABLED is on, which Keepz must grant per
+# integrator (they return error 6032 otherwise).
+KEEPZ_PAYMENT_WINDOW_MINUTES = env("KEEPZ_PAYMENT_WINDOW_MINUTES", default=5)
+KEEPZ_ORDER_EXPIRY_ENABLED = env("KEEPZ_ORDER_EXPIRY_ENABLED", default=False)
+# Stock must stay reserved slightly longer than the payment window, so network
+# latency and clock drift between us and Keepz cannot let a paid order find its
+# inventory already resold.
+PAYMENT_STOCK_RESERVATION_BUFFER_MINUTES = env(
+    "PAYMENT_STOCK_RESERVATION_BUFFER_MINUTES", default=2
+)
+PAYMENT_STOCK_RESERVATION_MINUTES = env(
+    "PAYMENT_STOCK_RESERVATION_MINUTES",
+    default=KEEPZ_PAYMENT_WINDOW_MINUTES + PAYMENT_STOCK_RESERVATION_BUFFER_MINUTES,
+)
 KEEPZ_PUBLIC_KEY = env("KEEPZ_PUBLIC_KEY")
 KEEPZ_PRIVATE_KEY = env("KEEPZ_PRIVATE_KEY")
 KEEPZ_DIRECT_LINK_PROVIDER = env("KEEPZ_DIRECT_LINK_PROVIDER")
@@ -172,7 +199,47 @@ if _redis_url:
         }
     }
 
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=_redis_url or "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Payment reconciliation must never run twice concurrently for the same session.
+CELERY_TASK_DEFAULT_QUEUE = "default"
+# Run tasks inline when no broker is reachable (tests, local dev without Redis).
+CELERY_TASK_ALWAYS_EAGER = env("CELERY_TASK_ALWAYS_EAGER", default=False)
+CELERY_TASK_EAGER_PROPAGATES = True
+
+KEEPZ_RECONCILE_INTERVAL_SECONDS = env("KEEPZ_RECONCILE_INTERVAL_SECONDS", default=300)
+KEEPZ_RECONCILE_MIN_AGE_SECONDS = env("KEEPZ_RECONCILE_MIN_AGE_SECONDS", default=300)
+KEEPZ_RECONCILE_MAX_AGE_HOURS = env("KEEPZ_RECONCILE_MAX_AGE_HOURS", default=24)
+KEEPZ_RECONCILE_BATCH_LIMIT = env("KEEPZ_RECONCILE_BATCH_LIMIT", default=25)
+# Reject fulfillment when Keepz omits amount/currency from the verified status.
+KEEPZ_REQUIRE_AMOUNT_VERIFICATION = env("KEEPZ_REQUIRE_AMOUNT_VERIFICATION", default=False)
+
+CELERY_BEAT_SCHEDULE = {
+    "reconcile-keepz-payments": {
+        "task": "apps.orders.tasks.reconcile_keepz_payments",
+        "schedule": float(KEEPZ_RECONCILE_INTERVAL_SECONDS),
+        "options": {"expires": float(KEEPZ_RECONCILE_INTERVAL_SECONDS) - 10},
+    },
+    "expire-stale-keepz-payments": {
+        "task": "apps.orders.tasks.expire_stale_keepz_payments",
+        "schedule": 900.0,
+        "options": {"expires": 600.0},
+    },
+}
+
 DATABASES = {"default": env.db("DATABASE_URL")}
+# Persistent connections matter once Postgres sits behind a network hop (RDS).
+# The health check keeps a recycled connection from being handed to a request
+# after the database dropped it, which is the usual failure mode on failover.
+DATABASES["default"]["CONN_MAX_AGE"] = env("DB_CONN_MAX_AGE", default=60)
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = env("DB_CONN_HEALTH_CHECKS", default=True)
 
 AUTH_USER_MODEL = "users.User"
 

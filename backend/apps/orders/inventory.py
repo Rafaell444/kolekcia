@@ -103,3 +103,17 @@ def release_order_stock(order: Order) -> None:
         order=order,
         status=StockReservation.STATUS_ACTIVE,
     ).update(status=StockReservation.STATUS_RELEASED, released_at=now)
+
+
+def hold_order_stock(order: Order, *, until) -> int:
+    """Extend active reservations so goods stay off sale past the usual window.
+
+    Used when a payment is quarantined for manual review: releasing the stock
+    would oversell if the payment turns out to be genuine, and letting the
+    reservation lapse on its own has the same effect.
+    """
+    return StockReservation.objects.filter(
+        order=order,
+        status=StockReservation.STATUS_ACTIVE,
+        expires_at__lt=until,
+    ).update(expires_at=until)

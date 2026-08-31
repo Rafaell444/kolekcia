@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import SiteShell from "@/components/layout/SiteShell"
+import PaymentVerifying from "@/components/checkout/PaymentVerifying"
 import { authFetch } from "@/lib/api"
+import { usePaymentStatus } from "@/lib/use-payment-status"
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
 import { ArrowLeft, Package } from "lucide-react"
@@ -69,11 +71,16 @@ type OrderDetail = {
 
 export default function AccountOrderDetailPage(): React.ReactElement {
   const params = useParams()
+  const searchParams = useSearchParams()
   const orderId = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : ""
   const lp = useLocalePrefix()
   const [order, setOrder] = useState<OrderDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+
+  // Only poll when the customer just came back from the payment gateway.
+  const returnedFromGateway = searchParams.get("payment") === "success"
+  const payment = usePaymentStatus(orderId, { enabled: returnedFromGateway })
 
   useEffect(() => {
     if (!orderId) {
@@ -85,20 +92,9 @@ export default function AccountOrderDetailPage(): React.ReactElement {
     setLoading(true)
     setError("")
     authFetch<OrderDetail>(`/orders/${orderId}/`)
-      .then(async (data) => {
+      .then((data) => {
         if (cancelled) return
         setOrder(data)
-        const returnedFromPayment = new URLSearchParams(window.location.search).get("payment") === "success"
-        if (returnedFromPayment && data.payment_status !== "success") {
-          try {
-            const reconciled = await authFetch<{ order: OrderDetail }>(`/orders/${orderId}/payment-status/`, {
-              method: "POST",
-            })
-            if (!cancelled) setOrder(reconciled.order)
-          } catch {
-            // Keep the order visible as pending if provider verification is delayed.
-          }
-        }
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -115,7 +111,8 @@ export default function AccountOrderDetailPage(): React.ReactElement {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [orderId])
+    // Refetch once the payment settles so the page reflects the new status.
+  }, [orderId, payment.status?.is_final])
 
   const money = (amount: string | number | null | undefined) =>
     formatAmount(amount, ((order?.currency || "USD") as Currency))
@@ -126,6 +123,16 @@ export default function AccountOrderDetailPage(): React.ReactElement {
         <Link href={`${lp}/account/orders`} className="inline-flex items-center gap-2 text-[13px] text-dp-text-secondary hover:text-dp-text-primary mb-6">
           <ArrowLeft size={14} /> Back to orders
         </Link>
+
+        {returnedFromGateway && (
+          <div className="mb-6">
+            <PaymentVerifying
+              status={payment.status}
+              isPolling={payment.isPolling}
+              timedOut={payment.timedOut}
+            />
+          </div>
+        )}
 
         {loading ? (
           <div className="animate-pulse space-y-4">

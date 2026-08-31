@@ -397,11 +397,20 @@ class AdminOrderListView(AdminNoPaginationMixin, generics.ListAPIView):
         return OrderSerializer
 
     def get_queryset(self):
-        from apps.orders.models import Order
+        from apps.orders.models import Order, PaymentSession
         qs = Order.objects.prefetch_related("items", "status_history", "payment_sessions").all()
         if not self.request.user.is_staff and hasattr(self.request.user, "vendor_profile"):
             vendor = self.request.user.vendor_profile
             qs = qs.filter(items__vendor=vendor).distinct()
+
+        payment_status = (self.request.query_params.get("payment_status") or "").strip()
+        if payment_status:
+            valid = {choice for choice, _ in PaymentSession.STATUS_CHOICES}
+            if payment_status in valid:
+                qs = qs.filter(
+                    payment_sessions__purpose=PaymentSession.PURPOSE_CHECKOUT,
+                    payment_sessions__status=payment_status,
+                ).distinct()
         return qs
 
 
@@ -422,6 +431,128 @@ class AdminOrderUpdateView(APIView):
             order = self._get_order_qs(request).get(pk=pk)
         except Exception:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(OrderSerializer(order).data)
+
+    def _refund_items(self, request, order, refund_items):
+        """Refund specific order lines, returning only what those units cost.
+
+        Kept separate from the status dropdown because a partial refund must not
+        cancel the rest of the order — the unrefunded lines still ship.
+        """
+        from decimal import Decimal
+        from apps.orders.models import PaymentSession
+        from apps.orders.refunds import settle_refund
+        from apps.orders.serializers import OrderSerializer
+
+        if order.status in ("pending_payment", "payment_failed", "expired"):
+            return Response(
+                {"detail": "This order was never paid, so there is nothing to refund."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        selections = []
+        for raw in refund_items:
+            try:
+                item = order.items.get(pk=int(raw.get("item_id")))
+            except Exception:
+                return Response(
+                    {"detail": f"Order item {raw.get('item_id')} not found on this order."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            try:
+                qty = int(raw.get("quantity", 1))
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "Refund quantity must be a whole number."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if qty <= 0:
+                continue
+            if qty > item.refundable_quantity:
+                return Response(
+                    {
+                        "detail": (
+                            f"“{item.product_title}” has only {item.refundable_quantity} "
+                            f"unit(s) left to refund."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            selections.append((item, qty))
+
+        if not selections:
+            return Response(
+                {"detail": "Select at least one item to refund."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        gross = sum(
+            (item.unit_refund_amount * Decimal(qty) for item, qty in selections),
+            Decimal("0"),
+        ).quantize(Decimal("0.01"))
+        outstanding = Decimal(order.total) - Decimal(order.refunded_total)
+        refund_amount = min(gross, outstanding)
+        if refund_amount <= 0:
+            return Response(
+                {"detail": "This order has already been refunded in full."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Ask the gateway first: settling locally before the money moves would
+        # leave the books claiming a refund that never happened.
+        try:
+            from django.conf import settings as django_settings
+            from apps.orders.keepz import KeepzGatewayError, request_keepz_refund
+
+            if django_settings.KEEPZ_ENABLED:
+                payment = order.payment_sessions.filter(
+                    provider=PaymentSession.PROVIDER_KEEPZ,
+                    purpose=PaymentSession.PURPOSE_CHECKOUT,
+                    status__in=[
+                        PaymentSession.STATUS_SUCCESS,
+                        PaymentSession.STATUS_REFUNDED,
+                    ],
+                ).order_by("-paid_at", "-created_at").first()
+                if payment:
+                    refund_payload = request_keepz_refund(payment, refund_amount)
+                    history = list((payment.response_payload or {}).get("refunds") or [])
+                    history.append({"amount": str(refund_amount), "response": refund_payload})
+                    payment.response_payload = {
+                        **(payment.response_payload or {}),
+                        "refunds": history,
+                    }
+                    payment.save(update_fields=["response_payload", "updated_at"])
+                    log_action(request.user, "keepz_partial_refund_requested", "Order", order.pk, {
+                        "order_number": order.order_number,
+                        "payment_id": str(payment.pk),
+                        "amount": str(refund_amount),
+                        "currency": order.currency,
+                    })
+        except (KeepzGatewayError, ValueError) as exc:
+            return Response(
+                {"detail": "Keepz refund request failed.", "error": str(exc)}, status=502
+            )
+
+        note = request.data.get("note") or ", ".join(
+            f"{qty}× {item.product_title}" for item, qty in selections
+        )
+        outcome = settle_refund(
+            order,
+            note=f"Partial refund: {note}",
+            changed_by=request.user,
+            items=selections,
+        )
+
+        log_action(request.user, "order_partial_refund", "Order", order.pk, {
+            "order_number": order.order_number,
+            "amount": str(outcome.amount_refunded),
+            "currency": order.currency,
+            "items": {str(k): v for k, v in outcome.items_refunded.items()},
+            "fully_refunded": outcome.fully_refunded,
+            "points_reversed": outcome.points_reversed,
+        })
+
+        order.refresh_from_db()
         return Response(OrderSerializer(order).data)
 
     def patch(self, request, pk):
@@ -511,6 +642,11 @@ class AdminOrderUpdateView(APIView):
             order.refresh_from_db()
             return Response(OrderSerializer(order).data)
 
+        # Partial refund: PATCH with refund_items = [{item_id, quantity}]
+        refund_items = request.data.get("refund_items")
+        if refund_items:
+            return self._refund_items(request, order, refund_items)
+
         # Legacy single-order update
         new_status = request.data.get("status")
         note = request.data.get("note", "")
@@ -518,6 +654,34 @@ class AdminOrderUpdateView(APIView):
 
         prev_status = order.status
         prev_tracking = order.tracking_code
+
+        # Cancelling a paid order keeps the customer's money without refunding it,
+        # so require the admin to say that is really what they mean.
+        if new_status == "cancelled" and new_status != prev_status:
+            from apps.orders.models import PaymentSession
+
+            has_captured_payment = order.payment_sessions.filter(
+                purpose=PaymentSession.PURPOSE_CHECKOUT,
+                status=PaymentSession.STATUS_SUCCESS,
+            ).exists()
+            if has_captured_payment and not request.data.get("confirm_keep_payment"):
+                return Response(
+                    {
+                        "detail": (
+                            "This order has already been paid. Use “Refunded” to send the "
+                            "money back, or resend with confirm_keep_payment to cancel "
+                            "without refunding."
+                        ),
+                        "code": "paid_order_cancel_requires_confirmation",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if has_captured_payment:
+                log_action(request.user, "paid_order_cancelled_without_refund", "Order", order.pk, {
+                    "order_number": order.order_number,
+                    "amount": str(order.total),
+                    "currency": order.currency,
+                })
 
         if new_status and new_status != prev_status:
             order.status = new_status
@@ -570,16 +734,23 @@ class AdminOrderUpdateView(APIView):
                             })
                 except (KeepzGatewayError, ValueError) as exc:
                     return Response({"detail": "Keepz refund request failed.", "error": str(exc)}, status=502)
-                try:
-                    from apps.gamification.services import reverse_order_points_for_refund
-                    reversal = reverse_order_points_for_refund(order, reason=f"Point reversal for refunded order {order.order_number}")
-                    if reversal:
-                        log_action(request.user, "points_refund_reversal", "Order", order.pk, {
-                            "order_number": order.order_number,
-                            "points": reversal.points,
-                        })
-                except Exception:
-                    pass
+                # Status and history are recorded above, so only the reversals run here.
+                from apps.orders.refunds import settle_refund
+                outcome = settle_refund(
+                    order,
+                    changed_by=request.user,
+                    record_status=False,
+                    amount=order.total,
+                )
+                if outcome.points_reversed:
+                    log_action(request.user, "points_refund_reversal", "Order", order.pk, {
+                        "order_number": order.order_number,
+                        "points": outcome.points_reversed,
+                    })
+                if outcome.creator_clawed_back:
+                    log_action(request.user, "creator_clawback", "Order", order.pk, {
+                        "order_number": order.order_number,
+                    })
             if new_status in ("shipped", "delivered"):
                 try:
                     from apps.gamification.services import release_order_points_on_shipment
@@ -592,7 +763,8 @@ class AdminOrderUpdateView(APIView):
                         })
                 except Exception:
                     pass
-            if new_status in ("cancelled", "refunded"):
+            if new_status == "cancelled":
+                # Refunds already clawed back via settle_refund above.
                 try:
                     from apps.creators.services import clawback_creator_for_order
                     if clawback_creator_for_order(order):

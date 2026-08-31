@@ -3,6 +3,7 @@ from django.test import SimpleTestCase, override_settings
 from apps.orders.keepz import (
     KeepzConfigurationError,
     _apply_receiver_routing,
+    _apply_dynamic_urls,
 )
 
 
@@ -126,3 +127,29 @@ class KeepzNoSplitReceiverRoutingTests(SimpleTestCase):
 
         self.assertEqual(payload["receiverId"], FOREIGN_RECEIVER)
         self.assertNotIn("splitDetails", payload)
+
+
+@override_settings(
+    BACKEND_PUBLIC_URL="https://api.koleqcia.test",
+    FRONTEND_URL="https://koleqcia.test",
+    KEEPZ_DYNAMIC_URLS=False,
+)
+class KeepzPaymentUrlTests(SimpleTestCase):
+    def test_static_url_configuration_does_not_send_per_order_urls(self):
+        payload = {}
+
+        _apply_dynamic_urls(payload, "/en/success", "/en/failed")
+
+        self.assertNotIn("callbackUri", payload)
+        self.assertNotIn("successRedirectUri", payload)
+        self.assertNotIn("failRedirectUri", payload)
+
+    @override_settings(KEEPZ_DYNAMIC_URLS=True)
+    def test_dynamic_redirects_are_still_optional(self):
+        payload = {}
+
+        _apply_dynamic_urls(payload, "/en/success", "/en/failed")
+
+        self.assertEqual(payload["successRedirectUri"], "https://koleqcia.test/en/success")
+        self.assertEqual(payload["failRedirectUri"], "https://koleqcia.test/en/failed")
+        self.assertNotIn("callbackUri", payload)

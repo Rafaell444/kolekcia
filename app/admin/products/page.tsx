@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState, useRef, useCallback } from "react"
+import React, { useEffect, useState, useRef } from "react"
 import Image from "next/image"
 import { Plus, Search, Pencil, Trash2, X, Package, Play, Upload, Download, FileUp, FolderPlus, GripVertical, Check, Crop, Tag } from "lucide-react"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
@@ -99,6 +99,17 @@ const SCULPI_VARIANT_DEFAULTS: PendingVariant[] = [
     salePriceGel: "",
   },
 ]
+
+const EMPTY_VARIANT_DRAFT = {
+  label: "",
+  labelKa: "",
+  sku: "",
+  stock: "",
+  priceUsd: "",
+  priceGel: "",
+  salePriceUsd: "",
+  salePriceGel: "",
+}
 
 type ProductDraft = {
   title: string
@@ -223,6 +234,27 @@ const BLANK_DRAFT: ProductDraft = {
 
 const INPUT_CLS = "w-full px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
 const LABEL_CLS = "block text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-1"
+
+function moneyNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function formatAdminApiError(data?: Record<string, unknown>): string {
+  if (!data) return "Save failed."
+  const detail = data.detail
+  if (typeof detail === "string" && detail.trim()) return detail
+  if (Array.isArray(detail)) return detail.join(", ")
+  const fieldErrors = Object.entries(data)
+    .map(([field, value]) => {
+      if (Array.isArray(value)) return `${field}: ${value.join(", ")}`
+      if (value && typeof value === "object") return `${field}: ${Object.values(value).flat().join(", ")}`
+      return `${field}: ${String(value)}`
+    })
+    .filter((line) => !line.endsWith(": undefined") && !line.endsWith(": null"))
+  return fieldErrors.join("; ") || "Save failed."
+}
 
 // ─── Etsy-style Thumbnail Editor ─────────────────────────────────
 // Product card uses aspect-poster = 1/1.4 (width:height). We use the same ratio
@@ -400,7 +432,20 @@ function ThumbnailEditorModal({
     }
   }
 
-  const imgStyle: React.CSSProperties = {
+  function imageStyleFor(viewportWidth: number, viewportHeight: number): React.CSSProperties {
+    return {
+      transform: `scale(${zoom}) translate(${offsetX * viewportWidth / VP_W}px, ${offsetY * viewportHeight / VP_H}px)`,
+      transformOrigin: "center",
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      userSelect: "none",
+      pointerEvents: "none",
+      display: "block",
+    }
+  }
+
+  const basePreviewFrame: React.CSSProperties = {
     transform: `scale(${zoom}) translate(${offsetX}px, ${offsetY}px)`,
     transformOrigin: "center",
     width: "100%",
@@ -412,16 +457,18 @@ function ThumbnailEditorModal({
   }
 
   // Small preview card using the exact product card ratio
-  const PreviewCard = ({ size }: { size: "lg" | "sm" }) => {
-    const w = size === "lg" ? "w-40" : "w-24"
+  function renderPreviewCard(size: "lg" | "sm") {
+    const outerWidth = size === "lg" ? 160 : 96
+    const frameWidth = outerWidth - 12
+    const frameHeight = Math.round(frameWidth * POSTER_H / POSTER_W)
     return (
-      <div className={`flex flex-col gap-1.5 ${w} shrink-0`}>
+      <div className="flex flex-col gap-1.5 shrink-0" style={{ width: outerWidth }}>
         <p className="text-[10px] text-dp-text-tertiary">{size === "lg" ? "Product card" : "Small"}</p>
         <div className="bg-[#f4f4f4] rounded-sm border border-dp-border p-1.5">
           {/* aspect-poster = 1/1.4 */}
-          <div className="overflow-hidden rounded-sm" style={{ aspectRatio: `${POSTER_W} / ${POSTER_H}` }}>
+          <div className="overflow-hidden rounded-sm" style={{ width: frameWidth, height: frameHeight }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image.src} alt="" style={imgStyle} />
+            <img src={image.src} alt="" style={imageStyleFor(frameWidth, frameHeight)} />
           </div>
           <div className="mt-1.5 space-y-1">
             <div className="h-1.5 bg-dp-border rounded-sm w-3/4" />
@@ -459,7 +506,7 @@ function ThumbnailEditorModal({
               onPointerLeave={onPointerUp}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image.src} alt="Thumbnail editor" style={imgStyle} draggable={false} />
+              <img src={image.src} alt="Thumbnail editor" style={basePreviewFrame} draggable={false} />
             </div>
             {/* Zoom slider */}
             <div className="flex items-center gap-2 mt-3">
@@ -481,8 +528,8 @@ function ThumbnailEditorModal({
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary mb-3">What buyers will see</p>
             <div className="flex flex-wrap gap-4 items-start">
-              <PreviewCard size="lg" />
-              <PreviewCard size="sm" />
+              {renderPreviewCard("lg")}
+              {renderPreviewCard("sm")}
             </div>
             <p className="text-[11px] text-dp-text-tertiary mt-4">
               The cropped image will be uploaded and set as the first (thumbnail) image. The original is kept.
@@ -508,12 +555,11 @@ function ThumbnailEditorModal({
 }
 
 function SortableMediaItem({
-  item, index, total,
+  item, index,
   onDelete, onSetVariant, onSetThumbnail,
 }: {
   item: { id?: number; sortId?: string; src: string; media_type: string; name?: string; width?: number; height?: number }
   index: number
-  total: number
   onDelete: () => void
   onSetVariant?: () => void
   onSetThumbnail?: () => void
@@ -896,26 +942,26 @@ function ProductModal({
       : []
   )
   const [variantImagePickerOpen, setVariantImagePickerOpen] = useState<number | null>(null)
-  const emptyVariant = { label: "", labelKa: "", sku: "", stock: "", priceUsd: "", priceGel: "", salePriceUsd: "", salePriceGel: "" }
-  const newVarRef = useRef(emptyVariant)
-  const [newVarDraft, setNewVarDraft] = useState(emptyVariant)
+  const [newVarDraft, setNewVarDraft] = useState(EMPTY_VARIANT_DRAFT)
   const [editingPendingVariantKey, setEditingPendingVariantKey] = useState<string | null>(null)
   const activeVendorSlug = editProduct?.vendor_slug ?? (isVendor ? vendorSlug : draft.vendorSlug)
   const isSculpiProduct = activeVendorSlug === "sculpi" || activeVendorSlug === "figure-studio"
 
   useEffect(() => {
     if (editProduct) return
-    setPendingVariants((current) => {
-      if (isSculpiProduct) {
-        return current.length > 0
-          ? current
-          : SCULPI_VARIANT_DEFAULTS.map((variant) => ({ ...variant }))
-      }
-      return current.filter((variant) => !variant._key.startsWith("sculpi-default-"))
+    queueMicrotask(() => {
+      setPendingVariants((current) => {
+        if (isSculpiProduct) {
+          return current.length > 0
+            ? current
+            : SCULPI_VARIANT_DEFAULTS.map((variant) => ({ ...variant }))
+        }
+        return current.filter((variant) => !variant._key.startsWith("sculpi-default-"))
+      })
+      setEditingPendingVariantKey(null)
+      setNewVarDraft(EMPTY_VARIANT_DRAFT)
     })
-    setEditingPendingVariantKey(null)
-    setNewVarDraft(emptyVariant)
-  }, [editProduct, isSculpiProduct]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [editProduct, isSculpiProduct])
 
   // Categories
   const [categories, setCategories] = useState<CategoryOption[]>([])
@@ -976,7 +1022,7 @@ function ProductModal({
         setCategories(list)
       })
       .catch(() => {})
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     loadProcessingOptions()
@@ -1077,14 +1123,6 @@ function ProductModal({
     setMediaItems((prev) => prev.filter((m) => m.id !== id))
   }
 
-  async function handleMoveMedia(index: number, direction: "up" | "down") {
-    const newItems = [...mediaItems]
-    const targetIndex = direction === "up" ? index - 1 : index + 1
-    if (targetIndex < 0 || targetIndex >= newItems.length) return
-    ;[newItems[index], newItems[targetIndex]] = [newItems[targetIndex], newItems[index]]
-    await applyMediaOrder(newItems)
-  }
-
   async function applyMediaOrder(newItems: typeof mediaItems) {
     setMediaItems(newItems)
     const payload = newItems.filter((m) => m.id).map((m, i) => ({ id: m.id!, order: i }))
@@ -1126,7 +1164,7 @@ function ProductModal({
         { _key: `${Date.now()}-${Math.random()}`, ...newVarDraft },
       ])
     }
-    setNewVarDraft(emptyVariant)
+    setNewVarDraft(EMPTY_VARIANT_DRAFT)
   }
 
   function editPendingVariant(variant: PendingVariant) {
@@ -1147,7 +1185,7 @@ function ProductModal({
     setPendingVariants((prev) => prev.filter((v) => v._key !== key))
     if (editingPendingVariantKey === key) {
       setEditingPendingVariantKey(null)
-      setNewVarDraft(emptyVariant)
+      setNewVarDraft(EMPTY_VARIANT_DRAFT)
     }
   }
 
@@ -1180,15 +1218,92 @@ function ProductModal({
       body: JSON.stringify(patch),
     })
       .then((updated) => updateSizeVariant(id, updated))
-      .catch(() => setError("Failed to update the size variant. Check that the SKU is unique."))
+      .catch((err: unknown) => {
+        const e = err as { data?: Record<string, unknown> }
+        setError(formatAdminApiError(e?.data) || "Failed to update the size variant. Check that the SKU is unique.")
+      })
+  }
+
+  function validateVariantMoney({
+    label,
+    priceUsd,
+    priceGel,
+    salePriceUsd,
+    salePriceGel,
+    stock,
+    index,
+  }: {
+    label: string
+    priceUsd: string | number | null | undefined
+    priceGel?: string | number | null
+    salePriceUsd?: string | number | null
+    salePriceGel?: string | number | null
+    stock?: string | number | null
+    index: number
+  }): string | null {
+    const displayName = label.trim() || `variant ${index + 1}`
+    if (!label.trim()) return `Enter the label for ${displayName}.`
+    const usd = moneyNumber(priceUsd)
+    if (usd === null || usd <= 0) return `Enter a valid USD price greater than 0 for ${displayName}.`
+    const gel = moneyNumber(priceGel)
+    if (priceGel !== "" && priceGel !== null && priceGel !== undefined && (gel === null || gel <= 0)) {
+      return `Enter a valid GEL price greater than 0 for ${displayName}, or leave GEL blank.`
+    }
+    const saleUsd = moneyNumber(salePriceUsd)
+    if (draft.isSale && salePriceUsd !== "" && salePriceUsd !== null && salePriceUsd !== undefined) {
+      if (saleUsd === null || saleUsd <= 0) return `Enter a valid sale USD price for ${displayName}, or leave it blank.`
+      if (saleUsd >= usd) return `Sale USD price must be lower than the regular USD price for ${displayName}.`
+    }
+    const saleGel = moneyNumber(salePriceGel)
+    if (draft.isSale && salePriceGel !== "" && salePriceGel !== null && salePriceGel !== undefined) {
+      if (saleGel === null || saleGel <= 0) return `Enter a valid sale GEL price for ${displayName}, or leave it blank.`
+      if (gel !== null && saleGel >= gel) return `Sale GEL price must be lower than the regular GEL price for ${displayName}.`
+    }
+    if (stock !== "" && stock !== null && stock !== undefined) {
+      const stockNumber = Number(stock)
+      if (!Number.isInteger(stockNumber) || stockNumber < 0) return `Stock must be a whole number 0 or higher for ${displayName}, or blank for unlimited.`
+    }
+    return null
+  }
+
+  function validateProductBeforeSave(): string | null {
+    const selectedCategories = draft.categories.split(",").map((s) => s.trim()).filter(Boolean)
+    if (!draft.title.trim()) return "Title is required."
+    if (!selectedCategories.length) return "Select at least one category."
+    if (!isVendor && !draft.vendorSlug.trim()) return "Assign a vendor before saving. This is required for correct payments and split routing."
+    if (!editProduct && mediaItems.length + pendingFiles.length === 0) return "Add at least one product image."
+
+    for (const [index, variant] of sizeVariants.entries()) {
+      const message = validateVariantMoney({
+        label: variant.label,
+        priceUsd: variant.price_usd,
+        priceGel: variant.price_gel,
+        salePriceUsd: variant.sale_price_usd,
+        salePriceGel: variant.sale_price_gel,
+        stock: variant.stock ?? "",
+        index,
+      })
+      if (message) return message
+    }
+    for (const [index, variant] of pendingVariants.entries()) {
+      const message = validateVariantMoney({
+        label: variant.label,
+        priceUsd: variant.priceUsd,
+        priceGel: variant.priceGel,
+        salePriceUsd: variant.salePriceUsd,
+        salePriceGel: variant.salePriceGel,
+        stock: variant.stock,
+        index: sizeVariants.length + index,
+      })
+      if (message) return message
+    }
+    if (!sizeVariants.length && !pendingVariants.length) return "Add at least one size variant with a price."
+    return null
   }
 
   async function handleSave() {
-    if (!draft.title) { setError("Title is required."); return }
-    if (isSculpiProduct && !editProduct && pendingVariants.some((variant) => !variant.priceUsd.trim())) {
-      setError("Enter the USD price for both Sculpi scale variants.")
-      return
-    }
+    const validationError = validateProductBeforeSave()
+    if (validationError) { setError(validationError); return }
     setSaving(true)
     setError("")
     try {
@@ -1301,19 +1416,7 @@ function ProductModal({
       onClose()
     } catch (err: unknown) {
       const e = err as { data?: Record<string, unknown> }
-      if (e?.data) {
-        const detail = e.data.detail
-        if (typeof detail === "string" && detail.trim()) {
-          setError(detail)
-        } else {
-          const fieldErrors = Object.entries(e.data)
-            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
-            .join("; ")
-          setError(fieldErrors || "Save failed.")
-        }
-      } else {
-        setError(err instanceof Error ? err.message : "Save failed.")
-      }
+      setError(e?.data ? formatAdminApiError(e.data) : err instanceof Error ? err.message : "Save failed.")
     } finally {
       setSaving(false)
       setSavingStep("")
@@ -1520,7 +1623,6 @@ function ProductModal({
                             key={m.id ?? i}
                             item={m}
                             index={i}
-                            total={mediaItems.length}
                             onDelete={() => m.id && void handleDeleteMedia(m.id)}
                             onSetThumbnail={m.media_type !== "video" ? () => setThumbnailEditorItem({ id: m.id, src: m.src }) : undefined}
                           />
@@ -1558,7 +1660,6 @@ function ProductModal({
                               height: pf.height,
                             }}
                             index={i}
-                            total={pendingFiles.length}
                             onDelete={() => removePendingFile(i)}
                             onSetThumbnail={pf.media_type === "image" ? () => setThumbnailEditorItem({
                               src: pf.preview,
@@ -1826,20 +1927,94 @@ function ProductModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingVariants.map((v) => (
+                    {pendingVariants.map((v, variantIndex) => (
                       <tr key={v._key} className="border-b border-dp-accent-cta/10 last:border-0">
-                        <td className="px-3 py-1.5 text-dp-text-primary">
-                          <span className="font-semibold">{v.label}</span>
-                          {v.labelKa && <span className="block text-[10px] text-dp-text-tertiary">{v.labelKa}</span>}
+                        <td className="px-3 py-1.5 min-w-[190px]">
+                          <div className="flex flex-col gap-1">
+                            <input
+                              value={v.label}
+                              readOnly={isSculpiProduct}
+                              aria-label={`Pending variant ${variantIndex + 1} label in English`}
+                              onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, label: e.target.value } : item))}
+                              className="w-full px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm text-[11px] font-semibold text-dp-text-primary focus:outline-none focus:border-dp-border-hover read-only:opacity-80"
+                            />
+                            <input
+                              value={v.labelKa}
+                              readOnly={isSculpiProduct}
+                              aria-label={`Pending variant ${variantIndex + 1} label in Georgian`}
+                              placeholder="Georgian label"
+                              onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, labelKa: e.target.value } : item))}
+                              className="w-full px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm text-[10px] text-dp-text-secondary focus:outline-none focus:border-dp-border-hover read-only:opacity-80"
+                            />
+                          </div>
                         </td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] text-dp-text-secondary">{v.sku || "Auto"}</td>
-                        <td className="px-3 py-1.5 text-right">{v.stock || "Unlimited"}</td>
-                        <td className="px-3 py-1.5 text-right">{v.priceUsd ? `$${v.priceUsd}` : "—"}</td>
-                        <td className="px-3 py-1.5 text-right">{v.priceGel ? `₾${v.priceGel}` : "—"}</td>
+                        <td className="px-3 py-1.5">
+                          <input
+                            value={v.sku}
+                            placeholder="Auto-generated"
+                            onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, sku: e.target.value } : item))}
+                            className="w-32 px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm font-mono text-[10px] text-dp-text-primary focus:outline-none focus:border-dp-border-hover"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            value={v.stock}
+                            placeholder="Unlimited"
+                            onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, stock: e.target.value } : item))}
+                            className="w-20 px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={v.priceUsd}
+                            aria-label={`Pending variant ${variantIndex + 1} USD price`}
+                            onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, priceUsd: e.target.value } : item))}
+                            className="w-24 px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={v.priceGel}
+                            placeholder="Not set"
+                            aria-label={`Pending variant ${variantIndex + 1} GEL price`}
+                            onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, priceGel: e.target.value } : item))}
+                            className="w-24 px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
+                          />
+                        </td>
                         {draft.isSale && (
                           <>
-                            <td className="px-3 py-1.5 text-right">{v.salePriceUsd ? `$${v.salePriceUsd}` : "—"}</td>
-                            <td className="px-3 py-1.5 text-right">{v.salePriceGel ? `₾${v.salePriceGel}` : "—"}</td>
+                            <td className="px-3 py-1.5 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={v.salePriceUsd}
+                                placeholder="Not set"
+                                aria-label={`Pending variant ${variantIndex + 1} sale USD price`}
+                                onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, salePriceUsd: e.target.value } : item))}
+                                className="w-24 px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
+                              />
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={v.salePriceGel}
+                                placeholder="Not set"
+                                aria-label={`Pending variant ${variantIndex + 1} sale GEL price`}
+                                onChange={(e) => setPendingVariants((current) => current.map((item) => item._key === v._key ? { ...item, salePriceGel: e.target.value } : item))}
+                                className="w-24 px-2 py-1 bg-dp-bg-surface border border-dp-border rounded-sm text-[11px] text-dp-text-primary text-right focus:outline-none focus:border-dp-border-hover"
+                              />
+                            </td>
                           </>
                         )}
                         <td className="px-3 py-1.5 text-right">
@@ -1922,7 +2097,7 @@ function ProductModal({
               </div>
               {editingPendingVariantKey && (
                 <div>
-                  <button type="button" onClick={() => { setEditingPendingVariantKey(null); setNewVarDraft(emptyVariant) }}
+                  <button type="button" onClick={() => { setEditingPendingVariantKey(null); setNewVarDraft(EMPTY_VARIANT_DRAFT) }}
                     className="w-full px-3 py-2 border border-dp-border text-[11px] font-bold text-dp-text-secondary rounded-sm hover:border-dp-border-hover transition-colors">
                     Cancel edit
                   </button>

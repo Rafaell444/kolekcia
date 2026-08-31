@@ -124,6 +124,30 @@ def order_confirmed_html() -> str:
     )
 
 
+def order_refunded_html() -> str:
+    body = (
+        '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Hi {{customer_name}},</p>'
+        + '<p style="margin:0;">We\'ve refunded order <strong style="color:' + INK + ';">'
+        "#{{order_number}}</strong>. The money is on its way back to the account you paid from.</p>"
+        + _info_card([
+            ("Order", "#{{order_number}}"),
+            ("Refunded", "{{refund_amount}}"),
+        ])
+        + '<p style="margin:20px 0 0;">Depending on your bank this usually lands within 3–10 business '
+        "days. You don't need to do anything — if it hasn't arrived after that, reply to this email "
+        "and we'll chase it for you.</p>"
+        + '<p style="margin:16px 0 0;font-size:13px;color:#aeaeb2;">{{refund_note}}</p>'
+    )
+    return _shell(
+        preheader="Your refund for order {{order_number}} is on its way.",
+        eyebrow="Refund issued",
+        title="Your refund is on its way.",
+        body_html=body,
+        cta_label="View your orders",
+        cta_url="https://koleqcia.com/account/orders",
+    )
+
+
 def order_shipped_html() -> str:
     body = (
         '<p style="margin:0 0 12px;color:' + INK + ';font-size:16px;font-weight:600;">Hi {{customer_name}},</p>'
@@ -310,6 +334,7 @@ def newsletter_welcome_html() -> str:
 _HTML_BUILDERS = {
     "order_confirmed": order_confirmed_html,
     "order_shipped": order_shipped_html,
+    "order_refunded": order_refunded_html,
     "review_request": review_request_html,
     "custom_order_shipped": custom_order_shipped_html,
     "auction_new": auction_new_html,
@@ -324,6 +349,8 @@ _META = [
      ["customer_name", "order_number", "total", "currency", "items", "items_html", "totals_html", "shipping_address_html"]),
     ("order_shipped", "Order Shipped", "Your order #{{order_number}} has shipped!",
      ["customer_name", "order_number", "tracking_code", "tracking_info", "total", "points_earned", "points_status", "points_message", "items_html", "totals_html", "shipping_address_html"]),
+    ("order_refunded", "Order Refunded", "Your refund for order #{{order_number}}",
+     ["customer_name", "order_number", "refund_amount", "refund_note", "currency", "total"]),
     ("review_request", "Review Request", "How was your Koleqcia order?",
      ["customer_name", "order_number", "google_review_url"]),
     ("custom_order_shipped", "Custom Order Shipped", "Your custom order is on the way",

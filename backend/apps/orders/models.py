@@ -66,9 +66,11 @@ class Order(models.Model):
         ("pending_payment", "Pending Payment"),
         ("processing", "Processing"),
         ("payment_failed", "Payment Failed"),
+        ("expired", "Expired"),
         ("shipped", "Shipped"),
         ("delivered", "Delivered"),
         ("cancelled", "Cancelled"),
+        ("partially_refunded", "Partially Refunded"),
         ("refunded", "Refunded"),
     ]
 
@@ -105,6 +107,13 @@ class Order(models.Model):
     shipped_at = models.DateTimeField(null=True, blank=True)
     review_requested_at = models.DateTimeField(null=True, blank=True)
     confirmation_email_sent_at = models.DateTimeField(null=True, blank=True)
+    refund_email_sent_at = models.DateTimeField(null=True, blank=True)
+    refunded_total = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Money returned so far. Equals total once fully refunded.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -241,6 +250,10 @@ class OrderItem(models.Model):
     voucher_discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     processing_label = models.CharField(max_length=100, blank=True, default="")
     processing_days = models.CharField(max_length=50, blank=True, default="")
+    refunded_quantity = models.PositiveIntegerField(
+        default=0,
+        help_text="Units refunded so far. Equals quantity once this line is fully refunded.",
+    )
 
     class Meta:
         db_table = "order_items"
@@ -248,6 +261,30 @@ class OrderItem(models.Model):
     @property
     def line_total(self):
         return self.price * self.quantity
+
+    @property
+    def refundable_quantity(self) -> int:
+        return max(self.quantity - self.refunded_quantity, 0)
+
+    @property
+    def unit_refund_amount(self):
+        """What one unit of this line is worth back, discounts included.
+
+        Uses the line's share of what the customer actually paid rather than the
+        list price, so refunding one of three items never returns more than a
+        third of the money.
+        """
+        from decimal import Decimal
+
+        per_unit = Decimal(self.price)
+        if self.quantity:
+            extras = Decimal(self.tier_discount) + Decimal(self.voucher_discount)
+            per_unit -= extras / Decimal(self.quantity)
+        if self.gift_wrap:
+            per_unit += Decimal(self.gift_wrap_price)
+        if self.processing_option:
+            per_unit += Decimal(self.processing_fee)
+        return max(per_unit, Decimal("0"))
 
 
 class PaymentSession(models.Model):
@@ -264,6 +301,9 @@ class PaymentSession(models.Model):
     STATUS_CANCELED = "canceled"
     STATUS_EXPIRED = "expired"
     STATUS_REFUNDED = "refunded"
+    # Provider reported SUCCESS but the amount/currency did not match ours.
+    # Stock stays reserved and no fulfillment runs until a human clears it.
+    STATUS_NEEDS_REVIEW = "needs_review"
 
     PURPOSE_CHOICES = [
         (PURPOSE_CHECKOUT, "Checkout"),
@@ -279,7 +319,13 @@ class PaymentSession(models.Model):
         (STATUS_CANCELED, "Canceled"),
         (STATUS_EXPIRED, "Expired"),
         (STATUS_REFUNDED, "Refunded"),
+        (STATUS_NEEDS_REVIEW, "Needs Review"),
     ]
+
+    #: Payment states that must never be silently overwritten by a later callback.
+    TERMINAL_STATUSES = frozenset({STATUS_SUCCESS, STATUS_REFUNDED, STATUS_NEEDS_REVIEW})
+    #: Payment states that are still waiting on the provider.
+    PENDING_STATUSES = frozenset({STATUS_CREATED, STATUS_REDIRECTED})
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     provider = models.CharField(max_length=30, default=PROVIDER_KEEPZ)

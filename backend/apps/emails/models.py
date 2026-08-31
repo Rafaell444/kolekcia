@@ -5,6 +5,7 @@ class EmailTemplate(models.Model):
     EVENT_CHOICES = [
         ("order_confirmed", "Order Confirmed"),
         ("order_shipped", "Order Shipped"),
+        ("order_refunded", "Order Refunded"),
         ("review_request", "Review Request"),
         ("custom_order_shipped", "Custom Order Shipped"),
         ("auction_new", "New Auction Notification"),

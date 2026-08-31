@@ -60,7 +60,7 @@ export default function MoreWaysSection({
           <Link
             key={way.id}
             href={way.href}
-            className="group relative rounded-xl overflow-hidden aspect-[4/3] bg-dp-bg-elevated block"
+            className="group relative rounded-xl overflow-hidden aspect-[4/3] bg-dp-bg-elevated block cursor-pointer"
             style={way.accent ? { background: way.accent } : undefined}
           >
             <Image

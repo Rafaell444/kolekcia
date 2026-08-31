@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Star } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 
 type HomepageReview = {
@@ -27,21 +26,6 @@ const FALLBACK_REVIEWS: HomepageReview[] = [
   { id: 1, author_name: "James P.", author_initials: "JP", rating: 5, review_date: "June 2024", text: "Absolutely stunning. The metallic finish makes colors pop so much more than any paper print I've owned.", source: "google" },
   { id: 2, author_name: "Mia H.", author_initials: "MH", rating: 5, review_date: "May 2024", text: "My partner couldn't believe this was a metal poster — it looks like a painting. Fast shipping, gorgeous packaging.", source: "google" },
 ]
-
-function StarRow({ rating }: { rating: number }) {
-  return (
-    <div className="flex items-center gap-0.5" aria-label={`${rating} out of 5 stars`}>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Star
-          key={i}
-          size={13}
-          className={i < rating ? "fill-[#00b67a] text-[#00b67a]" : "fill-dp-bg-divider text-dp-bg-divider"}
-          aria-hidden
-        />
-      ))}
-    </div>
-  )
-}
 
 function initialsFor(name: string, stored?: string) {
   if (stored?.trim()) return stored.trim().slice(0, 4).toUpperCase()
@@ -80,20 +64,7 @@ export default function ReviewsSection() {
         </h2>
 
         <div className="flex flex-col items-center gap-2 mb-10">
-          <div className="flex items-center gap-3">
-            <span className="text-[13px] font-semibold text-dp-text-primary">Google reviews</span>
-            <div className="flex items-center gap-0.5">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="w-6 h-6 bg-[#00b67a] rounded-sm flex items-center justify-center">
-                  <Star size={13} className="fill-white text-white" aria-hidden />
-                </div>
-              ))}
-              <div className="w-6 h-6 bg-[#00b67a] rounded-sm flex items-center justify-center relative overflow-hidden">
-                <Star size={13} className="fill-white text-white" aria-hidden />
-                <div className="absolute right-0 top-0 bottom-0 w-[25%] bg-dp-bg-elevated" aria-hidden />
-              </div>
-            </div>
-          </div>
+          <span className="text-[13px] font-semibold text-dp-text-primary">Google reviews</span>
           <p className="text-[12px] text-dp-text-secondary">
             {average} / 5&nbsp;|&nbsp;Based on {shown.length} published reviews
           </p>
@@ -127,7 +98,7 @@ export default function ReviewsSection() {
                   {r.source === "google" ? "Google" : "Verified"}
                 </span>
               </div>
-              <StarRow rating={r.rating} />
+              <span className="sr-only">{r.rating} out of 5 stars</span>
               <p className="text-[13px] text-dp-text-secondary leading-relaxed flex-1">
                 &ldquo;{r.text}&rdquo;
               </p>

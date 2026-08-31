@@ -781,7 +781,19 @@ def complete_shipping_payment_session(user, token) -> dict:
 
 
 @transaction.atomic
-def reverse_order_points_for_refund(order, reason: str = "Order refund") -> PointTransaction | None:
+def reverse_order_points_for_refund(
+    order,
+    reason: str = "Order refund",
+    *,
+    fraction: Decimal | None = None,
+) -> PointTransaction | None:
+    """Take back the loyalty points a refunded order had earned.
+
+    ``fraction`` scales the reversal for a partial refund: refunding a third of
+    an order's value takes back a third of its points. The original earning row
+    is only cancelled outright on a full reversal, so a later partial refund of
+    the same order can still reverse the remainder.
+    """
     if not order.user_id:
         return None
 
@@ -800,14 +812,35 @@ def reverse_order_points_for_refund(order, reason: str = "Order refund") -> Poin
 
     User = get_user_model()
     user = User.objects.select_for_update().get(id=order.user_id)
-    points_to_reverse = abs(original.points)
+    earned_points = abs(original.points)
+
+    already_reversed = abs(
+        PointTransaction.objects.filter(
+            order=order, transaction_type=PointTransaction.TYPE_REFUND_REVERSAL
+        ).aggregate(total=Sum("points"))["total"]
+        or 0
+    )
+
+    if fraction is None or fraction >= 1:
+        points_to_reverse = earned_points - already_reversed
+        full_reversal = True
+    else:
+        share = (Decimal(earned_points) * Decimal(fraction)).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+        points_to_reverse = min(int(share), earned_points - already_reversed)
+        full_reversal = already_reversed + points_to_reverse >= earned_points
+
+    if points_to_reverse <= 0:
+        return None
 
     user.spendable_points = F("spendable_points") - points_to_reverse
     user.lifetime_points = F("lifetime_points") - points_to_reverse
     user.save(update_fields=["spendable_points", "lifetime_points"])
 
-    original.status = PointTransaction.STATUS_CANCELLED
-    original.save(update_fields=["status"])
+    if full_reversal:
+        original.status = PointTransaction.STATUS_CANCELLED
+        original.save(update_fields=["status"])
 
     return PointTransaction.objects.create(
         user=user,
@@ -816,7 +849,13 @@ def reverse_order_points_for_refund(order, reason: str = "Order refund") -> Poin
         status=PointTransaction.STATUS_CANCELLED,
         points=-points_to_reverse,
         description=reason,
-        metadata={"reversed_transaction_id": original.id, "order_total": str(order.total), "currency": order.currency},
+        metadata={
+            "reversed_transaction_id": original.id,
+            "order_total": str(order.total),
+            "currency": order.currency,
+            "fraction": str(fraction) if fraction is not None else "1",
+            "partial": not full_reversal,
+        },
     )
 
 

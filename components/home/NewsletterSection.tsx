@@ -5,6 +5,8 @@ import Image from "next/image"
 import LocalizedLink from "@/components/seo/LocalizedLink"
 import { apiFetch } from "@/lib/api"
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
 export default function NewsletterSection({ content }: { content?: { heading?: string; subheading?: string; promoText?: string; imageUrl?: string } }): React.ReactElement {
   const [email, setEmail] = useState("")
   const [submitted, setSubmitted] = useState(false)
@@ -13,11 +15,19 @@ export default function NewsletterSection({ content }: { content?: { heading?: s
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!email.trim()) return
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail) {
+      setError("Enter your email address.")
+      return
+    }
+    if (!EMAIL_RE.test(trimmedEmail)) {
+      setError("Enter a valid email address, for example name@example.com.")
+      return
+    }
     setLoading(true)
     setError("")
     try {
-      await apiFetch("/newsletter/subscribe/", { method: "POST", body: JSON.stringify({ email }) })
+      await apiFetch("/newsletter/subscribe/", { method: "POST", body: JSON.stringify({ email: trimmedEmail }) })
       setSubmitted(true)
     } catch {
       setError("Something went wrong. Please try again.")
@@ -68,7 +78,10 @@ export default function NewsletterSection({ content }: { content?: { heading?: s
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value)
+                      if (error) setError("")
+                    }}
                     placeholder="Enter your e-mail"
                     className="flex-1 min-w-0 px-4 py-2.5 rounded-sm bg-white border border-dp-border text-dp-text-primary text-[13px] placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-accent-cta"
                   />

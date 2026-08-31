@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save, CalendarClock, CreditCard } from "lucide-react"
+import { adminFetch } from "@/lib/admin-auth"
+import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save, CalendarClock, CreditCard, RotateCcw } from "lucide-react"
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
 
@@ -28,6 +28,9 @@ type OrderItem = {
   vendor_id?: number | null
   vendor_name?: string | null
   shipment_id?: number | null
+  refunded_quantity?: number
+  refundable_quantity?: number
+  unit_refund_amount?: string
 }
 
 type Shipment = {
@@ -99,6 +102,7 @@ type OrderDetail = {
   payment_paid_at: string | null
   payment_transaction_id: string
   confirmation_email_sent_at: string | null
+  refunded_total?: string
   created_at: string
 }
 
@@ -109,7 +113,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   shipped:    { label: "Shipped",    color: "text-dp-accent-cta",   bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30",    Icon: Truck       },
   delivered:  { label: "Delivered",  color: "text-dp-success",      bg: "bg-dp-success/10 border-dp-success/30",          Icon: CheckCircle },
   cancelled:  { label: "Cancelled",  color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",             Icon: XCircle     },
+  partially_refunded: { label: "Partially refunded", color: "text-orange-300", bg: "bg-orange-300/10 border-orange-300/30", Icon: RotateCcw },
   refunded:   { label: "Refunded",   color: "text-orange-400",      bg: "bg-orange-400/10 border-orange-400/30",           Icon: XCircle     },
+  expired:    { label: "Expired",    color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",              Icon: Clock       },
 }
 
 const PAYMENT_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -257,11 +263,58 @@ export default function AdminOrderDetailPage(): React.ReactElement {
   const [note, setNote] = useState("")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [nowTime] = useState(() => Date.now())
 
-  const adminUser = typeof window !== "undefined" ? getAdminUser() : null
-  const isVendor = Boolean(adminUser && !adminUser.is_staff && adminUser.vendor)
+  const [refundQty, setRefundQty] = useState<Record<number, number>>({})
+  const [refunding, setRefunding] = useState(false)
+  const [refundError, setRefundError] = useState("")
 
   const hasShipments = (order?.shipments?.length ?? 0) > 0
+
+  const refundableItems = (order?.items ?? []).filter(
+    (item) => (item.refundable_quantity ?? 0) > 0,
+  )
+  const canRefund =
+    !!order &&
+    !["pending_payment", "payment_failed", "expired"].includes(order.status) &&
+    refundableItems.length > 0
+  const refundPreview = Object.entries(refundQty).reduce((sum, [id, qty]) => {
+    const item = order?.items.find((i) => i.id === Number(id))
+    if (!item || qty <= 0) return sum
+    return sum + Number(item.unit_refund_amount ?? item.price) * qty
+  }, 0)
+
+  async function handlePartialRefund() {
+    if (!order) return
+    const selections = Object.entries(refundQty)
+      .map(([id, qty]) => ({ item_id: Number(id), quantity: qty }))
+      .filter((s) => s.quantity > 0)
+    if (!selections.length) return
+    if (
+      !window.confirm(
+        `Refund ${refundPreview.toFixed(2)} ${order.currency} for ` +
+          `${selections.length} line(s)? This sends the money back via Keepz.`,
+      )
+    ) {
+      return
+    }
+    setRefunding(true)
+    setRefundError("")
+    try {
+      const updated = await adminFetch<OrderDetail>(`/admin/orders/${orderId}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ refund_items: selections }),
+      })
+      setOrder(updated)
+      setNewStatus(updated.status)
+      setRefundQty({})
+    } catch (err) {
+      const e = err as { data?: { detail?: string; error?: string } }
+      setRefundError(e?.data?.error || e?.data?.detail || "Refund failed.")
+    } finally {
+      setRefunding(false)
+    }
+  }
 
   useEffect(() => {
     adminFetch<ProcessingOpt[]>("/admin/processing-options/")
@@ -285,23 +338,39 @@ export default function AdminOrderDetailPage(): React.ReactElement {
     return () => { cancelled = true }
   }, [orderId])
 
+  async function submitStatus(confirmKeepPayment = false) {
+    const body: Record<string, string | boolean> = { status: newStatus, note, tracking_code: trackingCode }
+    if (confirmKeepPayment) body.confirm_keep_payment = true
+    const updated = await adminFetch<OrderDetail>(`/admin/orders/${orderId}/`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    })
+    setOrder(updated)
+    setNewStatus(updated.status)
+    setTrackingCode(updated.tracking_code ?? "")
+    setNote("")
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+
   async function handleUpdateStatus(e: React.FormEvent) {
     e.preventDefault()
     if (!order) return
     setSaving(true)
     try {
-      const body: Record<string, string> = { status: newStatus, note, tracking_code: trackingCode }
-      const updated = await adminFetch<OrderDetail>(`/admin/orders/${orderId}/`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      })
-      setOrder(updated)
-      setNewStatus(updated.status)
-      setTrackingCode(updated.tracking_code ?? "")
-      setNote("")
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    } catch { /* noop */ }
+      await submitStatus()
+    } catch (err) {
+      const e2 = err as { data?: { code?: string; detail?: string } }
+      if (e2?.data?.code === "paid_order_cancel_requires_confirmation") {
+        if (window.confirm(`${e2.data.detail}\n\nCancel anyway and keep the payment?`)) {
+          try {
+            await submitStatus(true)
+          } catch { /* surfaced below on the retry's own failure */ }
+        }
+      } else if (e2?.data?.detail) {
+        window.alert(e2.data.detail)
+      }
+    }
     finally { setSaving(false) }
   }
 
@@ -399,11 +468,82 @@ export default function AdminOrderDetailPage(): React.ReactElement {
                   <div className="text-right shrink-0">
                     <p className="text-[13px] text-dp-text-secondary">×{item.quantity}</p>
                     <p className="text-[14px] font-bold text-dp-text-primary">{formatAmount(parseFloat(item.line_total), order.currency as Currency)}</p>
+                    {(item.refunded_quantity ?? 0) > 0 && (
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mt-1">
+                        {item.refunded_quantity} refunded
+                      </p>
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
           </div>
+
+          {/* Partial refund */}
+          {canRefund && (
+            <div className="border border-dp-border rounded-sm bg-dp-bg-surface">
+              <div className="px-4 py-3 border-b border-dp-border flex items-center justify-between">
+                <h2 className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary flex items-center gap-2">
+                  <RotateCcw size={14} className="text-orange-400" />
+                  Refund items
+                </h2>
+                {Number(order.refunded_total ?? 0) > 0 && (
+                  <span className="text-[11px] text-orange-400 font-semibold">
+                    {formatAmount(Number(order.refunded_total), order.currency as Currency)} already refunded
+                  </span>
+                )}
+              </div>
+              <div className="divide-y divide-dp-border">
+                {refundableItems.map((item) => (
+                  <div key={item.id} className="px-4 py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-dp-text-primary truncate">{item.product_title}</p>
+                      <p className="text-[11px] text-dp-text-tertiary">
+                        {formatAmount(Number(item.unit_refund_amount ?? item.price), order.currency as Currency)} per unit
+                        {item.vendor_name ? ` · ${item.vendor_name}` : ""}
+                        {` · ${item.refundable_quantity} refundable`}
+                      </p>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={item.refundable_quantity}
+                      value={refundQty[item.id] ?? 0}
+                      onChange={(e) =>
+                        setRefundQty((prev) => ({
+                          ...prev,
+                          [item.id]: Math.max(
+                            0,
+                            Math.min(Number(e.target.value) || 0, item.refundable_quantity ?? 0),
+                          ),
+                        }))
+                      }
+                      className="w-20 px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary text-center"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 py-3 border-t border-dp-border flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-dp-text-tertiary">Refund total</p>
+                  <p className="text-[16px] font-bold text-dp-text-primary">
+                    {formatAmount(refundPreview, order.currency as Currency)}
+                  </p>
+                  {refundError && (
+                    <p className="text-[11px] text-dp-accent-cta mt-1">{refundError}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={refunding || refundPreview <= 0}
+                  onClick={() => void handlePartialRefund()}
+                  className="px-5 py-2.5 bg-orange-500 text-white rounded-sm text-[12px] font-bold uppercase tracking-widest disabled:opacity-40 hover:bg-orange-600 transition-colors"
+                >
+                  {refunding ? "Refunding…" : "Refund selected"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Per-Vendor Shipments */}
           {hasShipments && (
@@ -437,7 +577,7 @@ export default function AdminOrderDetailPage(): React.ReactElement {
               {order.items.map((item) => {
                 const info = getProcessingInfo(item, processingOpts)
                 const deadline = addBusinessDays(new Date(order.created_at), info.days)
-                const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                const daysLeft = Math.ceil((deadline.getTime() - nowTime) / (1000 * 60 * 60 * 24))
                 const isOverdue = daysLeft < 0
                 const isDueSoon = !isOverdue && daysLeft <= 3
                 return (

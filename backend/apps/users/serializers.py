@@ -56,9 +56,44 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class AddressSerializer(serializers.ModelSerializer):
+    label = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, max_length=50)
+    line1 = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, max_length=255)
+    line2 = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, max_length=255)
+    city = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, max_length=100)
+    state = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, max_length=100)
+    zip_code = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, max_length=20)
+    country = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, max_length=100)
+
     class Meta:
         model = Address
         fields = ("id", "label", "line1", "line2", "city", "state", "zip_code", "country", "is_default")
+
+    def validate(self, attrs):
+        errors = {}
+        labels = {
+            "label": "Address label",
+            "line1": "Address line 1",
+            "city": "City",
+            "state": "State / Region",
+            "zip_code": "Postal code",
+            "country": "Country",
+        }
+
+        for field, label in labels.items():
+            if self.instance and field not in attrs:
+                continue
+            value = str(attrs.get(field) or "").strip()
+            if not value:
+                errors[field] = [f"{label} is required."]
+            else:
+                attrs[field] = value
+
+        if "line2" in attrs:
+            attrs["line2"] = str(attrs.get("line2") or "").strip()
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user

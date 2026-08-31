@@ -51,6 +51,8 @@ type WishlistProduct = {
 }
 type WishlistItem = { id: number; product: WishlistProduct; added_at: string }
 type Address = { id: number; label: string; line1: string; line2: string; city: string; state: string; zip_code: string; country: string; is_default: boolean }
+type AddressField = "label" | "line1" | "line2" | "city" | "state" | "zip_code" | "country" | "detail"
+type AddressErrors = Partial<Record<AddressField, string>>
 type ReferralStats = { code: string; total_invites: number; converted_invites: number }
 type CreatorSummary = {
   is_creator: boolean
@@ -298,9 +300,12 @@ function OrdersTab() {
             <div className="flex gap-2 mt-3">
               <Link href={`${lp}/account/orders/${order.id}`} className="px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">View Details</Link>
               {order.status === "delivered" && (
-                <button className="flex items-center gap-1 px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors">
+                <Link
+                  href={`${lp}/contact?reason=returns&order=${encodeURIComponent(order.order_number)}`}
+                  className="flex items-center gap-1 px-4 py-1.5 border border-dp-border rounded-sm text-[11px] font-bold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary hover:border-dp-border-hover transition-colors"
+                >
                   <RotateCcw size={11} /> Return
-                </button>
+                </Link>
               )}
             </div>
           </div>
@@ -537,7 +542,15 @@ function LoyaltyTab() {
 }
 
 // ── Addresses Tab ─────────────────────────────────────────
-const EMPTY_ADDR: Omit<Address, "id"> = { label: "Home", line1: "", line2: "", city: "", state: "", zip_code: "", country: "US", is_default: false }
+const EMPTY_ADDR: Omit<Address, "id"> = { label: "", line1: "", line2: "", city: "", state: "", zip_code: "", country: "US", is_default: false }
+const ADDRESS_FIELD_LABELS: Record<Exclude<AddressField, "detail" | "line2">, string> = {
+  label: "Address label",
+  line1: "Address line 1",
+  city: "City",
+  state: "State / Region",
+  zip_code: "Postal code",
+  country: "Country",
+}
 
 function AddressesTab() {
   const [addresses, setAddresses] = useState<Address[]>([])
@@ -546,6 +559,7 @@ function AddressesTab() {
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState<Omit<Address, "id">>(EMPTY_ADDR)
   const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState<AddressErrors>({})
 
   useEffect(() => {
     let cancelled = false
@@ -556,31 +570,80 @@ function AddressesTab() {
     return () => { cancelled = true }
   }, [])
 
-  function openAdd() { setForm(EMPTY_ADDR); setEditing(null); setAdding(true) }
-  function openEdit(addr: Address) { setForm({ label: addr.label, line1: addr.line1, line2: addr.line2, city: addr.city, state: addr.state, zip_code: addr.zip_code, country: addr.country, is_default: addr.is_default }); setEditing(addr); setAdding(true) }
-  function closeForm() { setAdding(false); setEditing(null) }
+  function openAdd() { setForm(EMPTY_ADDR); setErrors({}); setEditing(null); setAdding(true) }
+  function openEdit(addr: Address) { setForm({ label: addr.label, line1: addr.line1, line2: addr.line2, city: addr.city, state: addr.state, zip_code: addr.zip_code, country: addr.country, is_default: addr.is_default }); setErrors({}); setEditing(addr); setAdding(true) }
+  function closeForm() { setAdding(false); setEditing(null); setErrors({}) }
+
+  function trimmedAddress(): Omit<Address, "id"> {
+    return {
+      ...form,
+      label: form.label.trim(),
+      line1: form.line1.trim(),
+      line2: form.line2.trim(),
+      city: form.city.trim(),
+      state: form.state.trim(),
+      zip_code: form.zip_code.trim(),
+      country: form.country.trim(),
+    }
+  }
+
+  function validateAddress(payload: Omit<Address, "id">): AddressErrors {
+    const nextErrors: AddressErrors = {}
+    for (const field of ["label", "line1", "city", "state", "zip_code", "country"] as const) {
+      if (!payload[field]) nextErrors[field] = `${ADDRESS_FIELD_LABELS[field]} is required.`
+    }
+    return nextErrors
+  }
+
+  function serverAddressErrors(err: unknown): AddressErrors {
+    if (!err || typeof err !== "object") return { detail: "Could not save address. Please check the highlighted fields." }
+    const data = (err as { data?: Record<string, unknown> }).data
+    if (!data) return { detail: "Could not save address. Please check the highlighted fields." }
+    const nextErrors: AddressErrors = {}
+    for (const field of ["label", "line1", "line2", "city", "state", "zip_code", "country"] as AddressField[]) {
+      const value = data[field]
+      if (Array.isArray(value) && value.length > 0) nextErrors[field] = String(value[0])
+      else if (typeof value === "string") nextErrors[field] = value
+    }
+    if (typeof data.detail === "string") nextErrors.detail = data.detail
+    if (!Object.keys(nextErrors).length) nextErrors.detail = "Could not save address. Please check the highlighted fields."
+    return nextErrors
+  }
+
+  function updateField<K extends keyof Omit<Address, "id">>(field: K, value: Omit<Address, "id">[K]) {
+    setForm((current) => ({ ...current, [field]: value }))
+    setErrors((current) => ({ ...current, [field]: undefined, detail: undefined }))
+  }
+
+  function inputClass(field: AddressField): string {
+    return `w-full px-3 py-2.5 bg-dp-bg-elevated border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none transition-colors ${errors[field] ? "border-dp-accent-cta focus:border-dp-accent-cta" : "border-dp-border focus:border-dp-border-hover"}`
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
+    const payload = trimmedAddress()
+    const nextErrors = validateAddress(payload)
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length) return
     setSaving(true)
     try {
       if (editing) {
-        const updated = await authFetch<Address>(`/auth/addresses/${editing.id}/`, { method: "PATCH", body: JSON.stringify(form) })
+        const updated = await authFetch<Address>(`/auth/addresses/${editing.id}/`, { method: "PATCH", body: JSON.stringify(payload) })
         setAddresses((prev) => prev.map((a) => {
           if (a.id === editing.id) return updated
           if (updated.is_default) return { ...a, is_default: false }
           return a
         }))
       } else {
-        const created = await authFetch<Address>("/auth/addresses/", { method: "POST", body: JSON.stringify(form) })
+        const created = await authFetch<Address>("/auth/addresses/", { method: "POST", body: JSON.stringify(payload) })
         setAddresses((prev) => {
           const cleared = created.is_default ? prev.map((a) => ({ ...a, is_default: false })) : prev
           return [...cleared, created]
         })
       }
       closeForm()
-    } catch {
-      // keep form open on error
+    } catch (err) {
+      setErrors(serverAddressErrors(err))
     } finally {
       setSaving(false)
     }
@@ -600,8 +663,8 @@ function AddressesTab() {
     setAddresses((prev) => prev.map((a) => ({ ...a, is_default: a.id === updated.id })))
   }
 
-  const inputCls = "w-full px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
   const labelCls = "block text-[11px] font-bold uppercase tracking-[0.12em] text-dp-text-tertiary mb-1.5"
+  const fieldError = (field: AddressField) => errors[field] ? <p className="mt-1 text-[11px] text-dp-accent-cta">{errors[field]}</p> : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -623,45 +686,53 @@ function AddressesTab() {
               <label className={labelCls}>Label</label>
               <div className="flex gap-2">
                 {["Home", "Work", "Other"].map((lbl) => (
-                  <button key={lbl} type="button" onClick={() => setForm((f) => ({ ...f, label: lbl }))}
+                  <button key={lbl} type="button" onClick={() => updateField("label", lbl)}
                     className={`px-3 py-1.5 rounded-sm text-[11px] font-bold border transition-colors ${form.label === lbl ? "bg-dp-accent-cta text-white border-dp-accent-cta" : "border-dp-border text-dp-text-secondary hover:border-dp-border-hover"}`}>
                     {lbl === "Home" ? <><Home size={11} className="inline mr-1" />Home</> : lbl === "Work" ? <><Building2 size={11} className="inline mr-1" />Work</> : lbl}
                   </button>
                 ))}
               </div>
+              {fieldError("label")}
             </div>
             <div className="col-span-2">
               <label className={labelCls}>Address Line 1 *</label>
-              <input required value={form.line1} onChange={(e) => setForm((f) => ({ ...f, line1: e.target.value }))} placeholder="Street address" className={inputCls} />
+              <input required value={form.line1} onChange={(e) => updateField("line1", e.target.value)} placeholder="Street address" aria-invalid={Boolean(errors.line1)} className={inputClass("line1")} />
+              {fieldError("line1")}
             </div>
             <div className="col-span-2">
               <label className={labelCls}>Address Line 2</label>
-              <input value={form.line2} onChange={(e) => setForm((f) => ({ ...f, line2: e.target.value }))} placeholder="Apt, suite, etc. (optional)" className={inputCls} />
+              <input value={form.line2} onChange={(e) => updateField("line2", e.target.value)} placeholder="Apt, suite, etc. (optional)" aria-invalid={Boolean(errors.line2)} className={inputClass("line2")} />
+              {fieldError("line2")}
             </div>
             <div>
               <label className={labelCls}>City *</label>
-              <input required value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} placeholder="City" className={inputCls} />
+              <input required value={form.city} onChange={(e) => updateField("city", e.target.value)} placeholder="City" aria-invalid={Boolean(errors.city)} className={inputClass("city")} />
+              {fieldError("city")}
             </div>
             <div>
-              <label className={labelCls}>State / Region</label>
-              <input value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} placeholder="State" className={inputCls} />
+              <label className={labelCls}>State / Region *</label>
+              <input required value={form.state} onChange={(e) => updateField("state", e.target.value)} placeholder="State" aria-invalid={Boolean(errors.state)} className={inputClass("state")} />
+              {fieldError("state")}
             </div>
             <div>
               <label className={labelCls}>Postal Code *</label>
-              <input required value={form.zip_code} onChange={(e) => setForm((f) => ({ ...f, zip_code: e.target.value }))} placeholder="ZIP / Postal" className={inputCls} />
+              <input required value={form.zip_code} onChange={(e) => updateField("zip_code", e.target.value)} placeholder="ZIP / Postal" aria-invalid={Boolean(errors.zip_code)} className={inputClass("zip_code")} />
+              {fieldError("zip_code")}
             </div>
             <div>
               <label className={labelCls}>Country *</label>
-              <select required value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} className={inputCls}>
+              <select required value={form.country} onChange={(e) => updateField("country", e.target.value)} aria-invalid={Boolean(errors.country)} className={inputClass("country")}>
                 {CHECKOUT_COUNTRIES.map((country) => (
                   <option key={country.code} value={country.code}>{country.name}</option>
                 ))}
               </select>
+              {fieldError("country")}
             </div>
             <div className="col-span-2 flex items-center gap-2">
-              <input type="checkbox" id="is_default" checked={form.is_default} onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))} className="w-4 h-4 rounded" />
+              <input type="checkbox" id="is_default" checked={form.is_default} onChange={(e) => updateField("is_default", e.target.checked)} className="w-4 h-4 rounded" />
               <label htmlFor="is_default" className="text-[13px] text-dp-text-secondary">Set as default address</label>
             </div>
+            {errors.detail && <p className="col-span-2 text-[12px] text-dp-accent-cta">{errors.detail}</p>}
             <div className="col-span-2 flex gap-3">
               <button type="submit" disabled={saving} className="px-6 py-2.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover disabled:opacity-60 text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors">
                 {saving ? "Saving…" : editing ? "Save Changes" : "Add Address"}

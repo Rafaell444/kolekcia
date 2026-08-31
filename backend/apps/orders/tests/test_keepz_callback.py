@@ -84,26 +84,6 @@ class KeepzCallbackTests(TestCase):
         self.assertEqual(paid_results[0]["payment_status"], PaymentSession.STATUS_SUCCESS)
 
     @patch("apps.orders.keepz.get_keepz_order_status")
-    def test_customer_return_reconciles_a_successful_payment_without_callback(self, get_status):
-        self.client.force_authenticate(self.user)
-        get_status.return_value = {
-            "integratorOrderId": str(self.payment.integrator_order_id),
-            "status": "SUCCESS",
-            "transactionId": 67890,
-        }
-
-        response = self.client.post(f"/api/orders/{self.order.id}/payment-status/", {}, format="json")
-
-        self.assertEqual(response.status_code, 200)
-        self.payment.refresh_from_db()
-        self.order.refresh_from_db()
-        self.assertEqual(self.payment.status, PaymentSession.STATUS_SUCCESS)
-        self.assertEqual(self.order.status, "processing")
-        self.assertEqual(response.json()["order"]["payment_status"], PaymentSession.STATUS_SUCCESS)
-        self.assertEqual(response.json()["order"]["payment_transaction_id"], "67890")
-        self.assertIsNotNone(self.order.confirmation_email_sent_at)
-
-    @patch("apps.orders.keepz.get_keepz_order_status")
     def test_duplicate_success_sends_order_confirmation_once(self, get_status):
         self.client.force_authenticate(self.user)
         get_status.return_value = {

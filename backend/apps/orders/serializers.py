@@ -214,10 +214,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
     vendor_id = serializers.IntegerField(source="vendor.id", read_only=True, allow_null=True)
     vendor_name = serializers.CharField(source="vendor.name", read_only=True, allow_null=True, default="")
     shipment_id = serializers.IntegerField(source="shipment.id", read_only=True, allow_null=True)
+    refundable_quantity = serializers.IntegerField(read_only=True)
+    unit_refund_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model = OrderItem
-        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "gift_wrap_note", "gift_wrap_image_url", "processing_option", "processing_fee", "processing_label", "processing_days", "vendor_id", "vendor_name", "shipment_id")
+        fields = ("id", "product_title", "product_image", "artist_name", "size_label", "finish_label", "frame_label", "price", "quantity", "line_total", "gift_wrap", "gift_wrap_note", "gift_wrap_image_url", "processing_option", "processing_fee", "processing_label", "processing_days", "vendor_id", "vendor_name", "shipment_id", "refunded_quantity", "refundable_quantity", "unit_refund_amount")
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
@@ -236,6 +238,7 @@ class OrderSerializer(serializers.ModelSerializer):
     payment_status = serializers.SerializerMethodField()
     payment_paid_at = serializers.SerializerMethodField()
     payment_transaction_id = serializers.SerializerMethodField()
+    payment_review_reason = serializers.SerializerMethodField()
 
     def _latest_checkout_payment(self, obj):
         cached = getattr(obj, "_latest_checkout_payment_cache", None)
@@ -261,6 +264,13 @@ class OrderSerializer(serializers.ModelSerializer):
         payment = self._latest_checkout_payment(obj)
         return payment.provider_transaction_id if payment else ""
 
+    def get_payment_review_reason(self, obj):
+        """Why a payment was quarantined, so admins can act without the DB."""
+        payment = self._latest_checkout_payment(obj)
+        if not payment or payment.status != PaymentSession.STATUS_NEEDS_REVIEW:
+            return ""
+        return payment.last_error
+
     class Meta:
         model = Order
         fields = (
@@ -270,7 +280,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "shipping_email", "shipping_phone",
             "subtotal", "discount", "delivery_type", "delivery_price", "gift_wrap_total", "processing_fee_total", "currency", "total",
             "promo_code_str", "tracking_code", "payment_status", "payment_paid_at",
-            "payment_transaction_id", "confirmation_email_sent_at", "created_at",
+            "payment_transaction_id", "payment_review_reason",
+            "confirmation_email_sent_at", "refunded_total", "created_at",
         )
         read_only_fields = ("id", "order_number", "status", "subtotal", "discount", "total", "created_at")
 

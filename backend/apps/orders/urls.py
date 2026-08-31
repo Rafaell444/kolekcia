@@ -7,7 +7,6 @@ from .views import (
     CheckoutView,
     OrderListView,
     OrderDetailView,
-    OrderPaymentReconcileView,
     CustomOrderCreateView,
     CustomOrderListView,
     CustomOrderDetailView,
@@ -19,6 +18,7 @@ from .views import (
     ShopSettingsPublicView,
     GiftWrapImageUploadView,
     KeepzCallbackView,
+    OrderPaymentStatusView,
 )
 
 app_name = "orders"
@@ -31,9 +31,9 @@ urlpatterns = [
     path("cart/reprice/", CartRepriceView.as_view(), name="cart-reprice"),
     path("checkout/", CheckoutView.as_view(), name="checkout"),
     path("payments/keepz/callback/", KeepzCallbackView.as_view(), name="keepz-callback"),
-    path("<uuid:pk>/payment-status/", OrderPaymentReconcileView.as_view(), name="order-payment-status"),
     path("", OrderListView.as_view(), name="order-list"),
     path("<uuid:pk>/", OrderDetailView.as_view(), name="order-detail"),
+    path("<uuid:pk>/status/", OrderPaymentStatusView.as_view(), name="order-payment-status"),
     path("custom/", CustomOrderCreateView.as_view(), name="custom-order"),
     path("custom/upload/", CustomOrderImageUploadView.as_view(), name="custom-order-upload"),
     path("custom/mine/", CustomOrderListView.as_view(), name="custom-order-list"),

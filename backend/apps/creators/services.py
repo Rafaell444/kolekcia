@@ -270,8 +270,14 @@ def credit_creator_for_paid_order(order) -> bool:
 
 
 @transaction.atomic
-def clawback_creator_for_order(order) -> bool:
-    """Reverse credit if order is cancelled after payment credit."""
+def clawback_creator_for_order(order, *, fraction: Decimal | None = None) -> bool:
+    """Reverse creator credit when an order is cancelled or refunded.
+
+    ``fraction`` scales the clawback for a partial refund. Repeated partial
+    clawbacks accumulate and are capped at the original credit, so a creator can
+    never be charged back more than they were paid.
+    """
+    from django.db.models import Sum
     from apps.creators.models import CreatorLedgerEntry
 
     credit = (
@@ -281,21 +287,37 @@ def clawback_creator_for_order(order) -> bool:
     )
     if not credit:
         return False
-    if CreatorLedgerEntry.objects.filter(
+
+    already = CreatorLedgerEntry.objects.filter(
         order=order, entry_type=CreatorLedgerEntry.TYPE_CLAWBACK
-    ).exists():
+    ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+
+    remaining = Decimal(credit.amount) - Decimal(already)
+    if remaining <= 0:
+        return False
+
+    if fraction is None or fraction >= 1:
+        amount = remaining
+        note = f"Clawback for cancelled order {order.order_number}"
+    else:
+        share = (Decimal(credit.amount) * Decimal(fraction)).quantize(Decimal("0.01"))
+        amount = min(share, remaining)
+        note = (
+            f"Partial clawback ({fraction:.2%} of order {order.order_number})"
+        )
+    if amount <= 0:
         return False
 
     CreatorLedgerEntry.objects.create(
         creator=credit.creator,
         entry_type=CreatorLedgerEntry.TYPE_CLAWBACK,
-        amount=credit.amount,
+        amount=amount,
         currency=credit.currency,
         order=order,
         order_number=order.order_number,
         buyer_email=credit.buyer_email,
         product_subtotal=credit.product_subtotal,
         discount_percent=credit.discount_percent,
-        note=f"Clawback for cancelled order {order.order_number}",
+        note=note,
     )
     return True

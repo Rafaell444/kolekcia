@@ -2,6 +2,7 @@ import base64
 import json
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -24,7 +25,21 @@ class KeepzConfigurationError(RuntimeError):
 class KeepzGatewayError(RuntimeError):
     def __init__(self, message: str, payload: dict[str, Any] | None = None):
         super().__init__(message)
+        self.message = message
         self.payload = payload or {}
+
+    def __str__(self) -> str:
+        """Include the gateway's own reason.
+
+        Without it an operator only sees "request failed" and cannot tell a
+        permission problem ("Refund not allowed") from a transient outage.
+        """
+        reason = self.payload.get("message") or self.payload.get("error")
+        code = self.payload.get("statusCode") or self.payload.get("code")
+        if not reason:
+            return self.message
+        suffix = f"{reason} (Keepz code {code})" if code else str(reason)
+        return f"{self.message} Keepz said: {suffix}"
 
 
 @dataclass(frozen=True)
@@ -137,16 +152,32 @@ def _frontend_url(path: str) -> str:
 
 
 def _apply_dynamic_urls(payload: dict[str, Any], success_path: str, fail_path: str) -> None:
-    """Include per-order URLs only when Keepz enabled that permission."""
+    """Include per-order customer redirects only when Keepz enabled them."""
     if not getattr(settings, "KEEPZ_DYNAMIC_URLS", False):
         return
     payload.update(
         {
             "successRedirectUri": _frontend_url(success_path),
             "failRedirectUri": _frontend_url(fail_path),
-            "callbackUri": _absolute_url(reverse("orders:keepz-callback")),
         }
     )
+
+
+def _apply_order_expiry(payload: dict[str, Any]) -> None:
+    """Bound how long the customer may pay for, matching our stock reservation.
+
+    Keepz rejects `validUntil` with error 6032 unless the integrator has been
+    granted permission, so this stays opt-in. Without it the order remains
+    payable on Keepz's own schedule and we rely on the reconciliation job plus
+    the manual-review fallback instead.
+    """
+    if not getattr(settings, "KEEPZ_ORDER_EXPIRY_ENABLED", False):
+        return
+    from django.utils import timezone
+
+    minutes = max(1, int(getattr(settings, "KEEPZ_PAYMENT_WINDOW_MINUTES", 5)))
+    expires_at = timezone.localtime(timezone.now() + timedelta(minutes=minutes))
+    payload["validUntil"] = expires_at.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _is_georgian_market(*, country: str = "", currency: str = "") -> bool:
@@ -322,6 +353,7 @@ def create_keepz_order_for_checkout(payment_session, request=None) -> KeepzCreat
         },
     }
     _apply_dynamic_urls(payload, success_path, fail_path)
+    _apply_order_expiry(payload)
     if settings.KEEPZ_DIRECT_LINK_PROVIDER:
         payload["directLinkProvider"] = settings.KEEPZ_DIRECT_LINK_PROVIDER
     if settings.KEEPZ_COMMISSION_TYPE:

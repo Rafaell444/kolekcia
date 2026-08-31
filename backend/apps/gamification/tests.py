@@ -388,7 +388,12 @@ class LoyaltyServiceTests(TestCase):
         self.assertEqual(PointTransaction.objects.filter(transaction_type=PointTransaction.TYPE_SPENT).count(), 0)
         payment = PaymentSession.objects.get(purpose=PaymentSession.PURPOSE_POINTS_SHIPPING)
         self.assertEqual(payment.status, PaymentSession.STATUS_FAILED)
-        self.assertEqual(payment.last_error, "Keepz points shipping order creation failed.")
+        # The gateway's own reason is kept so an operator can tell a permission
+        # problem from a transient outage.
+        self.assertIn(
+            "Keepz points shipping order creation failed.", payment.last_error
+        )
+        self.assertIn("permission to use split functionality", payment.last_error)
 
     def test_free_pickup_physical_redemption_deducts_points_stock_and_creates_fulfillment(self):
         self.user.spendable_points = 500

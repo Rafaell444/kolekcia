@@ -28,6 +28,8 @@ type ContactSidebarContent = { promiseTitle?: string; promiseBody?: string; home
 type ContactFaqIntroContent = { eyebrow?: string; heading?: string; body?: string }
 type ContactShippingContent = { cards?: InfoCard[] }
 type ContactBottomCtaContent = { eyebrow?: string; heading?: string; body?: string; cta?: string }
+type ContactField = "first_name" | "last_name" | "email" | "message" | "attachment" | "detail"
+type ContactErrors = Partial<Record<ContactField, string>>
 
 // ── Contact reason cards ──────────────────────────────────
 const CONTACT_REASONS = [
@@ -199,6 +201,10 @@ const CONTACT_UI: Record<string, Record<string, string>> = {
     shipping: "Shipping Guide", artist: "Artist Resources",
     topicOrder: "Order Issue", topicShipping: "Shipping & Tracking", topicReturns: "Returns & Refunds",
     topicArtist: "Artist Support", topicGeneral: "General Enquiry", topicPress: "Press & Partnerships",
+    firstRequired: "First name is required.", lastRequired: "Last name is required.",
+    emailRequired: "Email address is required.", emailInvalid: "Enter a valid email address.",
+    messageRequired: "Message is required.", messageMin: "Message must be at least 15 characters.",
+    attachmentTooLarge: "Image must be smaller than 5 MB.", sendFailed: "Failed to send. Please check the highlighted fields.",
   },
   ka: {
     help: "რაში შეგვიძლია დაგეხმაროთ?", topic: "აირჩიეთ თემა...", first: "სახელი", last: "გვარი",
@@ -211,6 +217,10 @@ const CONTACT_UI: Record<string, Record<string, string>> = {
     shipping: "მიწოდების გზამკვლევი", artist: "რესურსები არტისტებისთვის",
     topicOrder: "შეკვეთის პრობლემა", topicShipping: "მიწოდება და ტრეკინგი", topicReturns: "დაბრუნება და თანხის ანაზღაურება",
     topicArtist: "არტისტების მხარდაჭერა", topicGeneral: "ზოგადი შეკითხვა", topicPress: "მედია და პარტნიორობა",
+    firstRequired: "სახელის ველი აუცილებელია.", lastRequired: "გვარის ველი აუცილებელია.",
+    emailRequired: "ელფოსტის ველი აუცილებელია.", emailInvalid: "შეიყვანეთ სწორი ელფოსტის ფორმატი.",
+    messageRequired: "შეტყობინების ველი აუცილებელია.", messageMin: "შეტყობინება მინიმუმ 15 სიმბოლო უნდა იყოს.",
+    attachmentTooLarge: "სურათი 5 მბ-ზე ნაკლები უნდა იყოს.", sendFailed: "გაგზავნა ვერ მოხერხდა. შეამოწმეთ მონიშნული ველები.",
   },
   ru: {
     help: "С чем вам помочь?", topic: "Выберите тему...", first: "Имя", last: "Фамилия",
@@ -223,14 +233,20 @@ const CONTACT_UI: Record<string, Record<string, string>> = {
     shipping: "Информация о доставке", artist: "Ресурсы для художников",
     topicOrder: "Проблема с заказом", topicShipping: "Доставка и отслеживание", topicReturns: "Возврат и возмещение",
     topicArtist: "Поддержка художников", topicGeneral: "Общий вопрос", topicPress: "Пресса и партнерство",
+    firstRequired: "Введите имя.", lastRequired: "Введите фамилию.",
+    emailRequired: "Введите электронную почту.", emailInvalid: "Введите корректный адрес электронной почты.",
+    messageRequired: "Введите сообщение.", messageMin: "Сообщение должно быть не короче 15 символов.",
+    attachmentTooLarge: "Изображение должно быть меньше 5 МБ.", sendFailed: "Не удалось отправить. Проверьте выделенные поля.",
   },
 }
 
 function ContactForm({ ui }: { ui: Record<string, string> }) {
   const [reason, setReason] = useState("")
+  const [prefilledOrder, setPrefilledOrder] = useState("")
   const [submitted, setSubmitted] = useState(false)
   const [sending, setSending] = useState(false)
   const [formError, setFormError] = useState("")
+  const [errors, setErrors] = useState<ContactErrors>({})
   const [attachment, setAttachment] = useState<File | null>(null)
   const fileRef = React.useRef<HTMLInputElement>(null)
   const fnameRef = React.useRef<HTMLInputElement>(null)
@@ -239,38 +255,101 @@ function ContactForm({ ui }: { ui: Record<string, string> }) {
   const orderRef = React.useRef<HTMLInputElement>(null)
   const msgRef   = React.useRef<HTMLTextAreaElement>(null)
 
+  // Deep links such as /contact?order=ORD-7721&reason=returns come from the
+  // "Request a return" action on a customer's order.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const order = params.get("order")
+    if (order) setPrefilledOrder(order)
+    if (params.get("reason") === "returns") setReason("Returns & Refunds")
+  }, [])
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     if (file && file.size > 5 * 1024 * 1024) {
-      setFormError("Image must be smaller than 5 MB.")
+      setErrors((current) => ({ ...current, attachment: ui.attachmentTooLarge }))
+      setFormError("")
       return
     }
     setFormError("")
+    setErrors((current) => ({ ...current, attachment: undefined }))
     setAttachment(file)
+  }
+
+  function validateForm(values: { first_name: string; last_name: string; email: string; message: string }): ContactErrors {
+    const nextErrors: ContactErrors = {}
+    if (!values.first_name.trim()) nextErrors.first_name = ui.firstRequired
+    if (!values.last_name.trim()) nextErrors.last_name = ui.lastRequired
+    if (!values.email.trim()) {
+      nextErrors.email = ui.emailRequired
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
+      nextErrors.email = ui.emailInvalid
+    }
+    if (!values.message.trim()) {
+      nextErrors.message = ui.messageRequired
+    } else if (values.message.trim().length < 15) {
+      nextErrors.message = ui.messageMin
+    }
+    return nextErrors
+  }
+
+  function fieldClass(field: ContactField): string {
+    return errors[field]
+      ? "border-dp-accent-cta focus:border-dp-accent-cta"
+      : "border-dp-border focus:border-dp-border-hover"
+  }
+
+  function formatServerErrors(payload: unknown): ContactErrors {
+    if (!payload || typeof payload !== "object") return { detail: ui.sendFailed }
+    const data = payload as Record<string, unknown>
+    const nextErrors: ContactErrors = {}
+    for (const field of ["first_name", "last_name", "email", "message", "attachment"] as ContactField[]) {
+      const value = data[field]
+      if (Array.isArray(value)) nextErrors[field] = String(value[0] ?? "")
+      else if (typeof value === "string") nextErrors[field] = value
+    }
+    if (typeof data.detail === "string") nextErrors.detail = data.detail
+    if (!Object.keys(nextErrors).length) nextErrors.detail = ui.sendFailed
+    return nextErrors
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const values = {
+      first_name: fnameRef.current?.value ?? "",
+      last_name: lnameRef.current?.value ?? "",
+      email: emailRef.current?.value ?? "",
+      message: msgRef.current?.value ?? "",
+    }
+    const nextErrors = validateForm(values)
+    if (attachment && attachment.size > 5 * 1024 * 1024) nextErrors.attachment = ui.attachmentTooLarge
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length) {
+      setFormError(ui.sendFailed)
+      return
+    }
     setSending(true)
     setFormError("")
     try {
       const base = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
       const form = new FormData()
       form.append("reason", reason || "General Enquiry")
-      form.append("first_name", fnameRef.current?.value ?? "")
-      form.append("last_name", lnameRef.current?.value ?? "")
-      form.append("email", emailRef.current?.value ?? "")
-      form.append("order_number", orderRef.current?.value ?? "")
-      form.append("message", msgRef.current?.value ?? "")
+      form.append("first_name", values.first_name.trim())
+      form.append("last_name", values.last_name.trim())
+      form.append("email", values.email.trim())
+      form.append("order_number", orderRef.current?.value.trim() ?? "")
+      form.append("message", values.message.trim())
       if (attachment) form.append("attachment", attachment)
       const res = await fetch(`${base}/contact/`, { method: "POST", body: form })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { detail?: string }
-        throw new Error(err.detail ?? "Failed to send.")
+        const err = await res.json().catch(() => ({}))
+        const serverErrors = formatServerErrors(err)
+        setErrors(serverErrors)
+        throw new Error(serverErrors.detail ?? ui.sendFailed)
       }
       setSubmitted(true)
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to send. Please try again.")
+      setFormError(err instanceof Error ? err.message : ui.sendFailed)
     } finally {
       setSending(false)
     }
@@ -328,8 +407,11 @@ function ContactForm({ ui }: { ui: Record<string, string> }) {
             required
             ref={fnameRef}
             placeholder="Jane"
-            className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+            aria-invalid={Boolean(errors.first_name)}
+            onChange={() => setErrors((current) => ({ ...current, first_name: undefined, detail: undefined }))}
+            className={`w-full px-4 py-3 bg-dp-bg-elevated border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none transition-colors ${fieldClass("first_name")}`}
           />
+          {errors.first_name && <p className="mt-1 text-[11px] text-dp-accent-cta">{errors.first_name}</p>}
         </div>
         <div>
           <label htmlFor="lname" className="block text-[11px] font-black uppercase tracking-[0.16em] text-dp-text-tertiary mb-2">{ui.last} *</label>
@@ -338,8 +420,11 @@ function ContactForm({ ui }: { ui: Record<string, string> }) {
             required
             ref={lnameRef}
             placeholder="Doe"
-            className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+            aria-invalid={Boolean(errors.last_name)}
+            onChange={() => setErrors((current) => ({ ...current, last_name: undefined, detail: undefined }))}
+            className={`w-full px-4 py-3 bg-dp-bg-elevated border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none transition-colors ${fieldClass("last_name")}`}
           />
+          {errors.last_name && <p className="mt-1 text-[11px] text-dp-accent-cta">{errors.last_name}</p>}
         </div>
       </div>
 
@@ -351,8 +436,11 @@ function ContactForm({ ui }: { ui: Record<string, string> }) {
           required
           ref={emailRef}
           placeholder="jane@example.com"
-          className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
+          aria-invalid={Boolean(errors.email)}
+          onChange={() => setErrors((current) => ({ ...current, email: undefined, detail: undefined }))}
+          className={`w-full px-4 py-3 bg-dp-bg-elevated border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none transition-colors ${fieldClass("email")}`}
         />
+        {errors.email && <p className="mt-1 text-[11px] text-dp-accent-cta">{errors.email}</p>}
       </div>
 
       <div>
@@ -360,6 +448,8 @@ function ContactForm({ ui }: { ui: Record<string, string> }) {
         <input
           id="order"
           ref={orderRef}
+          defaultValue={prefilledOrder}
+          key={prefilledOrder}
           placeholder="e.g. ORD-7721"
           className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
         />
@@ -373,8 +463,11 @@ function ContactForm({ ui }: { ui: Record<string, string> }) {
           ref={msgRef}
           rows={5}
           placeholder={ui.messagePlaceholder}
-          className="w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors resize-none"
+          aria-invalid={Boolean(errors.message)}
+          onChange={() => setErrors((current) => ({ ...current, message: undefined, detail: undefined }))}
+          className={`w-full px-4 py-3 bg-dp-bg-elevated border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none transition-colors resize-none ${fieldClass("message")}`}
         />
+        {errors.message && <p className="mt-1 text-[11px] text-dp-accent-cta">{errors.message}</p>}
       </div>
 
       <div>
@@ -390,6 +483,7 @@ function ContactForm({ ui }: { ui: Record<string, string> }) {
           )}
         </div>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+        {errors.attachment && <p className="mt-1 text-[11px] text-dp-accent-cta">{errors.attachment}</p>}
       </div>
 
       {formError && <p className="text-[12px] text-dp-accent-cta">{formError}</p>}
