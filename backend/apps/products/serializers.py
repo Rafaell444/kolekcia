@@ -283,10 +283,10 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         return list(obj.categories.values_list("slug", flat=True))
 
     def _resolve_vendor(self, validated_data):
+        v_slug = validated_data.pop("vendor_slug_input", "").strip()
         request = self.context.get("request")
         if request and not request.user.is_staff and hasattr(request.user, "vendor_profile"):
             return request.user.vendor_profile
-        v_slug = validated_data.pop("vendor_slug_input", "").strip()
         if not v_slug:
             return None
         return Vendor.objects.filter(slug=v_slug).first()

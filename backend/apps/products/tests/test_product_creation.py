@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from django.test import TestCase
 
 from apps.products.filters import ProductFilter
@@ -76,6 +78,23 @@ class ProductCreationTests(TestCase):
         self.assertEqual(product.material_ka, "")
         self.assertEqual(product.product_details, [])
         self.assertEqual(product.product_details_ka, [])
+
+    def test_vendor_product_creation_consumes_admin_vendor_slug_input(self):
+        user = User.objects.create_user(email="vendor-create@example.com", password="test-password")
+        vendor = Vendor.objects.create(user=user, name="Vendor Create", slug="vendor-create")
+        serializer = ProductDetailSerializer(
+            data={
+                "title": "Vendor-created product",
+                "base_price": "75.00",
+                "vendor_slug_input": "vendor-create",
+            },
+            context={"request": SimpleNamespace(user=user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+
+        self.assertEqual(product.vendor, vendor)
 
     def test_translated_product_and_variant_fields_are_serialized(self):
         product = Product.objects.create(
