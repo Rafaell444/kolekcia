@@ -61,6 +61,9 @@ type OrderDetail = {
   total: string
   promo_code_str: string | null
   tracking_code: string
+  payment_status: string
+  payment_paid_at: string | null
+  payment_transaction_id: string
   created_at: string
 }
 
@@ -82,8 +85,20 @@ export default function AccountOrderDetailPage(): React.ReactElement {
     setLoading(true)
     setError("")
     authFetch<OrderDetail>(`/orders/${orderId}/`)
-      .then((data) => {
-        if (!cancelled) setOrder(data)
+      .then(async (data) => {
+        if (cancelled) return
+        setOrder(data)
+        const returnedFromPayment = new URLSearchParams(window.location.search).get("payment") === "success"
+        if (returnedFromPayment && data.payment_status !== "success") {
+          try {
+            const reconciled = await authFetch<{ order: OrderDetail }>(`/orders/${orderId}/payment-status/`, {
+              method: "POST",
+            })
+            if (!cancelled) setOrder(reconciled.order)
+          } catch {
+            // Keep the order visible as pending if provider verification is delayed.
+          }
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -140,6 +155,18 @@ export default function AccountOrderDetailPage(): React.ReactElement {
               <span className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 border border-dp-border rounded-sm text-dp-text-primary w-fit capitalize">
                 {order.status}
               </span>
+            </div>
+
+            <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary">Payment status</p>
+                <p className={`text-[14px] font-semibold mt-1 ${order.payment_status === "success" ? "text-dp-success" : "text-dp-text-primary"}`}>
+                  {order.payment_status === "success" ? "Paid" : order.payment_status.replace(/_/g, " ")}
+                </p>
+              </div>
+              {order.payment_transaction_id && (
+                <p className="text-[11px] text-dp-text-tertiary font-mono">Transaction {order.payment_transaction_id}</p>
+              )}
             </div>
 
             <div className="bg-dp-bg-surface border border-dp-border rounded-sm divide-y divide-dp-border">

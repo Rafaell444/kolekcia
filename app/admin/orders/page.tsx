@@ -3,16 +3,17 @@
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { Truck, CheckCircle, Clock, Package, XCircle, Search, Eye, X } from "lucide-react"
+import { Truck, CheckCircle, Clock, Package, XCircle, Search, Eye, X, CreditCard } from "lucide-react"
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
 
-type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded"
+type OrderStatus = "pending_payment" | "payment_failed" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded"
 type OrderItem = { id: number; processing_option: string }
 type AdminOrder = {
   id: string; order_number: string; status: OrderStatus
   shipping_name: string; shipping_email: string; shipping_country?: string
   total: string; currency?: string; created_at: string; tracking_code: string
+  payment_status: string; payment_paid_at?: string | null
   items?: OrderItem[]
 }
 
@@ -39,12 +40,24 @@ function getShipByDate(order: AdminOrder): Date | null {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size?: number }> }> = {
-  pending:    { label: "Pending",    color: "text-dp-accent-gold",  bg: "bg-dp-accent-gold/10 border-dp-accent-gold/30",  Icon: Clock       },
+  pending_payment: { label: "Awaiting payment", color: "text-dp-accent-gold", bg: "bg-dp-accent-gold/10 border-dp-accent-gold/30", Icon: Clock },
+  payment_failed: { label: "Payment failed", color: "text-dp-accent-cta", bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30", Icon: XCircle },
   processing: { label: "Processing", color: "text-blue-400",        bg: "bg-blue-400/10 border-blue-400/30",              Icon: Package     },
   shipped:    { label: "Shipped",    color: "text-dp-accent-cta",   bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30",    Icon: Truck       },
   delivered:  { label: "Delivered",  color: "text-dp-success",      bg: "bg-dp-success/10 border-dp-success/30",          Icon: CheckCircle },
   cancelled:  { label: "Cancelled",  color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",             Icon: XCircle     },
   refunded:   { label: "Refunded",   color: "text-orange-400",      bg: "bg-orange-400/10 border-orange-400/30",           Icon: XCircle     },
+}
+
+const PAYMENT_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  success: { label: "Paid", color: "text-dp-success" },
+  created: { label: "Created", color: "text-dp-accent-gold" },
+  redirected: { label: "Pending", color: "text-dp-accent-gold" },
+  failed: { label: "Failed", color: "text-dp-accent-cta" },
+  canceled: { label: "Canceled", color: "text-dp-text-tertiary" },
+  expired: { label: "Expired", color: "text-dp-text-tertiary" },
+  refunded: { label: "Refunded", color: "text-orange-400" },
+  not_required: { label: "Not required", color: "text-dp-text-tertiary" },
 }
 
 function ShipModal({
@@ -204,12 +217,13 @@ export default function AdminOrdersPage(): React.ReactElement {
           <div className="animate-pulse space-y-2">{[1,2,3,4,5].map((i) => <div key={i} className="h-12 bg-dp-bg-elevated rounded-sm" />)}</div>
         ) : (
           <div className="bg-dp-bg-surface border border-dp-border rounded-sm overflow-x-auto">
-            <table className="w-full text-[13px] min-w-[760px]">
+            <table className="w-full text-[13px] min-w-[840px]">
               <thead className="border-b border-dp-border">
                 <tr className="text-[10px] font-bold uppercase tracking-widest text-dp-text-tertiary">
                   <th className="text-left px-4 py-3">Order</th>
                   <th className="text-left px-4 py-3">Customer</th>
                   <th className="text-left px-4 py-3">Status</th>
+                  <th className="text-left px-4 py-3">Payment</th>
                   <th className="text-left px-4 py-3">Total</th>
                   <th className="text-left px-4 py-3">Ordered</th>
                   <th className="text-left px-4 py-3">Ship by</th>
@@ -220,7 +234,8 @@ export default function AdminOrdersPage(): React.ReactElement {
               </thead>
               <tbody className="divide-y divide-dp-border">
                 {filtered.map((o) => {
-                  const cfg = STATUS_CONFIG[o.status] ?? STATUS_CONFIG.pending
+                  const cfg = STATUS_CONFIG[o.status] ?? STATUS_CONFIG.pending_payment
+                  const paymentCfg = PAYMENT_STATUS_CONFIG[o.payment_status] ?? PAYMENT_STATUS_CONFIG.redirected
                   return (
                     <tr key={o.id} className="hover:bg-dp-bg-elevated transition-colors">
                       <td className="px-4 py-3">
@@ -233,6 +248,11 @@ export default function AdminOrdersPage(): React.ReactElement {
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border text-[10px] font-bold uppercase tracking-widest ${cfg.color} ${cfg.bg}`}>
                           <cfg.Icon size={10} /> {cfg.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${paymentCfg.color}`}>
+                          <CreditCard size={11} /> {paymentCfg.label}
                         </span>
                       </td>
                       <td className="px-4 py-3 font-bold">

@@ -398,7 +398,7 @@ class AdminOrderListView(AdminNoPaginationMixin, generics.ListAPIView):
 
     def get_queryset(self):
         from apps.orders.models import Order
-        qs = Order.objects.prefetch_related("items", "status_history").all()
+        qs = Order.objects.prefetch_related("items", "status_history", "payment_sessions").all()
         if not self.request.user.is_staff and hasattr(self.request.user, "vendor_profile"):
             vendor = self.request.user.vendor_profile
             qs = qs.filter(items__vendor=vendor).distinct()
@@ -410,7 +410,7 @@ class AdminOrderUpdateView(APIView):
 
     def _get_order_qs(self, request):
         from apps.orders.models import Order
-        qs = Order.objects.prefetch_related("items__vendor", "shipments__vendor", "status_history")
+        qs = Order.objects.prefetch_related("items__vendor", "shipments__vendor", "status_history", "payment_sessions")
         if not request.user.is_staff:
             vendor = request.user.vendor_profile
             qs = qs.filter(items__vendor=vendor).distinct()

@@ -19,18 +19,23 @@ type Order = {
   items: OrderItem[]
   tracking_code: string
   currency?: string
+  payment_status: string
 }
 
 const STATUS_COLORS: Record<string, string> = {
   delivered:  "text-dp-success bg-dp-success/10 border-dp-success/30",
   shipped:    "text-dp-accent-cta bg-dp-accent-cta/10 border-dp-accent-cta/30",
   processing: "text-dp-accent-gold bg-dp-accent-gold/10 border-dp-accent-gold/30",
+  pending_payment: "text-dp-accent-gold bg-dp-accent-gold/10 border-dp-accent-gold/30",
+  payment_failed: "text-dp-accent-cta bg-dp-accent-cta/10 border-dp-accent-cta/30",
   cancelled:  "text-dp-accent-cta/70 bg-dp-accent-cta/5 border-dp-accent-cta/20",
   refunded:   "text-orange-400 bg-orange-400/10 border-orange-400/30",
 }
 
 const STATUS_LABELS: Record<string, string> = {
   processing: "Processing",
+  pending_payment: "Awaiting payment",
+  payment_failed: "Payment failed",
   shipped:    "Shipped",
   delivered:  "Delivered",
   cancelled:  "Cancelled",
@@ -81,6 +86,9 @@ export default function OrdersPage(): React.ReactElement {
                   <p className="text-[12px] text-dp-text-tertiary">
                     {new Date(order.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
                     {" · "}{order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                  </p>
+                  <p className={`text-[11px] mt-1 font-semibold ${order.payment_status === "success" ? "text-dp-success" : "text-dp-text-tertiary"}`}>
+                    Payment: {order.payment_status === "success" ? "Paid" : order.payment_status.replace(/_/g, " ")}
                   </p>
                   {order.tracking_code && (
                     <p className="text-[11px] text-dp-text-tertiary mt-1">Tracking: <strong>{order.tracking_code}</strong></p>

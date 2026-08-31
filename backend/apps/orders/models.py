@@ -104,6 +104,7 @@ class Order(models.Model):
     review_requested_at = models.DateTimeField(null=True, blank=True)
     shipped_at = models.DateTimeField(null=True, blank=True)
     review_requested_at = models.DateTimeField(null=True, blank=True)
+    confirmation_email_sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

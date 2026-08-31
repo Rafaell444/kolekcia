@@ -3,6 +3,7 @@ import random
 import uuid
 import hashlib
 import json
+import logging
 from decimal import Decimal
 from django.conf import settings as django_settings
 from django.db import transaction
@@ -34,6 +35,9 @@ from .inventory import (
     release_order_stock,
     reserve_order_stock,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _absolute_product_image(url: str, request=None) -> str:
@@ -400,50 +404,63 @@ def _payment_response(payment: PaymentSession, order: Order) -> Response:
     )
 
 
-def _finalize_paid_order(order: Order, payment: PaymentSession | None = None) -> None:
-    if order.status == "processing":
-        return
-    finalize_order_stock(order)
-    order.status = "processing"
-    order.save(update_fields=["status"])
-    OrderStatusHistory.objects.create(
-        order=order,
-        status="processing",
-        note="Payment successful — order is being processed.",
-        changed_by=order.user,
-    )
+def _send_order_confirmation(order: Order) -> bool:
+    if order.confirmation_email_sent_at:
+        return True
     try:
-        from apps.creators.services import credit_creator_for_paid_order
-        credit_creator_for_paid_order(order)
-    except Exception:
-        pass
-    if order.promo_code_id and order.user_id:
-        from apps.promo.models import PromoCodeUsage
-        PromoCodeUsage.objects.get_or_create(promo=order.promo_code, user=order.user, order=order)
-    try:
-        from apps.gamification.services import create_pending_purchase_points
-        create_pending_purchase_points(order)
-    except Exception:
-        pass
-    try:
-        from apps.referrals.services import process_referral_conversion
-        process_referral_conversion(order.user)
-    except Exception:
-        pass
-    try:
-        from apps.emails.service import send_template_email, get_template
+        from django.utils import timezone
+        from apps.emails.service import send_template_email
         from apps.emails.order_context import build_order_email_context
-        first_item = order.items.select_related("vendor").first()
-        vendor_obj = first_item.vendor if first_item else None
-        if get_template("order_confirmed", vendor=vendor_obj):
-            send_template_email(
-                "order_confirmed",
-                order.shipping_email,
-                build_order_email_context(order),
-                vendor=vendor_obj,
-            )
+
+        items = list(order.items.select_related("vendor").all())
+        vendor_ids = {item.vendor_id for item in items if item.vendor_id}
+        vendor_obj = items[0].vendor if len(vendor_ids) == 1 and items else None
+        sent = send_template_email(
+            "order_confirmed",
+            order.shipping_email,
+            build_order_email_context(order),
+            vendor=vendor_obj,
+        )
+        if sent:
+            order.confirmation_email_sent_at = timezone.now()
+            order.save(update_fields=["confirmation_email_sent_at"])
+        return sent
     except Exception:
-        pass
+        logger.exception("Order confirmation email failed for order %s", order.order_number)
+        return False
+
+
+def _finalize_paid_order(order: Order, payment: PaymentSession | None = None) -> None:
+    already_finalized = order.status in ("processing", "shipped", "delivered")
+    if not already_finalized:
+        finalize_order_stock(order)
+        order.status = "processing"
+        order.save(update_fields=["status"])
+        OrderStatusHistory.objects.create(
+            order=order,
+            status="processing",
+            note="Payment successful — order is being processed.",
+            changed_by=order.user,
+        )
+        try:
+            from apps.creators.services import credit_creator_for_paid_order
+            credit_creator_for_paid_order(order)
+        except Exception:
+            logger.exception("Creator credit failed for paid order %s", order.order_number)
+        if order.promo_code_id and order.user_id:
+            from apps.promo.models import PromoCodeUsage
+            PromoCodeUsage.objects.get_or_create(promo=order.promo_code, user=order.user, order=order)
+        try:
+            from apps.gamification.services import create_pending_purchase_points
+            create_pending_purchase_points(order)
+        except Exception:
+            logger.exception("Pending points failed for paid order %s", order.order_number)
+        try:
+            from apps.referrals.services import process_referral_conversion
+            process_referral_conversion(order.user)
+        except Exception:
+            logger.exception("Referral conversion failed for paid order %s", order.order_number)
+    _send_order_confirmation(order)
 
 
 def _mark_order_payment_failed(order: Order, note: str = "Payment failed or was cancelled.") -> None:
@@ -957,21 +974,7 @@ class CheckoutView(APIView):
             except Exception:
                 pass
 
-            # Branded order confirmation email
-            try:
-                from apps.emails.service import send_template_email, get_template
-                from apps.emails.order_context import build_order_email_context
-                vendor = order.items.select_related("vendor").first()
-                vendor_obj = vendor.vendor if vendor else None
-                if get_template("order_confirmed", vendor=vendor_obj):
-                    send_template_email(
-                        "order_confirmed",
-                        order.shipping_email,
-                        build_order_email_context(order),
-                        vendor=vendor_obj,
-                    )
-            except Exception:
-                pass
+            _send_order_confirmation(order)
 
         if payment_required:
             return _payment_response(payment, order)
@@ -985,8 +988,7 @@ class OrderListView(generics.ListAPIView):
     def get_queryset(self):
         return (
             Order.objects.filter(user=self.request.user)
-            .exclude(status__in=("pending_payment", "payment_failed"))
-            .prefetch_related("items__vendor", "shipments__vendor", "status_history")
+            .prefetch_related("items__vendor", "shipments__vendor", "status_history", "payment_sessions")
         )
 
 
@@ -997,9 +999,149 @@ class OrderDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         return (
             Order.objects.filter(user=self.request.user)
-            .exclude(status__in=("pending_payment", "payment_failed"))
-            .prefetch_related("items__vendor", "shipments__vendor", "status_history")
+            .prefetch_related("items__vendor", "shipments__vendor", "status_history", "payment_sessions")
         )
+
+
+def _apply_verified_keepz_status(payment_id, provider_status, callback_payload=None) -> str:
+    provider_order_id = str(provider_status.get("integratorOrderId") or "")
+    keepz_status = str(provider_status.get("status") or "").upper()
+    terminal_failed_statuses = {"FAILED", "CANCELED", "EXPIRED"}
+
+    with transaction.atomic():
+        payment = (
+            PaymentSession.objects.select_for_update()
+            .select_related("order", "user")
+            .get(pk=payment_id)
+        )
+        if provider_order_id != str(payment.integrator_order_id):
+            raise ValueError("Keepz status identifier mismatch.")
+
+        if callback_payload is not None:
+            payment.callback_payload = callback_payload
+        payment.response_payload = {
+            **(payment.response_payload or {}),
+            "verified_status": provider_status,
+        }
+        transaction_id = provider_status.get("transactionId")
+        if callback_payload:
+            transaction_id = transaction_id or callback_payload.get("transactionId")
+        if transaction_id:
+            payment.provider_transaction_id = str(transaction_id)
+
+        if payment.status == PaymentSession.STATUS_SUCCESS and keepz_status != "SUCCESS":
+            return payment.status
+
+        if keepz_status == "SUCCESS":
+            from django.utils import timezone
+
+            payment.status = PaymentSession.STATUS_SUCCESS
+            payment.paid_at = payment.paid_at or timezone.now()
+            payment.save(update_fields=[
+                "status", "paid_at", "provider_transaction_id", "callback_payload",
+                "response_payload", "updated_at",
+            ])
+            if payment.order_id:
+                _finalize_paid_order(payment.order, payment)
+            elif payment.purpose == PaymentSession.PURPOSE_POINTS_SHIPPING and payment.related_id:
+                from apps.gamification.services import complete_shipping_payment_session
+
+                complete_shipping_payment_session(payment.user, payment.related_id)
+            elif payment.purpose == PaymentSession.PURPOSE_CUSTOM_ORDER and payment.related_id:
+                custom_order = CustomOrder.objects.select_for_update().filter(pk=payment.related_id).first()
+                if custom_order:
+                    custom_order.status = "paid"
+                    custom_order.paid_at = payment.paid_at
+                    custom_order.payment_url = ""
+                    custom_order.save(update_fields=["status", "paid_at", "payment_url"])
+            elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
+                from apps.auctions.models import Auction
+
+                auction = Auction.objects.select_for_update().filter(pk=payment.related_id).first()
+                if auction:
+                    auction.winner_payment_status = Auction.PAYMENT_PAID
+                    auction.status = Auction.STATUS_BOUGHT
+                    auction.paid_at = payment.paid_at
+                    if not auction.winning_amount:
+                        auction.winning_amount = auction.current_bid
+                    auction.save(update_fields=["winner_payment_status", "status", "paid_at", "winning_amount"])
+        elif keepz_status in terminal_failed_statuses:
+            from django.utils import timezone
+
+            if keepz_status == "CANCELED":
+                payment.status = PaymentSession.STATUS_CANCELED
+            elif keepz_status == "EXPIRED":
+                payment.status = PaymentSession.STATUS_EXPIRED
+            else:
+                payment.status = PaymentSession.STATUS_FAILED
+            payment.failed_at = payment.failed_at or timezone.now()
+            payment.save(update_fields=[
+                "status", "failed_at", "provider_transaction_id", "callback_payload",
+                "response_payload", "updated_at",
+            ])
+            if payment.order_id:
+                _mark_order_payment_failed(payment.order, f"Keepz payment status: {keepz_status}")
+            elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
+                from apps.auctions.models import Auction
+
+                Auction.objects.filter(pk=payment.related_id).update(winner_payment_status=Auction.PAYMENT_FAILED)
+        else:
+            payment.save(update_fields=[
+                "provider_transaction_id", "callback_payload", "response_payload", "updated_at",
+            ])
+
+    return payment.status
+
+
+class OrderPaymentReconcileView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [CheckoutThrottle]
+
+    def post(self, request, pk):
+        order = Order.objects.filter(pk=pk, user=request.user).first()
+        if not order:
+            return Response({"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+        payment = order.payment_sessions.filter(
+            provider=PaymentSession.PROVIDER_KEEPZ,
+            purpose=PaymentSession.PURPOSE_CHECKOUT,
+        ).order_by("-created_at").first()
+        if not payment:
+            return Response({"detail": "Payment session not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if payment.status == PaymentSession.STATUS_SUCCESS:
+            with transaction.atomic():
+                locked_order = Order.objects.select_for_update().get(pk=order.pk)
+                _finalize_paid_order(locked_order, payment)
+            verified_status = "SUCCESS"
+        elif payment.status in (
+            PaymentSession.STATUS_FAILED,
+            PaymentSession.STATUS_CANCELED,
+            PaymentSession.STATUS_EXPIRED,
+            PaymentSession.STATUS_REFUNDED,
+        ):
+            verified_status = payment.status.upper()
+        else:
+            from .keepz import KeepzGatewayError, get_keepz_order_status
+
+            try:
+                provider_status = get_keepz_order_status(str(payment.integrator_order_id))
+                _apply_verified_keepz_status(payment.pk, provider_status)
+            except KeepzGatewayError:
+                return Response(
+                    {"detail": "Could not verify payment status with the payment provider."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            verified_status = str(provider_status.get("status") or "").upper()
+
+        order = Order.objects.prefetch_related(
+            "items__vendor", "shipments__vendor", "status_history", "payment_sessions"
+        ).get(pk=order.pk)
+        return Response({
+            "verified_status": verified_status,
+            "order": OrderSerializer(order).data,
+        })
 
 
 class KeepzCallbackView(APIView):
@@ -1043,83 +1185,15 @@ class KeepzCallbackView(APIView):
                 {"detail": "Could not verify payment status with Keepz."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        if str(provider_status.get("integratorOrderId") or "") != str(payment.integrator_order_id):
-            return Response({"detail": "Keepz status identifier mismatch."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            _apply_verified_keepz_status(payment.pk, provider_status, request.data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        keepz_status = str(provider_status.get("status") or "").upper()
-        terminal_failed_statuses = {"FAILED", "CANCELED", "EXPIRED"}
-
-        with transaction.atomic():
-            payment = (
-                PaymentSession.objects.select_for_update()
-                .select_related("order", "user")
-                .get(pk=payment.pk)
-            )
-            payment.callback_payload = request.data
-            payment.response_payload = {
-                **(payment.response_payload or {}),
-                "verified_status": provider_status,
-            }
-            transaction_id = provider_status.get("transactionId") or request.data.get("transactionId")
-            if transaction_id:
-                payment.provider_transaction_id = str(transaction_id)
-
-            if keepz_status == "SUCCESS":
-                from django.utils import timezone
-                payment.status = PaymentSession.STATUS_SUCCESS
-                payment.paid_at = payment.paid_at or timezone.now()
-                payment.save(update_fields=[
-                    "status", "paid_at", "provider_transaction_id", "callback_payload",
-                    "response_payload", "updated_at",
-                ])
-                if payment.order_id:
-                    _finalize_paid_order(payment.order, payment)
-                elif payment.purpose == PaymentSession.PURPOSE_POINTS_SHIPPING and payment.related_id:
-                    from apps.gamification.services import complete_shipping_payment_session
-                    complete_shipping_payment_session(payment.user, payment.related_id)
-                elif payment.purpose == PaymentSession.PURPOSE_CUSTOM_ORDER and payment.related_id:
-                    custom_order = CustomOrder.objects.select_for_update().filter(pk=payment.related_id).first()
-                    if custom_order:
-                        custom_order.status = "paid"
-                        custom_order.paid_at = payment.paid_at
-                        custom_order.payment_url = ""
-                        custom_order.save(update_fields=["status", "paid_at", "payment_url"])
-                elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
-                    from apps.auctions.models import Auction
-
-                    auction = Auction.objects.select_for_update().filter(pk=payment.related_id).first()
-                    if auction:
-                        auction.winner_payment_status = Auction.PAYMENT_PAID
-                        auction.status = Auction.STATUS_BOUGHT
-                        auction.paid_at = payment.paid_at
-                        if not auction.winning_amount:
-                            auction.winning_amount = auction.current_bid
-                        auction.save(update_fields=["winner_payment_status", "status", "paid_at", "winning_amount"])
-            elif keepz_status in terminal_failed_statuses:
-                from django.utils import timezone
-                if keepz_status == "CANCELED":
-                    payment.status = PaymentSession.STATUS_CANCELED
-                elif keepz_status == "EXPIRED":
-                    payment.status = PaymentSession.STATUS_EXPIRED
-                else:
-                    payment.status = PaymentSession.STATUS_FAILED
-                payment.failed_at = payment.failed_at or timezone.now()
-                payment.save(update_fields=[
-                    "status", "failed_at", "provider_transaction_id", "callback_payload",
-                    "response_payload", "updated_at",
-                ])
-                if payment.order_id:
-                    _mark_order_payment_failed(payment.order, f"Keepz payment status: {keepz_status}")
-                elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
-                    from apps.auctions.models import Auction
-
-                    Auction.objects.filter(pk=payment.related_id).update(winner_payment_status=Auction.PAYMENT_FAILED)
-            else:
-                payment.save(update_fields=[
-                    "provider_transaction_id", "callback_payload", "response_payload", "updated_at",
-                ])
-
-        return Response({"detail": "ok", "verified_status": keepz_status})
+        return Response({
+            "detail": "ok",
+            "verified_status": str(provider_status.get("status") or "").upper(),
+        })
 
 
 class DeliveryOptionListView(APIView):

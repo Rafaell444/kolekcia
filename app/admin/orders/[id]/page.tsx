@@ -4,11 +4,11 @@ import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { adminFetch, getAdminUser } from "@/lib/admin-auth"
-import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save, CalendarClock } from "lucide-react"
+import { ArrowLeft, Package, Truck, Clock, CheckCircle, XCircle, Save, CalendarClock, CreditCard } from "lucide-react"
 import { formatAmount } from "@/lib/product-pricing"
 import type { Currency } from "@/contexts/locale-context"
 
-type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded"
+type OrderStatus = "pending_payment" | "payment_failed" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded"
 
 type OrderItem = {
   id: number
@@ -95,16 +95,32 @@ type OrderDetail = {
   currency: string
   promo_code_str: string | null
   tracking_code: string
+  payment_status: string
+  payment_paid_at: string | null
+  payment_transaction_id: string
+  confirmation_email_sent_at: string | null
   created_at: string
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size?: number }> }> = {
-  pending:    { label: "Pending",    color: "text-dp-accent-gold",  bg: "bg-dp-accent-gold/10 border-dp-accent-gold/30",  Icon: Clock       },
+  pending_payment: { label: "Awaiting payment", color: "text-dp-accent-gold", bg: "bg-dp-accent-gold/10 border-dp-accent-gold/30", Icon: Clock },
+  payment_failed: { label: "Payment failed", color: "text-dp-accent-cta", bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30", Icon: XCircle },
   processing: { label: "Processing", color: "text-blue-400",        bg: "bg-blue-400/10 border-blue-400/30",              Icon: Package     },
   shipped:    { label: "Shipped",    color: "text-dp-accent-cta",   bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30",    Icon: Truck       },
   delivered:  { label: "Delivered",  color: "text-dp-success",      bg: "bg-dp-success/10 border-dp-success/30",          Icon: CheckCircle },
   cancelled:  { label: "Cancelled",  color: "text-dp-text-tertiary",bg: "bg-dp-bg-elevated border-dp-border",             Icon: XCircle     },
   refunded:   { label: "Refunded",   color: "text-orange-400",      bg: "bg-orange-400/10 border-orange-400/30",           Icon: XCircle     },
+}
+
+const PAYMENT_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  success: { label: "Paid", color: "text-dp-success", bg: "bg-dp-success/10 border-dp-success/30" },
+  created: { label: "Created", color: "text-dp-accent-gold", bg: "bg-dp-accent-gold/10 border-dp-accent-gold/30" },
+  redirected: { label: "Pending", color: "text-dp-accent-gold", bg: "bg-dp-accent-gold/10 border-dp-accent-gold/30" },
+  failed: { label: "Failed", color: "text-dp-accent-cta", bg: "bg-dp-accent-cta/10 border-dp-accent-cta/30" },
+  canceled: { label: "Canceled", color: "text-dp-text-tertiary", bg: "bg-dp-bg-elevated border-dp-border" },
+  expired: { label: "Expired", color: "text-dp-text-tertiary", bg: "bg-dp-bg-elevated border-dp-border" },
+  refunded: { label: "Refunded", color: "text-orange-400", bg: "bg-orange-400/10 border-orange-400/30" },
+  not_required: { label: "Not required", color: "text-dp-text-tertiary", bg: "bg-dp-bg-elevated border-dp-border" },
 }
 
 const SHIPMENT_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -309,7 +325,8 @@ export default function AdminOrderDetailPage(): React.ReactElement {
     )
   }
 
-  const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending
+  const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending_payment
+  const paymentCfg = PAYMENT_STATUS_CONFIG[order.payment_status] ?? PAYMENT_STATUS_CONFIG.redirected
 
   return (
     <div className="p-4 sm:p-8 flex flex-col gap-6 max-w-5xl">
@@ -324,9 +341,17 @@ export default function AdminOrderDetailPage(): React.ReactElement {
             Placed {new Date(order.created_at).toLocaleString()}
           </p>
         </div>
-        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border text-[12px] font-bold uppercase tracking-widest w-fit ${cfg.color} ${cfg.bg}`}>
-          <cfg.Icon size={14} /> {cfg.label}
-        </span>
+        <div className="flex flex-col sm:items-end gap-2">
+          <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border text-[12px] font-bold uppercase tracking-widest w-fit ${paymentCfg.color} ${paymentCfg.bg}`}>
+            <CreditCard size={14} /> {paymentCfg.label}
+          </span>
+          <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border text-[12px] font-bold uppercase tracking-widest w-fit ${cfg.color} ${cfg.bg}`}>
+            <cfg.Icon size={14} /> {cfg.label}
+          </span>
+          <span className="text-[10px] text-dp-text-tertiary">
+            Confirmation email: {order.confirmation_email_sent_at ? "Sent" : "Not sent"}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -613,7 +638,7 @@ export default function AdminOrderDetailPage(): React.ReactElement {
           </div>
           <ul className="divide-y divide-dp-border">
             {[...order.status_history].reverse().map((entry) => {
-              const entryCfg = STATUS_CONFIG[entry.status] ?? STATUS_CONFIG.pending
+              const entryCfg = STATUS_CONFIG[entry.status] ?? STATUS_CONFIG.pending_payment
               return (
                 <li key={entry.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                   <div className="flex items-center gap-2">

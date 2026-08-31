@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from rest_framework import serializers
-from .models import Cart, CartItem, Order, OrderItem, OrderShipment, OrderStatusHistory, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
+from .models import Cart, CartItem, Order, OrderItem, OrderShipment, OrderStatusHistory, PaymentSession, CustomOrder, DeliveryOption, ProcessingOption, VendorShippingOption
 from apps.products.serializers import ProductVariantSerializer, SizeVariantSerializer
 from apps.vendors.models import Vendor
 
@@ -233,6 +233,33 @@ class OrderSerializer(serializers.ModelSerializer):
     shipments = OrderShipmentSerializer(many=True, read_only=True)
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
     promo_code_str = serializers.CharField(source="promo_code.code", read_only=True, allow_null=True)
+    payment_status = serializers.SerializerMethodField()
+    payment_paid_at = serializers.SerializerMethodField()
+    payment_transaction_id = serializers.SerializerMethodField()
+
+    def _latest_checkout_payment(self, obj):
+        cached = getattr(obj, "_latest_checkout_payment_cache", None)
+        if cached is not None:
+            return cached
+        payments = [
+            payment for payment in obj.payment_sessions.all()
+            if payment.purpose == PaymentSession.PURPOSE_CHECKOUT
+        ]
+        payment = max(payments, key=lambda item: item.created_at) if payments else False
+        obj._latest_checkout_payment_cache = payment
+        return payment
+
+    def get_payment_status(self, obj):
+        payment = self._latest_checkout_payment(obj)
+        return payment.status if payment else "not_required"
+
+    def get_payment_paid_at(self, obj):
+        payment = self._latest_checkout_payment(obj)
+        return payment.paid_at if payment else None
+
+    def get_payment_transaction_id(self, obj):
+        payment = self._latest_checkout_payment(obj)
+        return payment.provider_transaction_id if payment else ""
 
     class Meta:
         model = Order
@@ -242,7 +269,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "shipping_city", "shipping_state", "shipping_zip", "shipping_country",
             "shipping_email", "shipping_phone",
             "subtotal", "discount", "delivery_type", "delivery_price", "gift_wrap_total", "processing_fee_total", "currency", "total",
-            "promo_code_str", "tracking_code", "created_at",
+            "promo_code_str", "tracking_code", "payment_status", "payment_paid_at",
+            "payment_transaction_id", "confirmation_email_sent_at", "created_at",
         )
         read_only_fields = ("id", "order_number", "status", "subtotal", "discount", "total", "created_at")
 

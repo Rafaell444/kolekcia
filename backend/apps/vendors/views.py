@@ -214,9 +214,9 @@ class VendorOrderListView(APIView):
         vendor = get_vendor_for_request(request)
         if vendor:
             order_ids = OrderItem.objects.filter(vendor=vendor).values_list("order_id", flat=True).distinct()
-            qs = Order.objects.filter(id__in=order_ids).prefetch_related("items", "status_history")
+            qs = Order.objects.filter(id__in=order_ids).prefetch_related("items", "status_history", "payment_sessions")
         else:
-            qs = Order.objects.prefetch_related("items", "status_history").all()
+            qs = Order.objects.prefetch_related("items", "status_history", "payment_sessions").all()
         return Response(OrderSerializer(qs, many=True).data)
 
 

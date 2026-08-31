@@ -6,12 +6,16 @@ from rest_framework.test import APIClient
 
 from django.utils import timezone
 
+from apps.emails.models import EmailLog
 from apps.orders.models import Order, OrderItem, OrderStatusHistory, PaymentSession, StockReservation
 from apps.products.models import Product, SizeVariant
 from apps.users.models import User
 
 
-@override_settings(KEEPZ_INTEGRATOR_ID="9b22e5ba-573b-429c-be00-73c8e22ceeaf")
+@override_settings(
+    KEEPZ_INTEGRATOR_ID="9b22e5ba-573b-429c-be00-73c8e22ceeaf",
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+)
 class KeepzCallbackTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -53,7 +57,9 @@ class KeepzCallbackTests(TestCase):
     @patch("apps.orders.keepz.get_keepz_order_status")
     def test_success_is_applied_only_after_keepz_status_verification(self, get_status):
         self.client.force_authenticate(self.user)
-        self.assertEqual(self.client.get("/api/orders/").json()["results"], [])
+        pending_results = self.client.get("/api/orders/").json()["results"]
+        self.assertEqual(len(pending_results), 1)
+        self.assertEqual(pending_results[0]["payment_status"], PaymentSession.STATUS_REDIRECTED)
         get_status.return_value = {
             "integratorOrderId": str(self.payment.integrator_order_id),
             "status": "SUCCESS",
@@ -72,7 +78,46 @@ class KeepzCallbackTests(TestCase):
         self.assertEqual(self.payment.status, PaymentSession.STATUS_SUCCESS)
         self.assertEqual(self.order.status, "processing")
         self.assertEqual(self.payment.provider_transaction_id, "12345")
-        self.assertEqual(len(self.client.get("/api/orders/").json()["results"]), 1)
+        self.assertIsNotNone(self.order.confirmation_email_sent_at)
+        paid_results = self.client.get("/api/orders/").json()["results"]
+        self.assertEqual(len(paid_results), 1)
+        self.assertEqual(paid_results[0]["payment_status"], PaymentSession.STATUS_SUCCESS)
+
+    @patch("apps.orders.keepz.get_keepz_order_status")
+    def test_customer_return_reconciles_a_successful_payment_without_callback(self, get_status):
+        self.client.force_authenticate(self.user)
+        get_status.return_value = {
+            "integratorOrderId": str(self.payment.integrator_order_id),
+            "status": "SUCCESS",
+            "transactionId": 67890,
+        }
+
+        response = self.client.post(f"/api/orders/{self.order.id}/payment-status/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.payment.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentSession.STATUS_SUCCESS)
+        self.assertEqual(self.order.status, "processing")
+        self.assertEqual(response.json()["order"]["payment_status"], PaymentSession.STATUS_SUCCESS)
+        self.assertEqual(response.json()["order"]["payment_transaction_id"], "67890")
+        self.assertIsNotNone(self.order.confirmation_email_sent_at)
+
+    @patch("apps.orders.keepz.get_keepz_order_status")
+    def test_duplicate_success_sends_order_confirmation_once(self, get_status):
+        self.client.force_authenticate(self.user)
+        get_status.return_value = {
+            "integratorOrderId": str(self.payment.integrator_order_id),
+            "status": "SUCCESS",
+            "transactionId": 12345,
+        }
+
+        first = self.client.post("/api/orders/payments/keepz/callback/", self.callback_payload(), format="json")
+        second = self.client.post("/api/orders/payments/keepz/callback/", self.callback_payload(), format="json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(EmailLog.objects.filter(event_key="order_confirmed", status="sent").count(), 1)
 
     @patch("apps.orders.keepz.get_keepz_order_status")
     def test_callback_success_cannot_override_verified_failure(self, get_status):
