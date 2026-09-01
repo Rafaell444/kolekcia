@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from apps.users.models import User
 from apps.products.models import Product
@@ -89,7 +89,10 @@ class Auction(SEOModelMixin):
     def refresh_live_flag(self):
         self.is_live = self.is_biddable()
 
+    @transaction.atomic
     def finalize_if_ended(self):
+        type(self).objects.select_for_update().get(pk=self.pk)
+        self.refresh_from_db()
         if not self.is_ended() or self.status != self.STATUS_ACTIVE:
             return False
 

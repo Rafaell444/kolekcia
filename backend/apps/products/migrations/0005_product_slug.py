@@ -27,7 +27,9 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="product",
             name="slug",
-            field=models.SlugField(blank=True, max_length=280, null=True),
+            # The final unique field creates its index. Deferring it avoids
+            # duplicate PostgreSQL LIKE indexes within this migration.
+            field=models.SlugField(blank=True, max_length=280, null=True, db_index=False),
         ),
         migrations.RunPython(populate_product_slugs, migrations.RunPython.noop),
         migrations.AlterField(

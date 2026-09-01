@@ -42,6 +42,8 @@ def gel_to_usd(amount, rate=None):
 @transaction.atomic
 def reserve_auction_inventory(auction, size_variant_id=None):
     """Move one ready-to-ship unit out of catalog inventory for an auction."""
+    type(auction).objects.select_for_update().get(pk=auction.pk)
+    auction.refresh_from_db()
     if not auction.product_id or auction.inventory_reserved:
         return auction
 
@@ -65,6 +67,12 @@ def reserve_auction_inventory(auction, size_variant_id=None):
         })
 
     variant = available[0]
+    from apps.orders.inventory import available_quantity
+
+    if available_quantity(variant) < 1:
+        raise ValidationError({
+            "reserved_size_variant_id": "This unit is reserved by a checkout payment."
+        })
     was_last = variant.stock == 1
     if was_last:
         if not auction.product.processing_options.filter(is_active=True).exists():
@@ -91,6 +99,8 @@ def reserve_auction_inventory(auction, size_variant_id=None):
 @transaction.atomic
 def release_auction_inventory(auction):
     """Return an unpaid/cancelled auction unit to ready-to-ship catalog stock."""
+    type(auction).objects.select_for_update().get(pk=auction.pk)
+    auction.refresh_from_db()
     if not auction.inventory_reserved or not auction.reserved_size_variant_id:
         return auction
 

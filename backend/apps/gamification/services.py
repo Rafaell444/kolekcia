@@ -722,7 +722,7 @@ def complete_shipping_payment_session(user, token) -> dict:
     User = get_user_model()
     locked_user = User.objects.select_for_update().get(id=user.id)
     session = (
-        PointsMarketShippingPaymentSession.objects.select_for_update()
+        PointsMarketShippingPaymentSession.objects.select_for_update(of=("self",))
         .select_related("market_item")
         .get(token=token, user=locked_user)
     )

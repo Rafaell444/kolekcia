@@ -16,7 +16,7 @@ Status legend: `[ ]` not verified, `[x]` verified, `[!]` known blocker or known 
 
 - `[!] BLOCKER` No real payment-provider integration/webhook flow was found. Payment fields and payment links exist, but card/payment authorization, capture, refund, failure, retry, and provider signature verification still need implementation and testing.
 - `[!] BLOCKER` JWT access and refresh tokens are stored in browser `localStorage` (`lib/auth-storage.ts` and `lib/admin-auth.ts`). Migrate refresh/admin credentials to secure, HttpOnly, Secure, SameSite cookies, with CSRF protection.
-- `[!] BLOCKER` Local settings use SQLite and the security audit reports `backend/db.sqlite3` in the repository. Use PostgreSQL in production, remove database artifacts from source control, and rotate any exposed credentials.
+- `[x]` Local settings use SQLite, while production settings require PostgreSQL and reject a missing or SQLite `DATABASE_URL`. `backend/db.sqlite3` is ignored and is not tracked. AWS still needs an RDS instance, credentials, backups, and a successful data migration rehearsal.
 - `[!] HIGH` Upload validation, imported image URLs, payout minimum enforcement, voucher collision handling, and vendor isolation have previously been identified as risks in `SECURITY_AUDIT.md`. Re-test each fix server-side.
 - `[ ]` WebSockets require a production ASGI server and Redis channel layer. `InMemoryChannelLayer` is not suitable for multiple workers or multiple instances.
 

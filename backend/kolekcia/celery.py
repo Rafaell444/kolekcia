@@ -2,7 +2,7 @@ import os
 
 from celery import Celery
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "kolekcia.settings.local")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "kolekcia.settings.production")
 
 app = Celery("kolekcia")
 app.config_from_object("django.conf:settings", namespace="CELERY")

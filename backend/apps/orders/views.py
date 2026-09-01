@@ -88,7 +88,9 @@ class CartView(APIView):
         ).get_or_create(user=request.user)
         return Response(CartSerializer(cart, context={"request": request}).data)
 
+    @transaction.atomic
     def delete(self, request):
+        Cart.objects.select_for_update().filter(user=request.user).first()
         Cart.objects.filter(user=request.user).update(promo_code=None)
         CartItem.objects.filter(cart__user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -111,12 +113,15 @@ class CartItemView(APIView):
         processing_option = serializer.validated_data.get("processing_option", "")
         currency = serializer.validated_data.get("currency", "USD")
 
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart = Cart.objects.select_for_update().get(pk=cart.pk)
+
         variant = None
         size_variant = None
 
         if size_variant_id:
             try:
-                size_variant = SizeVariant.objects.select_for_update().select_related("product").get(pk=size_variant_id, is_active=True)
+                size_variant = SizeVariant.objects.select_for_update(of=("self",)).select_related("product").get(pk=size_variant_id, is_active=True)
             except SizeVariant.DoesNotExist:
                 return Response({"detail": "Size variant not found."}, status=status.HTTP_404_NOT_FOUND)
             available = available_quantity(size_variant)
@@ -125,10 +130,11 @@ class CartItemView(APIView):
                 return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
         elif variant_id:
             try:
-                variant = ProductVariant.objects.select_for_update().select_related("product").get(pk=variant_id)
+                variant = ProductVariant.objects.select_for_update(of=("self",)).select_related("product").get(pk=variant_id)
             except ProductVariant.DoesNotExist:
                 return Response({"detail": "Variant not found."}, status=status.HTTP_404_NOT_FOUND)
-            if available_quantity(variant) < quantity:
+            available = available_quantity(variant)
+            if available is not None and available < quantity:
                 return Response({"detail": "Insufficient stock."}, status=status.HTTP_400_BAD_REQUEST)
 
         currency = _normalize_currency(currency)
@@ -143,9 +149,6 @@ class CartItemView(APIView):
         processing_fee, processing_label, processing_days = _resolve_processing(
             variant, size_variant, processing_option, currency
         )
-
-        cart, _ = Cart.objects.get_or_create(user=request.user)
-        cart = Cart.objects.select_for_update().get(pk=cart.pk)
 
         defaults = {
             "quantity": quantity,
@@ -198,7 +201,7 @@ class CartItemView(APIView):
             if item:
                 new_quantity = item.quantity + quantity
                 available = available_quantity(variant)
-                if new_quantity > available:
+                if available is not None and new_quantity > available:
                     return Response(
                         {"detail": f"Only {available} item(s) available. You already have {item.quantity} in your cart."},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -230,8 +233,9 @@ class CartItemView(APIView):
 
     @transaction.atomic
     def patch(self, request, item_id):
+        Cart.objects.select_for_update().filter(user=request.user).first()
         try:
-            item = CartItem.objects.select_for_update().select_related("size_variant", "variant").get(pk=item_id, cart__user=request.user)
+            item = CartItem.objects.select_for_update(of=("self",)).select_related("size_variant", "variant").get(pk=item_id, cart__user=request.user)
         except CartItem.DoesNotExist:
             return Response({"detail": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -246,7 +250,8 @@ class CartItemView(APIView):
             else:
                 target = item.size_variant if item.size_variant_id else item.variant
                 available = available_quantity(target)
-                if available is not None and requested_quantity > available:
+                is_made_to_order = bool(item.size_variant_id and item.processing_option)
+                if available is not None and requested_quantity > available and not is_made_to_order:
                     return Response(
                         {"detail": f"Only {available} item(s) available."},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -257,7 +262,9 @@ class CartItemView(APIView):
         cart = Cart.objects.prefetch_related("items__variant__product__images").get(user=request.user)
         return Response(CartSerializer(cart, context={"request": request}).data)
 
+    @transaction.atomic
     def delete(self, request, item_id):
+        Cart.objects.select_for_update().filter(user=request.user).first()
         CartItem.objects.filter(pk=item_id, cart__user=request.user).delete()
         cart, _ = Cart.objects.get_or_create(user=request.user)
         return Response(CartSerializer(cart, context={"request": request}).data)
@@ -421,6 +428,9 @@ class CheckoutView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart = Cart.objects.select_for_update().get(pk=cart.pk)
+
         idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
         if idempotency_key and (len(idempotency_key) > 64 or not all(c.isalnum() or c in "-_" for c in idempotency_key)):
             return Response({"detail": "Invalid checkout idempotency key."}, status=status.HTTP_400_BAD_REQUEST)
@@ -459,7 +469,7 @@ class CheckoutView(APIView):
         if not cart or not cart.items.exists():
             return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Atomically lock and deduct stock
+        # Read the cart while locked, then lock stock in a consistent order.
         items_to_process = list(
             cart.items.select_related(
                 "variant__product__artist",
@@ -478,10 +488,10 @@ class CheckoutView(APIView):
         variant_ids = [item.variant_id for item in items_to_process if item.variant_id]
         size_variant_ids = [item.size_variant_id for item in items_to_process if item.size_variant_id]
         locked_variants = {
-            v.pk: v for v in ProductVariant.objects.select_for_update().filter(pk__in=variant_ids)
+            v.pk: v for v in ProductVariant.objects.select_for_update().filter(pk__in=variant_ids).order_by("pk")
         }
         locked_size_variants = {
-            sv.pk: sv for sv in SizeVariant.objects.select_for_update().select_related("product").filter(pk__in=size_variant_ids)
+            sv.pk: sv for sv in SizeVariant.objects.select_for_update(of=("self",)).select_related("product").filter(pk__in=size_variant_ids).order_by("pk")
         }
 
         for item in items_to_process:

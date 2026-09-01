@@ -13,12 +13,13 @@ by an encrypted server-to-server read of the Keepz order status endpoint.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
-from django.db import NotSupportedError, connection, transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -70,6 +71,7 @@ class PaymentVerificationError(Exception):
 
 @dataclass
 class ReconcileReport:
+    skipped: bool = False
     checked: int = 0
     updated: int = 0
     still_pending: int = 0
@@ -89,13 +91,10 @@ class ReconcileReport:
 
 
 def _locked(queryset):
-    """Add ``FOR UPDATE`` when the backend supports it, otherwise pass through."""
+    """Lock only the base table; optional joined rows cannot be locked on PostgreSQL."""
     if not connection.features.has_select_for_update:
         return queryset
-    try:
-        return queryset.select_for_update()
-    except NotSupportedError:
-        return queryset
+    return queryset.select_for_update(of=("self",))
 
 
 def lock_payment_session(payment_id) -> PaymentSession:
@@ -104,20 +103,16 @@ def lock_payment_session(payment_id) -> PaymentSession:
     PostgreSQL takes a real ``SELECT ... FOR UPDATE``. SQLite has no row locks,
     so the query degrades to a plain read and correctness instead rests on the
     compare-and-swap in :func:`_claim_terminal_status` plus SQLite's
-    database-wide write lock. ``NotSupportedError`` is caught rather than
-    assumed absent, because backends differ on which lock variants they reject.
+    database-wide write lock. Lock errors must abort the transaction rather than
+    silently continuing without the protection requested by the caller.
     """
     base = PaymentSession.objects.select_related("order", "user")
-    if connection.features.has_select_for_update:
-        try:
-            return base.select_for_update().get(pk=payment_id)
-        except NotSupportedError:
-            logger.warning(
-                "Row locking unavailable on %s; reading payment %s without FOR UPDATE.",
-                connection.vendor,
-                payment_id,
-            )
-    return base.get(pk=payment_id)
+    payment = _locked(base).get(pk=payment_id)
+    if payment.order_id:
+        # Different payment attempts can refer to the same order. Reload its
+        # state after acquiring the lock instead of using the joined snapshot.
+        payment.order = _locked(Order.objects).get(pk=payment.order_id)
+    return payment
 
 
 def _claim_terminal_status(payment: PaymentSession, new_status: str) -> bool:
@@ -306,7 +301,7 @@ def _record_provider_evidence(
         payment.provider_transaction_id = str(transaction_id)
 
 
-def _hold_for_review(payment: PaymentSession, reason: str) -> str:
+def _hold_for_review(payment: PaymentSession, reason: str, *, hold_stock: bool = True) -> str:
     logger.error(
         "Keepz payment %s held for manual review: %s",
         payment.integrator_order_id,
@@ -325,8 +320,8 @@ def _hold_for_review(payment: PaymentSession, reason: str) -> str:
         ]
     )
     if payment.order_id:
-        # Keep the goods off sale while a human decides what happened.
-        hold_order_stock(payment.order, until=timezone.now() + timedelta(days=REVIEW_HOLD_DAYS))
+        if hold_stock:
+            hold_order_stock(payment.order, until=timezone.now() + timedelta(days=REVIEW_HOLD_DAYS))
         OrderStatusHistory.objects.create(
             order=payment.order,
             status=payment.order.status,
@@ -375,7 +370,10 @@ def _apply_success(payment: PaymentSession, provider_status: dict) -> str:
                 finalize_paid_order(payment.order, payment)
         except InsufficientInventoryError as exc:
             return _hold_for_review(
-                payment, f"Paid, but stock could no longer be fulfilled: {exc}"
+                payment, f"Paid, but stock could no longer be fulfilled: {exc}",
+                # Reviving an expired reservation here would block the buyer
+                # who legitimately reserved that stock in the meantime.
+                hold_stock=False,
             )
     elif payment.purpose == PaymentSession.PURPOSE_POINTS_SHIPPING and payment.related_id:
         from apps.gamification.services import complete_shipping_payment_session
@@ -393,7 +391,9 @@ def _apply_success(payment: PaymentSession, provider_status: dict) -> str:
     elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
         from apps.auctions.models import Auction
 
-        auction = Auction.objects.filter(pk=payment.related_id).first()
+        auction = _locked(Auction.objects).filter(pk=payment.related_id).first()
+        if auction and auction.winner_id != payment.user_id:
+            return _hold_for_review(payment, "Payment belongs to a different auction winner.")
         if auction and auction.winner_payment_status != Auction.PAYMENT_PAID:
             auction.winner_payment_status = Auction.PAYMENT_PAID
             auction.status = Auction.STATUS_BOUGHT
@@ -510,9 +510,14 @@ def _apply_failure(payment: PaymentSession, keepz_status: str) -> str:
     elif payment.purpose == PaymentSession.PURPOSE_AUCTION and payment.related_id:
         from apps.auctions.models import Auction
 
-        Auction.objects.filter(pk=payment.related_id).update(
-            winner_payment_status=Auction.PAYMENT_FAILED
-        )
+        auction = _locked(Auction.objects).filter(pk=payment.related_id).first()
+        if (
+            auction
+            and auction.winner_id == payment.user_id
+            and auction.winner_payment_status != Auction.PAYMENT_PAID
+        ):
+            auction.winner_payment_status = Auction.PAYMENT_FAILED
+            auction.save(update_fields=["winner_payment_status"])
     return payment.status
 
 
@@ -611,22 +616,27 @@ def _default_status_fetcher(integrator_order_id: str) -> dict:
     return get_keepz_order_status(integrator_order_id)
 
 
-def _claim_queryset(queryset):
-    """Take rows no other worker is already holding.
+@contextmanager
+def _reconciliation_lock():
+    """Serialize complete production runs, including CLI and provider I/O.
 
-    On PostgreSQL this is ``FOR UPDATE SKIP LOCKED``, so parallel Celery workers
-    partition the batch between themselves instead of all fetching the same
-    sessions and racing on the same Keepz API calls. SQLite has neither, so it
-    falls back to a plain read; correctness there still rests on the
-    compare-and-swap in :func:`_claim_terminal_status`.
+    A session advisory lock survives the short per-payment transactions without
+    blocking webhooks. PostgreSQL releases it if the worker connection dies.
+    Local SQLite is for single-process development, not distributed workers.
     """
-    features = connection.features
-    if not (features.has_select_for_update and features.has_select_for_update_skip_locked):
-        return queryset
+    if connection.vendor != "postgresql":
+        yield True
+        return
+    lock_key = 0x4B4F4C504159
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s)", [lock_key])
+        acquired = cursor.fetchone()[0]
     try:
-        return queryset.select_for_update(skip_locked=True)
-    except NotSupportedError:
-        return queryset
+        yield acquired
+    finally:
+        if acquired:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s)", [lock_key])
 
 
 def _sessions_needing_repair(min_age_seconds: int, max_age_hours: int, limit: int):
@@ -649,11 +659,7 @@ def _sessions_needing_repair(min_age_seconds: int, max_age_hours: int, limit: in
         .filter(created_at__gte=recovery_cutoff, created_at__lte=webhook_cutoff)
         .order_by("created_at")
     )
-    # Claim inside a short transaction; each session is then verified and
-    # fulfilled in its own transaction so one slow Keepz call cannot hold locks
-    # across the whole batch.
-    with transaction.atomic():
-        return list(_claim_queryset(base)[:limit])
+    return list(base[:limit])
 
 
 def reconcile_keepz_payments(
@@ -663,6 +669,23 @@ def reconcile_keepz_payments(
     max_age_hours: int | None = None,
     limit: int | None = None,
     on_error=None,
+) -> ReconcileReport:
+    """Recover missed callbacks, allowing only one complete PostgreSQL run at a time."""
+    with _reconciliation_lock() as acquired:
+        if not acquired:
+            return ReconcileReport(skipped=True)
+        return _reconcile_keepz_payments(
+            status_fetcher=status_fetcher,
+            min_age_seconds=min_age_seconds,
+            max_age_hours=max_age_hours,
+            limit=limit,
+            on_error=on_error,
+        )
+
+
+def _reconcile_keepz_payments(
+    *, status_fetcher=None, min_age_seconds=None, max_age_hours=None,
+    limit=None, on_error=None,
 ) -> ReconcileReport:
     """Recover payments whose webhook was delayed, lost, or never delivered.
 
@@ -688,7 +711,8 @@ def reconcile_keepz_payments(
             provider_status = fetch_status(str(payment.integrator_order_id))
             before = payment.status
             current = apply_verified_keepz_status(payment.pk, provider_status)
-            PaymentSession.objects.filter(pk=payment.pk).update(last_error="")
+            if current != PaymentSession.STATUS_NEEDS_REVIEW:
+                PaymentSession.objects.filter(pk=payment.pk).update(last_error="")
             if current == PaymentSession.STATUS_NEEDS_REVIEW:
                 report.needs_review += 1
             elif current == before and current in PaymentSession.PENDING_STATUSES:

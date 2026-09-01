@@ -421,7 +421,7 @@ class AuctionWinnerPaymentView(APIView):
             resolved_auction = resolve_auction(lookup)
         except Auction.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        auction = Auction.objects.select_for_update().select_related("vendor", "winner").filter(
+        auction = Auction.objects.select_for_update(of=("self",)).select_related("vendor", "winner").filter(
             pk=resolved_auction.pk
         ).first()
         if not auction:
@@ -515,7 +515,7 @@ class VendorAuctionDisqualifyBidderView(VendorAuctionMixin, APIView):
 
     @transaction.atomic
     def post(self, request, pk, bid_id):
-        auction = self.get_queryset().select_for_update().filter(pk=pk).first()
+        auction = self.get_queryset().select_for_update(of=("self",)).filter(pk=pk).first()
         if not auction:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         bid = auction.bids.select_related("user").filter(pk=bid_id).first()
@@ -558,7 +558,7 @@ class VendorAuctionPromoteBidView(VendorAuctionMixin, APIView):
 
     @transaction.atomic
     def post(self, request, pk, bid_id):
-        auction = self.get_queryset().select_for_update().filter(pk=pk).first()
+        auction = self.get_queryset().select_for_update(of=("self",)).filter(pk=pk).first()
         if not auction:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         if not auction.is_ended():

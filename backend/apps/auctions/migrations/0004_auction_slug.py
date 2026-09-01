@@ -29,7 +29,8 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='auction',
             name='slug',
-            field=models.SlugField(blank=True, max_length=280, null=True),
+            # Defer indexing until the populated field becomes unique.
+            field=models.SlugField(blank=True, max_length=280, null=True, db_index=False),
         ),
         migrations.RunPython(populate_slugs, migrations.RunPython.noop),
         migrations.AlterField(

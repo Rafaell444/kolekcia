@@ -234,12 +234,10 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# Shared settings retain a SQLite default for management commands and local
+# tooling. local.py explicitly selects SQLite; production.py replaces this
+# configuration and refuses to start unless DATABASE_URL is PostgreSQL.
 DATABASES = {"default": env.db("DATABASE_URL")}
-# Persistent connections matter once Postgres sits behind a network hop (RDS).
-# The health check keeps a recycled connection from being handed to a request
-# after the database dropped it, which is the usual failure mode on failover.
-DATABASES["default"]["CONN_MAX_AGE"] = env("DB_CONN_MAX_AGE", default=60)
-DATABASES["default"]["CONN_HEALTH_CHECKS"] = env("DB_CONN_HEALTH_CHECKS", default=True)
 
 AUTH_USER_MODEL = "users.User"
 
