@@ -60,7 +60,7 @@ class ProductListView(generics.ListAPIView):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images", "size_variants", "processing_options")
+        qs = Product.objects.filter(status="active").select_related("artist", "category").prefetch_related("images", "size_variants", "processing_options", "categories")
         sort = self.request.query_params.get("sort")
         if sort == "featured":
             # Show all products, featured ones first, then by review count

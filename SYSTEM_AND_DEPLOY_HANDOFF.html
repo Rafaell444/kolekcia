@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Koleqcia — System Overview &amp; Deploy Handoff</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: #1a1a1a;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 20pt; border-bottom: 2px solid #111; padding-bottom: 6px; margin-top: 0; }
+  h2 { font-size: 14pt; margin-top: 1.4em; border-bottom: 1px solid #ccc; padding-bottom: 3px; page-break-after: avoid; }
+  h3 { font-size: 12pt; margin-top: 1.1em; page-break-after: avoid; }
+  p, li { orphans: 3; widows: 3; }
+  table { border-collapse: collapse; width: 100%; margin: 0.8em 0 1.2em; font-size: 9.5pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: #f5f5f5; padding: 1px 4px; }
+  pre { background: #f5f5f5; border: 1px solid #ddd; padding: 10px; overflow-x: auto; font-size: 8.5pt; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 3px solid #888; margin-left: 0; padding-left: 12px; color: #333; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 1.5em 0; }
+  a { color: #0645ad; text-decoration: none; }
+  .meta { color: #555; font-size: 9.5pt; margin-bottom: 1.5em; }
+</style>
+</head>
+<body>
+<p>﻿# Koleqcia тАФ System Overview &amp; Deploy Handoff</p>
+<p><strong>Audience:</strong> DevOps, backend/frontend owners, release manager<br />
+<strong>Repo (production):</strong> https://github.com/mozaikkonew/koleqcia (<code>main</code>)<br />
+<strong>Product:</strong> Multi-vendor marketplace for handmade anime / gaming / fanart decor (metal wall panels, figures, custom commissions). Multi-currency (GEL / USD), trilingual (EN / KA / RU).</p>
+<p>Use this document as the single brief for what the system is, what each piece does, what must be provisioned, and what is still open before go-live.</p>
+<p>Related detail docs in the same repo:</p>
+<table>
+<thead>
+<tr>
+<th>Doc</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>README.md</code></td>
+<td>Quick start, local setup</td>
+</tr>
+<tr>
+<td><code>deploy/aws.env.example</code></td>
+<td>Full backend env checklist</td>
+</tr>
+<tr>
+<td><code>deploy/vercel.env.example</code></td>
+<td>Frontend env checklist</td>
+</tr>
+<tr>
+<td><code>deploy/AWS_POSTGRESQL.md</code></td>
+<td>RDS, SSL, migrations, SQLiteтЖТPostgres import</td>
+</tr>
+<tr>
+<td><code>PRODUCTION_RELEASE_CHECKLIST.md</code></td>
+<td>Release gate / QA checklist</td>
+</tr>
+<tr>
+<td><code>SECURITY_AUDIT.md</code></td>
+<td>Known security posture</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-what-the-product-does">1. What the product does</h2>
+<ul>
+<li>Customers browse catalog, artists, auctions, blog; buy products (incl. multi-vendor carts).</li>
+<li>Vendors sell under their own storefronts; admins operate the platform.</li>
+<li>Payments go through <strong>Keepz</strong> (Bank of Georgia stack). Georgian market can split settlement per vendor.</li>
+<li>Loyalty points, creator commissions, promo codes, gift wrap, per-vendor shipping + tracking.</li>
+<li>Real-time inbox / notifications over WebSockets.</li>
+<li>Geo-aware locale and currency (Georgia тЖТ KA / GEL when edge headers provide country).</li>
+</ul>
+<hr />
+<h2 id="2-high-level-architecture">2. High-level architecture</h2>
+<pre><code>Browser
+  тФВ
+  тФЬтФАтЦ║ Frontend (Next.js)  тФАтФАHTTPSтФАтФАтЦ║  Vercel (or similar)
+  тФВ         тФВ
+  тФВ         тФФтФА REST + WS тФАтФАтЦ║ Backend (Django ASGI / Daphne)
+  тФВ                                тФВ
+  тФВ                    тФМтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФ╝тФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФР
+  тФВ                    тЦ╝           тЦ╝           тЦ╝
+  тФВ               PostgreSQL     Redis      SMTP
+  тФВ               (RDS)       (ElastiCache) (Gmail relay)
+  тФВ                    тЦ▓           тЦ▓
+  тФВ                    тФВ           тФВ
+  тФВ              Celery worker + Celery Beat
+  тФВ
+  тФФтФАтЦ║ Keepz payment pages (customer pays at bank)
+           тФВ
+           тФФтФА webhook POST тФАтФАтЦ║ Backend /api/orders/payments/keepz/callback/
+                              (backend NEVER trusts payload alone;
+                               verifies via Keepz Order Status API)
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Technology</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frontend</td>
+<td>Next.js 16 (App Router), React 19, TypeScript 5.7, Tailwind, pnpm 9</td>
+<td>Storefront + admin UI</td>
+</tr>
+<tr>
+<td>Backend API</td>
+<td>Django 5.1, DRF, SimpleJWT, django-filter, modeltranslation</td>
+<td>REST API, business logic</td>
+</tr>
+<tr>
+<td>Realtime</td>
+<td>Django Channels + Daphne (ASGI)</td>
+<td>WebSockets: messaging, auctions</td>
+</tr>
+<tr>
+<td>Database</td>
+<td><strong>PostgreSQL 16</strong> in production</td>
+<td>Source of truth. SQLite is local-only</td>
+</tr>
+<tr>
+<td>Cache / broker</td>
+<td>Redis 7</td>
+<td>Channel layer, Celery broker, distributed locks</td>
+</tr>
+<tr>
+<td>Jobs</td>
+<td>Celery 5.6 + Celery Beat</td>
+<td>Payment reconciliation, async work</td>
+</tr>
+<tr>
+<td>Payments</td>
+<td>Keepz</td>
+<td>Checkout, split settlement, refunds</td>
+</tr>
+<tr>
+<td>Auth (social)</td>
+<td>Google OAuth (Web Client ID)</td>
+<td>Sign-in</td>
+</tr>
+<tr>
+<td>Email</td>
+<td>SMTP (Google Workspace relay preferred)</td>
+<td>Transactional mail</td>
+</tr>
+<tr>
+<td>Hosting (intended)</td>
+<td>Frontend тЖТ Vercel; Backend тЖТ AWS (ASGI behind ALB/Nginx)</td>
+<td>Production</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Critical rule:</strong> Production must run the API as <strong>ASGI</strong> (Daphne/Uvicorn with Channels). Plain WSGI alone breaks WebSockets (inbox / auctions).</p>
+<hr />
+<h2 id="3-repository-layout">3. Repository layout</h2>
+<pre><code>koleqcia/
+тФЬтФАтФА app/                    # Next.js App Router (locale storefront + admin)
+тФЬтФАтФА components/             # React UI
+тФЬтФАтФА lib/                    # Frontend helpers (auth, payment polling, i18n, SEO)
+тФЬтФАтФА public/                 # Static assets (incl. og-koleqcia.jpg)
+тФЬтФАтФА backend/
+тФВ   тФЬтФАтФА apps/               # Django apps (orders, products, users, тАж)
+тФВ   тФЬтФАтФА kolekcia/           # Project package (settings, asgi, celery, urls)
+тФВ   тФЬтФАтФА manage.py
+тФВ   тФЬтФАтФА requirements.txt
+тФВ   тФФтФАтФА .env.example
+тФЬтФАтФА deploy/                 # Env templates + AWS Postgres guide
+тФЬтФАтФА docker-compose.yml      # Local Postgres 16 + Redis 7
+тФЬтФАтФА .github/workflows/ci.yml
+тФФтФАтФА SYSTEM_AND_DEPLOY_HANDOFF.md   # this file
+</code></pre>
+<h3 id="django-apps-backend">Django apps (backend)</h3>
+<table>
+<thead>
+<tr>
+<th>App</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>users</code></td>
+<td>Accounts, JWT auth, Google Sign-In</td>
+</tr>
+<tr>
+<td><code>products</code></td>
+<td>Catalog, variants, stock, regional prices, ready-to-ship</td>
+</tr>
+<tr>
+<td><code>orders</code></td>
+<td>Cart, checkout, Keepz payments, shipments, refunds, inventory reservations</td>
+</tr>
+<tr>
+<td><code>vendors</code></td>
+<td>Vendor profiles / storefronts / merchant IDs</td>
+</tr>
+<tr>
+<td><code>auctions</code></td>
+<td>Auctions + bidding (HTTP + WS)</td>
+</tr>
+<tr>
+<td><code>messaging</code></td>
+<td>CustomerтЖФvendor inbox (HTTP + WS)</td>
+</tr>
+<tr>
+<td><code>gamification</code></td>
+<td>Loyalty tiers / points market</td>
+</tr>
+<tr>
+<td><code>promo</code></td>
+<td>Promo / voucher codes (incl. product/category scope)</td>
+</tr>
+<tr>
+<td><code>creators</code></td>
+<td>Creator applications + commissions</td>
+</tr>
+<tr>
+<td><code>cms</code></td>
+<td>Pages, announcement, site settings</td>
+</tr>
+<tr>
+<td><code>blog</code></td>
+<td>Blog</td>
+</tr>
+<tr>
+<td><code>contact</code> / <code>newsletter</code></td>
+<td>Contact form, newsletter</td>
+</tr>
+<tr>
+<td><code>emails</code></td>
+<td>Template emails (GrapesJS-managed templates)</td>
+</tr>
+<tr>
+<td><code>admin_api</code></td>
+<td>Staff/vendor admin REST API</td>
+</tr>
+<tr>
+<td><code>referrals</code> / <code>tenants</code></td>
+<td>Referrals, multi-tenant helpers</td>
+</tr>
+</tbody>
+</table>
+<h3 id="settings-modules">Settings modules</h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>When to use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kolekcia.settings.local</code></td>
+<td>Local/dev. SQLite by default; Postgres if <code>DATABASE_URL</code> is set</td>
+</tr>
+<tr>
+<td><code>kolekcia.settings.production</code></td>
+<td><strong>AWS / live.</strong> Refuses to start without Postgres <code>DATABASE_URL</code> or with a <code>django-insecure-</code> key. Enforces HTTPS cookies/HSTS</td>
+</tr>
+<tr>
+<td><code>kolekcia.settings.postgres_test</code></td>
+<td>CI / test suite against Postgres (no SSL redirects, no real email)</td>
+</tr>
+</tbody>
+</table>
+<p>Always set:</p>
+<pre><code class="language-bash">DJANGO_SETTINGS_MODULE=kolekcia.settings.production
+</code></pre>
+<p>for API, Celery worker, Celery Beat, and migration jobs in AWS.</p>
+<hr />
+<h2 id="4-runtime-processes-that-must-stay-up">4. Runtime processes that must stay up</h2>
+<table>
+<thead>
+<tr>
+<th>Process</th>
+<th>Command (backend dir)</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API (ASGI)</td>
+<td><code>daphne -b 0.0.0.0 -p 8000 kolekcia.asgi:application</code> (or equivalent under systemd/ECS)</td>
+<td>HTTP API + WebSockets</td>
+</tr>
+<tr>
+<td>Celery worker</td>
+<td><code>celery -A kolekcia worker -l info</code></td>
+<td>Async tasks</td>
+</tr>
+<tr>
+<td>Celery Beat</td>
+<td><code>celery -A kolekcia beat -l info</code></td>
+<td>Schedules Keepz reconciliation (~every 5 min)</td>
+</tr>
+<tr>
+<td>Postgres</td>
+<td>Managed (RDS)</td>
+<td>Data</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>Managed (ElastiCache) or container</td>
+<td>Channels + broker + locks</td>
+</tr>
+</tbody>
+</table>
+<p>One-shot per deploy (single migration job, not on every replica at once):</p>
+<pre><code class="language-bash">cd backend
+python manage.py migrate --noinput --settings=kolekcia.settings.production
+python manage.py check --database default --settings=kolekcia.settings.production
+</code></pre>
+<p>Optional create admin after first boot:</p>
+<pre><code class="language-bash">python manage.py createsuperuser --settings=kolekcia.settings.production
+</code></pre>
+<hr />
+<h2 id="5-network-domains-edge">5. Network / domains / edge</h2>
+<h3 id="suggested-production-hosts">Suggested production hosts</h3>
+<table>
+<thead>
+<tr>
+<th>Host</th>
+<th>Points to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>https://www.koleqcia.com</code> (and apex)</td>
+<td>Frontend</td>
+</tr>
+<tr>
+<td><code>https://api.koleqcia.com</code></td>
+<td>Backend ASGI</td>
+</tr>
+</tbody>
+</table>
+<p>These must match <code>FRONTEND_URL</code>, <code>BACKEND_PUBLIC_URL</code>, <code>ALLOWED_HOSTS</code>, CORS, CSRF, and Vercel <code>NEXT_PUBLIC_*</code> vars.</p>
+<h3 id="nginx-alb-expectations">Nginx / ALB expectations</h3>
+<ul>
+<li>Terminate TLS in front of Django.</li>
+<li>Forward <code>X-Forwarded-Proto: https</code> (Django production settings use <code>SECURE_PROXY_SSL_HEADER</code>).</li>
+<li>For geo targeting, set country headers the frontend already understands, e.g.:</li>
+<li><code>X-Country-Code: GE</code></li>
+<li><code>X-Country-Name: Georgia</code><br />
+  (also supports CloudFront / Cloudflare equivalents тАФ see <code>proxy.ts</code>)</li>
+</ul>
+<h3 id="websockets">WebSockets</h3>
+<ul>
+<li>Upgrade path for <code>/ws/...</code> (messaging notifications, auctions) must reach the <strong>same</strong> ASGI app.</li>
+<li>Sticky sessions or Redis channel layer required when running multiple API instances (<code>REDIS_URL</code> must be set).</li>
+</ul>
+<h3 id="public-callback-keepz-must-reach">Public callback Keepz must reach</h3>
+<pre><code>POST https://api.koleqcia.com/api/orders/payments/keepz/callback/
+</code></pre>
+<p>Built from <code>BACKEND_PUBLIC_URL</code>. If that env stays at localhost, payments will not fulfill reliably (reconciliation is a fallback, not a substitute for a working webhook in production).</p>
+<p>Frontend polls payment status (does <strong>not</strong> trust <code>?payment=success</code>):</p>
+<pre><code>GET /api/orders/&lt;order-uuid&gt;/status/
+</code></pre>
+<hr />
+<h2 id="6-data-stores">6. Data stores</h2>
+<h3 id="postgresql-required-in-production">PostgreSQL (required in production)</h3>
+<ul>
+<li>Engine: PostgreSQL 16 (see CI + <code>docker-compose.yml</code>).</li>
+<li>App connects via <code>DATABASE_URL=postgresql://USER:PASS@HOST:5432/koleqcia</code>.</li>
+<li>Prefer dedicated role <code>koleqcia_app</code>, not the RDS master user.</li>
+<li>SSL: <code>DB_SSLMODE=verify-full</code> + AWS RDS CA bundle path in <code>DB_SSLROOTCERT</code>.</li>
+<li>For ASGI: keep <code>DB_CONN_MAX_AGE=0</code>; use <strong>RDS Proxy</strong> if pooling is needed.</li>
+<li>Payment reconciliation uses PostgreSQL advisory locks тАФ avoid transaction-mode PgBouncer for payment workers (session affinity / direct RDS preferred). See <code>deploy/AWS_POSTGRESQL.md</code>.</li>
+</ul>
+<h3 id="redis">Redis</h3>
+<ul>
+<li>Channel layer for WebSockets across workers.</li>
+<li>Celery broker.</li>
+<li>Distributed single-flight lock for reconciliation.</li>
+</ul>
+<p>Without Redis, Django falls back to in-memory layers тАФ <strong>unsafe</strong> with &gt;1 process.</p>
+<h3 id="media-uploads">Media / uploads</h3>
+<ul>
+<li>Code currently serves from <code>backend/media/</code> (<code>MEDIA_ROOT</code>).</li>
+<li><strong>Production must not rely on ephemeral container disk.</strong></li>
+<li>DevOps must provide either:</li>
+<li>persistent volume mounted at media path, <strong>or</strong></li>
+<li>S3 (or similar) + code/config change (S3 is <strong>not</strong> fully wired as the default today тАФ treat as an open task if multi-instance API is planned).</li>
+</ul>
+<p>Database dumps do <strong>not</strong> include uploaded images; copy media separately when migrating.</p>
+<h3 id="local-compose-dev-parity">Local compose (dev parity)</h3>
+<pre><code class="language-bash">docker compose up -d   # Postgres :5432, Redis :6379
+</code></pre>
+<p>Credentials in compose: <code>koleqcia</code> / <code>koleqcia</code> / db <code>koleqcia</code>.</p>
+<hr />
+<h2 id="7-payments-keepz-how-money-works">7. Payments (Keepz) тАФ how money works</h2>
+<p>Designed as <strong>zero-trust</strong>:</p>
+<ol>
+<li>Checkout creates a <code>PaymentSession</code> and redirects the customer to Keepz.</li>
+<li>Stock is <strong>reserved</strong> for payment window + buffer (default ~5 + 2 minutes).</li>
+<li>Keepz webhook hits the callback URL тЖТ backend extracts order id тЖТ <strong>server-to-server</strong> status call verifies status / amount / currency.</li>
+<li>On success: order тЖТ processing, stock finalized, confirmation email.</li>
+<li>On failure/reject: order failed, stock released.</li>
+<li>Amount mismatch тЖТ <code>needs_review</code> (stock kept, no silent fulfill).</li>
+<li>Celery Beat reconciles pending sessions every ~5 minutes (same fulfillment code as webhook; idempotent).</li>
+<li>Frontend return URL may say <code>payment=success</code>; UI shows тАЬVerifyingтАжтАЭ until backend confirms.</li>
+</ol>
+<h3 id="split-settlement">Split settlement</h3>
+<ul>
+<li>Multi-vendor Georgian carts can pay each vendorтАЩs Keepz merchant (<code>BRANCH</code> receivers).</li>
+<li>Each vendor gets an independent shipment / tracking number in admin.</li>
+</ul>
+<h3 id="refunds">Refunds</h3>
+<ul>
+<li>Admin can refund full or <strong>partial</strong> (per line item). Points and creator commission reverse <strong>proportionally</strong>.</li>
+<li>Gateway is called <strong>before</strong> local settlement so books never claim a refund that did not move.</li>
+<li><strong>Open blocker:</strong> Keepz returned <code>Refund not allowed</code> (statusCode <strong>6038</strong>) for this integrator тАФ Keepz must enable refunds on the merchant/integrator account before live refund testing works.</li>
+</ul>
+<h3 id="keepz-permissions-still-needed-from-provider">Keepz permissions still needed from provider</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Error if missing</th>
+<th>Env flag</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Order expiry <code>validUntil</code></td>
+<td>6032</td>
+<td><code>KEEPZ_ORDER_EXPIRY_ENABLED</code> (default off until granted)</td>
+</tr>
+<tr>
+<td>Refunds</td>
+<td>6038</td>
+<td>Must be enabled by Keepz</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8-environment-variables">8. Environment variables</h2>
+<p><strong>Do not commit real values.</strong> Put them in AWS Secrets Manager / Parameter Store / Vercel env.</p>
+<p>Canonical lists:</p>
+<ul>
+<li>Backend: <code>deploy/aws.env.example</code> and <code>backend/.env.example</code></li>
+<li>Frontend: <code>deploy/vercel.env.example</code></li>
+</ul>
+<h3 id="backend-must-set-for-production">Backend тАФ must-set for production</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DJANGO_SETTINGS_MODULE</code></td>
+<td><code>kolekcia.settings.production</code></td>
+</tr>
+<tr>
+<td><code>DEBUG</code></td>
+<td><code>False</code></td>
+</tr>
+<tr>
+<td><code>SECRET_KEY</code></td>
+<td>Long random; <strong>not</strong> <code>django-insecure-*</code></td>
+</tr>
+<tr>
+<td><code>DATABASE_URL</code></td>
+<td>Postgres URL (required or boot fails)</td>
+</tr>
+<tr>
+<td><code>DB_SSLMODE</code> / <code>DB_SSLROOTCERT</code></td>
+<td>RDS TLS</td>
+</tr>
+<tr>
+<td><code>ALLOWED_HOSTS</code></td>
+<td>API hostnames</td>
+</tr>
+<tr>
+<td><code>CORS_ALLOWED_ORIGINS</code> / <code>CSRF_TRUSTED_ORIGINS</code></td>
+<td>Frontend origins</td>
+</tr>
+<tr>
+<td><code>FRONTEND_URL</code></td>
+<td>Public storefront origin</td>
+</tr>
+<tr>
+<td><code>BACKEND_PUBLIC_URL</code></td>
+<td>Public API origin (webhooks + email image URLs)</td>
+</tr>
+<tr>
+<td><code>REDIS_URL</code></td>
+<td>Redis for Channels / locks</td>
+</tr>
+<tr>
+<td><code>CELERY_BROKER_URL</code></td>
+<td>Usually same Redis</td>
+</tr>
+<tr>
+<td><code>CELERY_TASK_ALWAYS_EAGER</code></td>
+<td>Must be <code>False</code> in prod</td>
+</tr>
+<tr>
+<td><code>KEEPZ_*</code></td>
+<td>Gateway credentials, receivers, split, windows</td>
+</tr>
+<tr>
+<td><code>EMAIL_*</code></td>
+<td>SMTP for transactional mail</td>
+</tr>
+<tr>
+<td><code>GOOGLE_CLIENT_ID</code></td>
+<td>Google Sign-In</td>
+</tr>
+</tbody>
+</table>
+<h3 id="frontend-must-set">Frontend тАФ must-set</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NEXT_PUBLIC_API_URL</code></td>
+<td>e.g. <code>https://api.koleqcia.com/api</code></td>
+</tr>
+<tr>
+<td><code>NEXT_PUBLIC_SITE_URL</code></td>
+<td>e.g. <code>https://www.koleqcia.com</code></td>
+</tr>
+<tr>
+<td><code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code></td>
+<td>Same OAuth web client as backend</td>
+</tr>
+</tbody>
+</table>
+<h3 id="package-manager">Package manager</h3>
+<ul>
+<li>Frontend uses <strong>pnpm</strong> (<code>packageManager: pnpm@9.15.0</code>).  </li>
+<li>Only <code>pnpm-lock.yaml</code> is authoritative. Do not introduce a second lockfile.</li>
+</ul>
+<hr />
+<h2 id="9-ci">9. CI</h2>
+<p>GitHub Actions (<code>.github/workflows/ci.yml</code>):</p>
+<ol>
+<li><strong>Frontend:</strong> <code>pnpm install --frozen-lockfile</code> тЖТ typecheck тЖТ vitest  </li>
+<li><strong>Backend (SQLite/local settings):</strong> <code>manage.py check</code> + subset of tests  </li>
+<li><strong>Backend (Postgres 16 service):</strong> migrate under <strong>production</strong> settings тЖТ full <code>manage.py test</code> under <code>postgres_test</code></li>
+</ol>
+<p>A migration that only works on SQLite will fail CI.</p>
+<hr />
+<h2 id="10-what-devops-must-provision">10. What DevOps must provision</h2>
+<h3 id="accounts-access">Accounts &amp; access</h3>
+<ul>
+<li>[ ] GitHub access to <code>mozaikkonew/koleqcia</code></li>
+<li>[ ] AWS account / roles (ECS/EC2/Elastic Beanstalk тАФ whatever hosts ASGI)</li>
+<li>[ ] Vercel project (or alternate frontend host) linked to the org repo</li>
+<li>[ ] RDS PostgreSQL 16 (private subnet, backups, Multi-AZ recommended)</li>
+<li>[ ] Redis (ElastiCache or equivalent) with TLS if required</li>
+<li>[ ] Secrets Manager / Parameter Store for env</li>
+<li>[ ] DNS for <code>www</code> + <code>api</code> (+ TLS certificates)</li>
+<li>[ ] SMTP / Google Workspace relay credentials</li>
+<li>[ ] Keepz production credentials (from product owner)</li>
+<li>[ ] Google Cloud OAuth: authorized JS origins + redirect URIs for prod domains</li>
+</ul>
+<h3 id="infrastructure-checklist">Infrastructure checklist</h3>
+<ul>
+<li>[ ] ASGI service behind HTTPS load balancer / Nginx</li>
+<li>[ ] WebSocket upgrade support to the same service</li>
+<li>[ ] Celery worker service</li>
+<li>[ ] Celery Beat service (single instance)</li>
+<li>[ ] One-shot migration job on deploy</li>
+<li>[ ] Persistent media strategy (volume or S3)</li>
+<li>[ ] Log aggregation + alerts (API 5xx, Celery failures, payment <code>needs_review</code>)</li>
+<li>[ ] Automated RDS backups + restore drill</li>
+<li>[ ] Security groups: DB only from API/workers; Redis only from API/workers</li>
+</ul>
+<h3 id="config-values-product-owner-must-fill">Config values product owner must fill</h3>
+<ul>
+<li>Production domain names  </li>
+<li>Keepz integrator / public / private keys / receiver IDs / split on-off  </li>
+<li>Email from-addresses (<code>accounts@</code>, <code>orders@</code>, <code>auctions@</code>, тАж)  </li>
+<li>Google OAuth client ID  </li>
+<li>Whether to <strong>migrate old SQLite/PythonAnywhere data</strong> or start empty  </li>
+</ul>
+<hr />
+<h2 id="11-release-cutover-order">11. Release / cutover order</h2>
+<p>From <code>deploy/AWS_POSTGRESQL.md</code> (summary):</p>
+<ol>
+<li>Provision RDS + Redis + secrets; mount RDS CA bundle.</li>
+<li>Deploy API with production settings; run <strong>migrate</strong> once.</li>
+<li>If migrating data: maintenance mode тЖТ dump/import per AWS doc тЖТ copy media тЖТ verify counts.</li>
+<li>Start API тЖТ Celery worker тЖТ Celery Beat.</li>
+<li>Deploy frontend with production <code>NEXT_PUBLIC_*</code>.</li>
+<li>Point DNS; confirm CORS/CSRF/hosts.</li>
+<li>Register Keepz webhook URL; enable <code>KEEPZ_ENABLED=True</code> only after a dry run.</li>
+<li>Smoke test (section 12).</li>
+<li>First real low-value payment, then refund (once Keepz enables 6038).</li>
+</ol>
+<p>Do <strong>not</strong> run old SQLite production and new Postgres production in parallel for live traffic тАФ payments and stock will diverge.</p>
+<hr />
+<h2 id="12-smoke-test-after-first-deploy">12. Smoke test after first deploy</h2>
+<p>Record evidence (screenshot / log / order id) for each:</p>
+<ol>
+<li>API boots: <code>manage.py check --database default</code> under production settings  </li>
+<li>Homepage + <code>/en</code> <code>/ka</code> <code>/ru</code> load  </li>
+<li>Catalog + product images load from media URL  </li>
+<li>Register / login / Google Sign-In  </li>
+<li>Add to cart тЖТ checkout тЖТ redirect to Keepz  </li>
+<li>Complete tiny payment тЖТ order becomes <code>processing</code> without trusting query string  </li>
+<li>Confirmation email received  </li>
+<li>Admin sees order + per-vendor shipment cards  </li>
+<li>Inbox WebSocket / unread notifications work with тЙе2 API workers (if scaled)  </li>
+<li>Celery Beat log shows reconciliation tick  </li>
+<li>Forced reconcile: <code>python manage.py reconcile_keepz_payments --min-age-seconds 60</code>  </li>
+<li>(When Keepz allows) admin partial refund of one line  </li>
+</ol>
+<hr />
+<h2 id="13-open-known-work-not-finished-by-infra-alone">13. Open / known work (not finished by infra alone)</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Owner</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Keepz <strong>refunds</strong> permission (6038)</td>
+<td>Product тЖФ Keepz</td>
+<td>Blocks live refund money movement</td>
+</tr>
+<tr>
+<td>Keepz <code>validUntil</code> permission (6032)</td>
+<td>Product тЖФ Keepz</td>
+<td>Optional; gated by <code>KEEPZ_ORDER_EXPIRY_ENABLED</code></td>
+</tr>
+<tr>
+<td>Media on S3 (or equivalent)</td>
+<td>DevOps + eng</td>
+<td>Needed for multi-instance / durable uploads</td>
+</tr>
+<tr>
+<td>JWT in <code>localStorage</code></td>
+<td>Eng</td>
+<td>Noted as HIGH in release checklist; HttpOnly cookies preferred long-term</td>
+</tr>
+<tr>
+<td>Confirm PRODUCTION_RELEASE_CHECKLIST payment blockers</td>
+<td>Eng</td>
+<td>Checklist still has some outdated тАЬno paymentтАЭ wording; Keepz <strong>is</strong> implemented тАФ update checklist when validating</td>
+</tr>
+<tr>
+<td>Geo headers on AWS Nginx</td>
+<td>DevOps</td>
+<td>Set <code>X-Country-Code</code> / <code>X-Country-Name</code></td>
+</tr>
+<tr>
+<td>Data migration from PythonAnywhere</td>
+<td>Product decision</td>
+<td>Empty DB vs import; see AWS doc ┬з3</td>
+</tr>
+<tr>
+<td>Monitoring / on-call</td>
+<td>Ops</td>
+<td>Who owns incidents</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="14-local-development-for-engineers">14. Local development (for engineers)</h2>
+<pre><code class="language-bash"># infra
+docker compose up -d
+
+# backend
+cd backend
+python -m venv venv &amp;&amp; source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+# optional: DATABASE_URL=postgresql://koleqcia:koleqcia@localhost:5432/koleqcia
+python manage.py migrate --settings=kolekcia.settings.local
+python manage.py runserver --settings=kolekcia.settings.local
+
+# frontend (repo root)
+pnpm install
+cp .env.local.example .env.local
+pnpm dev
+
+# optional workers
+celery -A kolekcia worker -l info
+celery -A kolekcia beat -l info
+</code></pre>
+<p>Tests:</p>
+<pre><code class="language-bash">cd backend
+python manage.py test --settings=kolekcia.settings.local
+python manage.py test --settings=kolekcia.settings.postgres_test   # needs Postgres
+
+pnpm typecheck &amp;&amp; pnpm test
+</code></pre>
+<hr />
+<h2 id="15-contacts-ownership-fill-in">15. Contacts / ownership (fill in)</h2>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Name</th>
+<th>Contact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Product owner</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Engineering</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>DevOps</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Keepz account manager</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>On-call / incidents</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="16-one-paragraph-brief-paste-into-slackemail">16. One-paragraph brief (paste into Slack/email)</h2>
+<blockquote>
+<p>Koleqcia is a Next.js + Django ASGI marketplace. Production needs PostgreSQL 16, Redis, an ASGI API, a Celery worker, and Celery Beat. Frontend is intended for Vercel; API for AWS behind HTTPS with WebSocket support. Payments use Keepz with zero-trust webhooks (<code>/api/orders/payments/keepz/callback/</code>) plus periodic reconciliation. Env templates live in <code>deploy/</code>. <code>BACKEND_PUBLIC_URL</code> must be the public API origin. Media needs durable storage. Keepz must still enable refunds (error 6038). Full detail: <code>SYSTEM_AND_DEPLOY_HANDOFF.md</code> in https://github.com/mozaikkonew/koleqcia.</p>
+</blockquote>
+</body>
+</html>

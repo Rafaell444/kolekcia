@@ -30,10 +30,14 @@ const ka: MessageTree = {
     searchProducts: "პროდუქტების ძიება…",
     results: "შედეგი",
     shopNow: "ყიდვა",
+    seeAllProducts: "ყველა პროდუქტის ნახვა",
     close: "დახურვა",
   },
   home: {
     trending: "ტრენდული ახლა",
+    browseProducts: "აღმოაჩინე სასურველი პროდუქტები",
+    onSale: "ფასდაკლება",
+    limitedEdition: "ლიმიტირებული გამოცემა",
   },
   cart: {
     title: "თქვენი კალათა",

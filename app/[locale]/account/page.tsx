@@ -35,8 +35,18 @@ type CustomOrder = {
 }
 
 const CUSTOM_STATUS_LABELS: Record<string, string> = {
-  pending: "Pending review", review: "In review", approved: "Approved - pay now",
+  pending: "Pending review", review: "In review", approved: "Approved",
   paid: "Paid", printing: "Printing", shipped: "Shipped", cancelled: "Cancelled",
+}
+
+const CUSTOM_STATUS_HELP: Record<string, string> = {
+  pending: "Your request was received. The vendor still needs to review the image and details.",
+  review: "The vendor is checking the design, price, and production details.",
+  approved: "The vendor approved this order. Payment is available from your custom orders.",
+  paid: "Payment is confirmed. Production can begin.",
+  printing: "Your custom product is in production.",
+  shipped: "Your custom product has shipped.",
+  cancelled: "This custom order was cancelled.",
 }
 type Order = { id: string; order_number: string; status: string; total: string; created_at: string; items_count?: number; items?: { id: number }[]; tracking_code: string; currency?: string }
 type WishlistProduct = {
@@ -364,7 +374,9 @@ function CustomOrdersTab() {
             Start Custom Order
           </Link>
         </div>
-      ) : orders.map((order) => (
+      ) : orders.map((order) => {
+        const canPay = order.status === "approved" && Boolean(order.price)
+        return (
         <div key={order.id} className="bg-dp-bg-surface border border-dp-border rounded-sm p-5 flex flex-col gap-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex gap-3 min-w-0">
@@ -378,6 +390,9 @@ function CustomOrdersTab() {
                 </p>
                 <p className="text-[11px] text-dp-text-tertiary">
                   Submitted {new Date(order.created_at).toLocaleDateString()}
+                </p>
+                <p className="text-[12px] text-dp-text-secondary mt-2">
+                  {CUSTOM_STATUS_HELP[order.status] ?? "We will update this order as soon as its status changes."}
                 </p>
               </div>
             </div>
@@ -398,7 +413,7 @@ function CustomOrdersTab() {
               {formatAmount(parseFloat(order.price), (order.currency ?? "USD") as Currency)}
             </p>
           )}
-          {order.status === "approved" && order.price && (
+          {canPay && (
             <button
               type="button"
               onClick={() => handlePay(order.id)}
@@ -416,7 +431,8 @@ function CustomOrdersTab() {
             <p className="text-[12px] text-red-400">Reason: {order.cancel_reason}</p>
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -787,13 +803,14 @@ function AddressesTab() {
 // ── Settings Tab ──────────────────────────────────────────
 function SettingsTab() {
   const { user, refreshUser } = useAuth()
+  const typedUser = user as (typeof user & { phone?: string; date_of_birth?: string })
   const [nameParts, setNameParts] = useState(() => {
     const parts = (user?.name ?? "").split(" ")
     return { first: parts[0] ?? "", last: parts.slice(1).join(" ") }
   })
-  const [phone, setPhone] = useState((user as (typeof user & { phone?: string }))?.phone ?? "")
-  const [dob, setDob] = useState((user as (typeof user & { date_of_birth?: string }))?.date_of_birth ?? "")
-  const [savedInfo, setSavedInfo] = useState(false)
+  const [phone, setPhone] = useState(typedUser?.phone ?? "")
+  const [dob, setDob] = useState(typedUser?.date_of_birth ?? "")
+  const [savedInfoKey, setSavedInfoKey] = useState("")
 
   const [curPw, setCurPw] = useState("")
   const [newPw, setNewPw] = useState("")
@@ -804,9 +821,33 @@ function SettingsTab() {
   const [savingPw, setSavingPw] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
+  function infoKey(nextNameParts = nameParts, nextPhone = phone, nextDob = dob): string {
+    return JSON.stringify({
+      name: `${nextNameParts.first} ${nextNameParts.last}`.trim(),
+      phone: nextPhone.trim(),
+      date_of_birth: nextDob || "",
+    })
+  }
+
+  useEffect(() => {
+    const parts = (user?.name ?? "").split(" ")
+    const nextNameParts = { first: parts[0] ?? "", last: parts.slice(1).join(" ") }
+    const nextPhone = typedUser?.phone ?? ""
+    const nextDob = typedUser?.date_of_birth ?? ""
+    setNameParts(nextNameParts)
+    setPhone(nextPhone)
+    setDob(nextDob)
+    setSavedInfoKey(JSON.stringify({
+      name: `${nextNameParts.first} ${nextNameParts.last}`.trim(),
+      phone: nextPhone.trim(),
+      date_of_birth: nextDob || "",
+    }))
+  }, [user?.name, typedUser?.phone, typedUser?.date_of_birth])
+
   async function handleSaveInfo(e: React.FormEvent) {
     e.preventDefault()
     setSavingInfo(true)
+    const nextKey = infoKey()
     try {
       await authFetch("/auth/me/", {
         method: "PATCH",
@@ -817,8 +858,7 @@ function SettingsTab() {
         }),
       })
       await refreshUser()
-      setSavedInfo(true)
-      setTimeout(() => setSavedInfo(false), 2500)
+      setSavedInfoKey(nextKey)
     } catch {
       // silent fail for now
     } finally {
@@ -875,6 +915,7 @@ function SettingsTab() {
 
   const inputCls = "w-full px-4 py-3 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-border-hover transition-colors"
   const labelCls = "block text-[11px] font-bold uppercase tracking-[0.14em] text-dp-text-tertiary mb-2"
+  const infoSaved = Boolean(savedInfoKey) && infoKey() === savedInfoKey
 
   return (
     <div className="flex flex-col gap-10 w-full min-w-0 max-w-lg overflow-x-hidden">
@@ -923,8 +964,8 @@ function SettingsTab() {
             <label className={labelCls}>Date of Birth</label>
             <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className={inputCls} />
           </div>
-          <button type="submit" disabled={savingInfo} className={`w-full sm:w-auto sm:self-start px-8 py-3 rounded-sm text-[12px] font-black uppercase tracking-widest transition-colors disabled:opacity-60 ${savedInfo ? "bg-dp-success text-white" : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"}`}>
-            {savingInfo ? "Saving…" : savedInfo ? "Saved!" : "Save Changes"}
+          <button type="submit" disabled={savingInfo} className={`w-full sm:w-auto sm:self-start px-8 py-3 rounded-sm text-[12px] font-black uppercase tracking-widest transition-colors disabled:opacity-60 ${infoSaved ? "bg-dp-success text-white" : "bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white"}`}>
+            {savingInfo ? "Saving…" : infoSaved ? "Saved" : "Save Changes"}
           </button>
         </form>
       </section>

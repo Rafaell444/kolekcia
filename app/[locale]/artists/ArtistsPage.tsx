@@ -66,7 +66,7 @@ export default function ArtistsPage() {
             {vendors.map((vendor) => {
               const category = vendor.catalog_category_slug
               const label = CATEGORY_LABELS[category] ?? category
-              const href = `/catalog?vendor=${encodeURIComponent(vendor.slug)}`
+              const href = `/artists/${encodeURIComponent(vendor.slug)}`
               return (
                 <LocalizedLink
                   key={vendor.id}

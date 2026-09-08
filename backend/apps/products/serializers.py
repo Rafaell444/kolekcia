@@ -10,7 +10,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ("id", "name", "name_ka", "slug", "image_url", "count", "seo")
+        fields = ("id", "name", "name_ka", "slug", "image_url", "menu_image_url", "count", "seo")
 
     def get_seo(self, obj):
         return build_seo_dict(obj, og_image=obj.image_url or "")

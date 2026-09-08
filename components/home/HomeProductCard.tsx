@@ -8,7 +8,7 @@ import { useLocalePrefix } from "@/lib/use-localized-href"
 import { resolveListProductPrice, formatAmount } from "@/lib/product-pricing"
 import type { SizeVariantPrice } from "@/lib/product-pricing"
 
-type ApiProduct = {
+export type HomeProduct = {
   id: number
   slug?: string
   category_slug?: string
@@ -28,7 +28,7 @@ type ApiProduct = {
   size_variants?: SizeVariantPrice[]
 }
 
-export default function HomeProductCard({ product }: { product: ApiProduct }) {
+export default function HomeProductCard({ product }: { product: HomeProduct }) {
   const lp = useLocalePrefix()
   const locale = lp.slice(1)
   const { currency, rates } = useLocale()

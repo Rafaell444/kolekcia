@@ -12,6 +12,7 @@ class ProductFilter(django_filters.FilterSet):
     new        = django_filters.BooleanFilter(field_name="is_new")
     exclusive  = django_filters.BooleanFilter(field_name="is_exclusive")
     limited    = django_filters.BooleanFilter(field_name="is_limited")
+    featured   = django_filters.BooleanFilter(field_name="is_featured")
     ready_to_ship = django_filters.BooleanFilter(method="filter_ready_to_ship")
     material   = django_filters.CharFilter(method="filter_material")
     size       = django_filters.CharFilter(method="filter_size")
@@ -19,7 +20,7 @@ class ProductFilter(django_filters.FilterSet):
 
     class Meta:
         model = Product
-        fields = ["category", "artist", "vendor", "min_price", "max_price", "sale", "new", "exclusive", "limited", "ready_to_ship", "material", "size", "tag"]
+        fields = ["category", "artist", "vendor", "min_price", "max_price", "sale", "new", "exclusive", "limited", "featured", "ready_to_ship", "material", "size", "tag"]
 
     def filter_category(self, queryset, name, value):
         from django.db.models import Q

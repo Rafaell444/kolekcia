@@ -28,6 +28,7 @@ class Category(SEOModelMixin):
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True)
     image_url = models.URLField(blank=True)
+    menu_image_url = models.URLField(blank=True)
     count = models.PositiveIntegerField(default=0)
 
     class Meta:

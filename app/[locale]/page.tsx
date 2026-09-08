@@ -5,35 +5,85 @@ import { buildPageMetadata } from "@/lib/seo"
 import { getMessages } from "@/lib/messages"
 import SiteShell from "@/components/layout/SiteShell"
 import HeroCarousel from "@/components/home/HeroCarousel"
-import TrendingArtists from "@/components/home/TrendingArtists"
 import BrandsCarousel from "@/components/home/BrandsCarousel"
 import BigCategories from "@/components/home/BigCategories"
 import VideoSection from "@/components/home/VideoSection"
 import ReviewsSection from "@/components/home/ReviewsSection"
 import NewsletterSection from "@/components/home/NewsletterSection"
-import HomeProductCard from "@/components/home/HomeProductCard"
-import Link from "next/link"
-import { ArrowRight } from "lucide-react"
+import CategoryProductBrowser from "@/components/home/CategoryProductBrowser"
+import type { HomeCategoryProducts } from "@/components/home/CategoryProductBrowser"
+import type { HomeProduct } from "@/components/home/HomeProductCard"
+import HomeProductShelf from "@/components/home/HomeProductShelf"
 import { fetchPageSections, sectionContent } from "@/lib/page-sections"
 import OrganizationJsonLd from "@/components/seo/OrganizationJsonLd"
 
-type ApiProduct = {
-  id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string
-  original_price: string | null; regional_prices?: Record<string, unknown>; rating: string; review_count: number
-  image_url: string; is_limited: boolean; is_sale: boolean; is_new: boolean; is_exclusive: boolean; is_featured?: boolean
-  size_variants?: Array<{ id: number; label: string; price_usd: string; price_gel?: string | null; price_eur?: string | null; price_gbp?: string | null; sale_price_usd?: string | null; sale_price_gel?: string | null; is_active?: boolean }>
+type ApiCategory = {
+  id: number
+  name: string
+  slug: string
+  count: number
 }
 
-async function getTrendingProducts(locale: string): Promise<ApiProduct[]> {
+const CATEGORY_PRIORITY: Record<string, number> = { figures: 0, wallpanels: 1 }
+
+async function getCategoryProducts(locale: string): Promise<HomeCategoryProducts[]> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
   try {
-    const res = await fetch(`${apiUrl}/products/?sort=featured&page_size=8&lang=${locale}`, {
+    const categoryResponse = await fetch(`${apiUrl}/products/categories/?lang=${locale}`, {
       headers: { "Accept-Language": locale },
       cache: "no-store",
     })
-    if (!res.ok) return []
-    const data = await res.json() as { results: ApiProduct[] }
-    return data.results ?? []
+    if (!categoryResponse.ok) return []
+
+    const categories = (await categoryResponse.json() as ApiCategory[])
+      .filter((category) => category.count > 0)
+      .sort((a, b) => {
+        const aPriority = CATEGORY_PRIORITY[a.slug.toLowerCase()] ?? 2
+        const bPriority = CATEGORY_PRIORITY[b.slug.toLowerCase()] ?? 2
+        return aPriority - bPriority
+      })
+
+    const groups = await Promise.all(categories.map(async (category) => {
+      const params = new URLSearchParams({
+        category: category.slug,
+        sort: "featured",
+        page_size: "18",
+        lang: locale,
+      })
+      const productResponse = await fetch(`${apiUrl}/products/?${params.toString()}`, {
+        headers: { "Accept-Language": locale },
+        cache: "no-store",
+      })
+      if (!productResponse.ok) return null
+      const data = await productResponse.json() as { results?: HomeProduct[] }
+      const products = (data.results ?? []).slice(0, 18)
+      return products.length > 0
+        ? { id: category.id, name: category.name, slug: category.slug, products }
+        : null
+    }))
+
+    return groups.filter((group): group is HomeCategoryProducts => group !== null)
+  } catch {
+    return []
+  }
+}
+
+async function getHomepageProducts(locale: string, filter: "featured" | "sale" | "limited"): Promise<HomeProduct[]> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api"
+  const params = new URLSearchParams({
+    [filter]: "true",
+    sort: "featured",
+    page_size: "12",
+    lang: locale,
+  })
+  try {
+    const response = await fetch(`${apiUrl}/products/?${params.toString()}`, {
+      headers: { "Accept-Language": locale },
+      cache: "no-store",
+    })
+    if (!response.ok) return []
+    const data = await response.json() as { results?: HomeProduct[] }
+    return (data.results ?? []).slice(0, 12)
   } catch {
     return []
   }
@@ -62,8 +112,11 @@ export default async function HomePage({
 }) {
   const { locale } = await params
   const t = getMessages(locale)
-  const [trendingProducts, sections] = await Promise.all([
-    getTrendingProducts(locale),
+  const [categoryProducts, trendingProducts, saleProducts, limitedProducts, sections] = await Promise.all([
+    getCategoryProducts(locale),
+    getHomepageProducts(locale, "featured"),
+    getHomepageProducts(locale, "sale"),
+    getHomepageProducts(locale, "limited"),
     fetchPageSections("home", locale),
   ])
   const video = sectionContent<{ heading?: string; cards?: Array<{ id: string; label: string; thumb: string }> }>(sections, "video", locale)
@@ -77,21 +130,35 @@ export default async function HomePage({
       <BrandsCarousel />
       <BigCategories />
 
-      {trendingProducts.length > 0 && (
-        <section className="dp-container pb-14" aria-labelledby="trending-heading">
-          <div className="flex items-end justify-between mb-6">
-            <h2 className="font-display text-3xl md:text-4xl text-dp-text-primary" id="trending-heading">{t.home.trending}</h2>
-            <Link href={`/${locale}/catalog?sort=trending`} className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-widest text-dp-text-secondary hover:text-dp-text-primary transition-colors">
-              {t.common.viewAll} <ArrowRight size={12} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {trendingProducts.map((p) => <HomeProductCard key={p.id} product={p} />)}
-          </div>
-        </section>
-      )}
+      <CategoryProductBrowser
+        categories={categoryProducts}
+        locale={locale}
+        heading={t.home.browseProducts}
+        seeAllLabel={t.common.seeAllProducts}
+      />
 
-      <TrendingArtists locale={locale} />
+      <HomeProductShelf
+        id="trending-products-heading"
+        title={t.home.trending}
+        products={trendingProducts}
+        href={`/${locale}/catalog?filter=trending`}
+        seeAllLabel={t.common.seeAllProducts}
+      />
+      <HomeProductShelf
+        id="sale-products-heading"
+        title={t.home.onSale}
+        products={saleProducts}
+        href={`/${locale}/catalog?filter=sale`}
+        seeAllLabel={t.common.seeAllProducts}
+      />
+      <HomeProductShelf
+        id="limited-products-heading"
+        title={t.home.limitedEdition}
+        products={limitedProducts}
+        href={`/${locale}/catalog?filter=limited`}
+        seeAllLabel={t.common.seeAllProducts}
+      />
+
       <VideoSection content={video ?? undefined} />
       <ReviewsSection />
       <NewsletterSection content={newsletter ?? undefined} />

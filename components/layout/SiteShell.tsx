@@ -8,9 +8,7 @@ import { createPortal } from "react-dom"
 import {
   ShoppingCart, User, Menu, X, Zap, Loader2, MessageSquare,
   Settings, LogOut, Package, Heart, Award,
-  ArrowRight, ChevronDown, Flame, Sparkles,
-  Star, Brush, Sword, Globe2, Music2, Film,
-  TreePine, Rocket, Layers, Palette,
+  ArrowRight, ChevronDown, Layers,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useCart } from "@/contexts/cart-context"
@@ -18,18 +16,15 @@ import { useLoyalty } from "@/contexts/gamification-context"
 import { UnreadBadge } from "@/components/messaging/UnreadBadge"
 import { useInboxUnreadCount } from "@/hooks/use-inbox-unread"
 import { apiFetch, parseList, type PaginatedResponse } from "@/lib/api"
-import { productHref } from "@/lib/product-url"
 import TrustBar from "@/components/home/TrustBar"
 import LocaleSwitcher, { LocaleSwitcherInline } from "@/components/layout/LocaleSwitcher"
 import { DesktopSearch, MobileHeaderSearch, MenuSearch } from "@/components/layout/ProductSearch"
-import { useLocale } from "@/contexts/locale-context"
 import { useLocalePrefix } from "@/lib/use-localized-href"
 import { useTranslations } from "@/hooks/use-translations"
 import { stripLocalePrefix } from "@/lib/i18n"
 
-type NavCategory = { id: string; name: string; slug: string }
+type NavCategory = { id: number; name: string; slug: string; image_url: string; menu_image_url: string; count: number }
 type NavVendor = { id: number; name: string; slug: string; logo_url: string; catalog_category_slug: string }
-type NavProduct  = { id: number; slug?: string; category_slug?: string; title: string; artist_name: string; base_price: string; image_url: string }
 
 const VENDOR_CATEGORY_LABELS: Record<string, string> = {
   figures: "Figures",
@@ -78,85 +73,83 @@ function PromoBanner() {
   )
 }
 
-// ── Category icon map ─────────────────────────────────────
-const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  anime:    <Sword    size={14} />,
-  gaming:   <Layers   size={14} />,
-  space:    <Rocket   size={14} />,
-  nature:   <TreePine size={14} />,
-  abstract: <Palette  size={14} />,
-  movies:   <Film     size={14} />,
-  music:    <Music2   size={14} />,
-  fantasy:  <Globe2   size={14} />,
-}
-
 // ── Mega menu panels ──────────────────────────────────────
 function ShopMegaMenu({
   onClose,
   categories,
   vendors,
-  featured,
+  defaultImage,
 }: {
   onClose: () => void
   categories: NavCategory[]
   vendors: NavVendor[]
-  featured: NavProduct[]
+  defaultImage: string
 }) {
-  const { formatPrice } = useLocale()
   const lp = useLocalePrefix()
+  const locale = lp.slice(1)
+  const [hoveredImage, setHoveredImage] = useState("")
+  const fallbackImage = categories.find((category) => category.menu_image_url || category.image_url)
+  const previewImage = hoveredImage || defaultImage || fallbackImage?.menu_image_url || fallbackImage?.image_url || ""
+  const loyaltyCopy = {
+    en: {
+      eyebrow: "Koleqcia Rewards",
+      title: "Collect points. Unlock more.",
+      body: "Earn points as you shop, rise through loyalty tiers, and redeem exclusive rewards.",
+      cta: "Explore rewards",
+    },
+    ka: {
+      eyebrow: "Koleqcia-ს ჯილდოები",
+      title: "დააგროვე ქულები. მიიღე მეტი.",
+      body: "შოპინგით დააგროვე ქულები, აიმაღლე დონე და მიიღე ექსკლუზიური ჯილდოები.",
+      cta: "ნახე ჯილდოები",
+    },
+    ru: {
+      eyebrow: "Награды Koleqcia",
+      title: "Копите баллы. Получайте больше.",
+      body: "Получайте баллы за покупки, повышайте уровень и обменивайте их на награды.",
+      cta: "Смотреть награды",
+    },
+  }[locale === "ka" || locale === "ru" ? locale : "en"]
 
   return (
     <div className="absolute top-full left-0 w-full bg-dp-bg-surface border-b border-dp-border shadow-xl z-40 -mt-px pt-px">
-      <div className="dp-container py-8 grid grid-cols-4 gap-8">
-
-        {/* Col 1 — Collections */}
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Collections</p>
-          <ul className="flex flex-col gap-1">
-            {[
-              { label: "New Arrivals",     href: `${lp}/catalog?filter=new`,     icon: <Sparkles size={13} /> },
-              { label: "Trending Now",     href: `${lp}/catalog?sort=popular`,   icon: <Flame    size={13} /> },
-              { label: "Limited Editions", href: `${lp}/catalog?filter=limited`, icon: <Star     size={13} /> },
-              { label: "On Sale",          href: `${lp}/catalog?filter=sale`,    icon: <Zap      size={13} /> },
-              { label: "Exclusive Drops",  href: `${lp}/catalog?filter=exclusive`,icon:<Award    size={13} /> },
-              { label: "All Designs",      href: `${lp}/catalog`,                icon: <Brush    size={13} /> },
-            ].map(({ label, href, icon }) => (
-              <li key={label}>
-                <Link
-                  href={href}
-                  onClick={onClose}
-                  className="flex items-center gap-2.5 px-2 py-2 rounded-sm text-[13px] font-semibold text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors group"
-                >
-                  <span className="text-dp-text-tertiary group-hover:text-dp-accent-cta transition-colors">{icon}</span>
-                  {label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Col 2 — Categories */}
-        <div>
+      <div className="dp-container grid grid-cols-[minmax(0,1.2fr)_minmax(240px,1.35fr)_minmax(0,0.8fr)_minmax(240px,1.15fr)] gap-8 py-8">
+        <div onMouseLeave={() => setHoveredImage("")}>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Categories</p>
-          <ul className="grid grid-cols-2 gap-1">
+          <ul className="grid grid-cols-2 gap-x-2 gap-y-1">
             {categories.map((cat) => (
               <li key={cat.id}>
                 <Link
                   href={`${lp}/catalog?category=${cat.slug}`}
                   onClick={onClose}
+                  onMouseEnter={() => setHoveredImage(cat.menu_image_url || cat.image_url || "")}
+                  onFocus={() => setHoveredImage(cat.menu_image_url || cat.image_url || "")}
                   className="flex items-center gap-2 px-2 py-2 rounded-sm text-[12px] font-semibold text-dp-text-secondary hover:text-dp-text-primary hover:bg-dp-bg-elevated transition-colors group"
                 >
                   <span className="text-dp-text-tertiary group-hover:text-dp-accent-cta transition-colors">
-                    {CATEGORY_ICONS[cat.slug] ?? <Layers size={13} />}
+                    <Layers size={13} />
                   </span>
                   {cat.name}
                 </Link>
               </li>
             ))}
           </ul>
+          <Link href={`${lp}/catalog`} onClick={onClose} className="mt-3 inline-flex items-center gap-1 px-2 text-[11px] font-bold uppercase tracking-widest text-dp-accent-cta hover:text-dp-accent-cta-hover">
+            All Products <ArrowRight size={11} />
+          </Link>
         </div>
 
-        {/* Col 3 — Vendors */}
+        <div className="relative min-h-48 overflow-hidden rounded-sm bg-dp-bg-elevated">
+          {previewImage ? (
+            <Image key={previewImage} src={previewImage} alt="" fill className="object-cover animate-in fade-in duration-300" sizes="360px" />
+          ) : (
+            <div className="flex h-full min-h-48 items-center justify-center text-dp-text-tertiary">
+              <Layers size={30} aria-hidden />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-black/10" aria-hidden />
+        </div>
+
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Our Vendors</p>
           <ul className="flex flex-col gap-3">
@@ -165,7 +158,7 @@ function ShopMegaMenu({
               return (
               <li key={vendor.id}>
                 <Link
-                  href={`${lp}/catalog?category=${vendor.catalog_category_slug}`}
+                  href={`${lp}/artists/${vendor.slug}`}
                   onClick={onClose}
                   className="flex items-center gap-3 group"
                 >
@@ -188,36 +181,19 @@ function ShopMegaMenu({
           </ul>
         </div>
 
-        {/* Col 4 — Featured Picks */}
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-text-tertiary mb-4">Editor&apos;s Picks</p>
-          <div className="flex flex-col gap-3">
-            {featured.map((p) => (
-              <Link
-                key={p.id}
-                href={productHref({ id: p.id, slug: p.slug, categorySlug: p.category_slug })}
-                onClick={onClose}
-                className="flex items-center gap-3 group"
-              >
-                <div className="relative w-12 h-16 rounded-sm overflow-hidden bg-dp-bg-elevated shrink-0">
-                  {p.image_url && <Image src={p.image_url} alt={p.title} fill className="object-cover transition-transform duration-300 group-hover:scale-105" sizes="48px" />}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-dp-text-tertiary truncate">{p.artist_name}</p>
-                  <p className="text-[13px] font-bold text-dp-text-primary group-hover:text-dp-accent-cta transition-colors truncate">{p.title}</p>
-                  <p className="text-[12px] font-bold text-dp-text-primary mt-0.5">{formatPrice(parseFloat(p.base_price))}</p>
-                </div>
-              </Link>
-            ))}
-            <Link
-              href={`${lp}/catalog?filter=exclusive`}
-              onClick={onClose}
-              className="mt-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[11px] font-black uppercase tracking-widest rounded-sm transition-colors"
-            >
-              Shop All Exclusives <ArrowRight size={11} />
-            </Link>
+        <Link href={`${lp}/account/awards`} onClick={onClose} className="group flex min-h-48 flex-col justify-between border border-dp-border bg-dp-bg-elevated p-5 hover:border-dp-accent-cta/60">
+          <div>
+            <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-sm bg-dp-accent-gold text-black">
+              <Award size={18} aria-hidden />
+            </div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-dp-accent-cta">{loyaltyCopy.eyebrow}</p>
+            <p className="mt-2 font-display text-2xl text-dp-text-primary">{loyaltyCopy.title}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-dp-text-secondary">{loyaltyCopy.body}</p>
           </div>
-        </div>
+          <span className="mt-5 inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-widest text-dp-accent-cta group-hover:text-dp-accent-cta-hover">
+            {loyaltyCopy.cta} <ArrowRight size={11} />
+          </span>
+        </Link>
       </div>
     </div>
   )
@@ -341,6 +317,7 @@ function MegaNavItem({
       <Link
         href={href}
         onMouseEnter={() => onEnter(menuKey)}
+        onFocus={() => onEnter(menuKey)}
         className={`flex items-center gap-0.5 text-[13px] font-semibold uppercase tracking-widest transition-colors ${
           isActive || activeMenu === menuKey ? "text-dp-accent-cta" : "text-dp-text-secondary hover:text-dp-text-primary"
         }`}
@@ -522,11 +499,13 @@ function SiteHeader({
 
   const [navCategories, setNavCategories] = useState<NavCategory[]>([])
   const [navVendors, setNavVendors] = useState<NavVendor[]>([])
-  const [navFeatured, setNavFeatured] = useState<NavProduct[]>([])
+  const [navDefaultImage, setNavDefaultImage] = useState("")
 
   useEffect(() => {
     let cancelled = false
-    apiFetch<NavCategory[]>("/products/categories/").then((d) => { if (!cancelled) setNavCategories(d) }).catch(() => {})
+    apiFetch<NavCategory[]>("/products/categories/").then((d) => {
+      if (!cancelled) setNavCategories(d.filter((category) => category.count > 0))
+    }).catch(() => {})
     apiFetch<NavVendor[] | PaginatedResponse<NavVendor>>("/vendors/public/")
       .then((d) => {
         if (cancelled) return
@@ -534,8 +513,8 @@ function SiteHeader({
         setNavVendors(list.slice(0, 2))
       })
       .catch(() => {})
-    apiFetch<{ results: NavProduct[] }>("/products/?exclusive=true&page_size=2")
-      .then((d) => { if (!cancelled) setNavFeatured((d.results ?? []).slice(0, 2)) })
+    apiFetch<Record<string, string>>("/cms/settings/")
+      .then((settings) => { if (!cancelled) setNavDefaultImage(settings.menu_default_image_url ?? "") })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -637,7 +616,7 @@ function SiteHeader({
             onClose={() => setActiveMenu(null)}
             categories={navCategories}
             vendors={navVendors}
-            featured={navFeatured}
+            defaultImage={navDefaultImage}
           />
         )}
       </div>
@@ -675,15 +654,22 @@ function SiteHeader({
                 <div className="pl-3 pb-2 flex flex-col gap-1 border-l-2 border-dp-accent-cta/30 ml-2">
                   {[
                     { label: t("footer.allProducts"), href: `${lp}/catalog` },
-                    { label: t("footer.wallpanels"),  href: `${lp}/catalog?category=wallpanels` },
-                    { label: t("footer.figures"),     href: `${lp}/catalog?category=figures` },
-                    { label: "New Arrivals",      href: `${lp}/catalog?filter=new` },
-                    { label: "Trending",          href: `${lp}/catalog?sort=popular` },
-                    { label: "Limited Editions",  href: `${lp}/catalog?filter=limited` },
-                    { label: "On Sale",           href: `${lp}/catalog?filter=sale` },
+                    ...navCategories.map((category) => ({
+                      label: category.name,
+                      href: `${lp}/catalog?category=${category.slug}`,
+                    })),
                   ].map(({ label, href }) => (
                     <Link key={label} href={href} onClick={closeMobileMenu} className="py-1.5 text-[13px] text-dp-text-secondary hover:text-dp-text-primary transition-colors">{label}</Link>
                   ))}
+                  {navVendors.length > 0 && <div className="my-1 border-t border-dp-border" />}
+                  {navVendors.map((vendor) => (
+                    <Link key={vendor.id} href={`${lp}/artists/${vendor.slug}`} onClick={closeMobileMenu} className="py-1.5 text-[13px] font-semibold text-dp-text-secondary hover:text-dp-text-primary transition-colors">
+                      {vendor.name}
+                    </Link>
+                  ))}
+                  <Link href={`${lp}/account/awards`} onClick={closeMobileMenu} className="mt-1 flex items-center gap-2 py-2 text-[12px] font-bold uppercase tracking-widest text-dp-accent-cta">
+                    <Award size={13} /> Loyalty rewards
+                  </Link>
                 </div>
               )}
 

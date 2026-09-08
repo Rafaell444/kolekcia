@@ -2,16 +2,19 @@
 
 import React, { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import SiteShell from "@/components/layout/SiteShell"
 import { apiFetch, authFetch } from "@/lib/api"
 import { useAuth } from "@/contexts/auth-context"
 import { useLocale } from "@/contexts/locale-context"
+import { useLocalePrefix } from "@/lib/use-localized-href"
 import { getAccessToken } from "@/lib/auth-storage"
+import { PHONE_COUNTRIES, type PhoneCountry } from "@/lib/phone-country-codes"
 import Image from "next/image"
 import {
-  Upload, CheckCircle, Clock, CreditCard, Mail, Phone,
-  Image as ImageIcon, FileText, AlertCircle, ArrowRight,
-  ArrowLeft, Loader2, ChevronRight,
+  Upload, CheckCircle, Clock, Mail, Phone,
+  Image as ImageIcon, FileText, AlertCircle,
+  ArrowLeft, Loader2, ChevronRight, ChevronDown, Search,
 } from "lucide-react"
 
 // ─── Types ──────────────────────────────────────────────────
@@ -26,13 +29,12 @@ type Vendor = {
   custom_cover_url: string
 }
 
-type Step = "pick" | "upload" | "pending" | "payment"
+type Step = "pick" | "upload" | "pending"
 
 const STEPS = [
   { id: "pick",    label: "Choose Type" },
   { id: "upload",  label: "Upload Design" },
   { id: "pending", label: "Review" },
-  { id: "payment", label: "Payment" },
 ]
 
 // ─── Step bar ───────────────────────────────────────────────
@@ -155,6 +157,87 @@ function PickStep({
 
 // ─── Step 2: Upload form ────────────────────────────────────
 
+function PhoneCountryPicker({
+  selected,
+  onSelect,
+  hasError,
+}: {
+  selected: PhoneCountry
+  onSelect: (country: PhoneCountry) => void
+  hasError?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const normalizedQuery = query.trim().toLowerCase()
+  const countries = normalizedQuery
+    ? PHONE_COUNTRIES.filter((country) => {
+        const haystack = `${country.name} ${country.code} ${country.dialCode}`.toLowerCase()
+        return haystack.includes(normalizedQuery)
+      })
+    : PHONE_COUNTRIES
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`h-full min-h-[42px] w-full px-3 py-2.5 bg-dp-bg-elevated border rounded-sm text-left text-[13px] text-dp-text-primary focus:outline-none transition-colors flex items-center justify-between gap-2 ${
+          hasError
+            ? "border-red-500 bg-red-500/5"
+            : "border-dp-border focus:border-dp-accent-cta"
+        }`}
+      >
+        <span className="min-w-0">
+          <span className="font-bold">{selected.dialCode}</span>
+          <span className="ml-2 text-dp-text-tertiary">{selected.code}</span>
+        </span>
+        <ChevronDown size={14} className="text-dp-text-tertiary shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-[min(22rem,80vw)] rounded-sm border border-dp-border bg-dp-bg-surface shadow-xl">
+          <div className="flex items-center gap-2 border-b border-dp-border px-3 py-2">
+            <Search size={13} className="text-dp-text-tertiary shrink-0" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoFocus
+              placeholder="Search country or code"
+              className="w-full bg-transparent text-[12px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none"
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto py-1" role="listbox">
+            {countries.length > 0 ? (
+              countries.map((country) => (
+                <button
+                  key={`${country.code}-${country.dialCode}`}
+                  type="button"
+                  onClick={() => {
+                    onSelect(country)
+                    setOpen(false)
+                    setQuery("")
+                  }}
+                  className={`w-full px-3 py-2 text-left text-[12px] hover:bg-dp-bg-elevated transition-colors flex items-center justify-between gap-3 ${
+                    country.code === selected.code && country.dialCode === selected.dialCode ? "text-dp-accent-cta" : "text-dp-text-primary"
+                  }`}
+                  role="option"
+                  aria-selected={country.code === selected.code && country.dialCode === selected.dialCode}
+                >
+                  <span className="truncate">{country.name}</span>
+                  <span className="font-bold shrink-0">{country.dialCode}</span>
+                </button>
+              ))
+            ) : (
+              <p className="px-3 py-3 text-[12px] text-dp-text-tertiary">No country codes found.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function UploadStep({
   vendor,
   onSubmit,
@@ -170,10 +253,19 @@ function UploadStep({
   const [fileName, setFileName] = useState<string | null>(null)
   const [name, setName]   = useState(user?.name ?? "")
   const [email, setEmail] = useState(user?.email ?? "")
+  const [phoneCountry, setPhoneCountry] = useState<PhoneCountry>(PHONE_COUNTRIES.find((country) => country.code === "GE") ?? PHONE_COUNTRIES[0])
   const [phone, setPhone] = useState("")
   const [note, setNote]   = useState("")
   const [drag, setDrag]   = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  function sanitizeNameInput(value: string): string {
+    return value.replace(/[^\p{L}\s]/gu, "").replace(/\s{2,}/g, " ")
+  }
+
+  function validFullName(value: string): boolean {
+    return /^[\p{L}]+(?:\s+[\p{L}]+)*$/u.test(value.trim())
+  }
 
   function handleFile(file: File) {
     if (!file.type.startsWith("image/")) return
@@ -194,18 +286,21 @@ function UploadStep({
   const [formError, setFormError] = useState("")
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
-  function fieldError(id: string, value: string, type: string): string {
+  function fieldError(id: string, value: string): string {
     if (!touched[id]) return ""
     if ((id === "custom-email" || id === "custom-phone" || id === "custom-name") && !value.trim()) {
       if (id === "custom-name")  return "Full name is required."
       if (id === "custom-email") return "Email address is required."
       if (id === "custom-phone") return "Phone number is required."
     }
+    if (id === "custom-name" && value.trim() && !validFullName(value)) {
+      return "Use letters only. Spaces between first and last name are allowed."
+    }
     if (id === "custom-email" && value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
       return "Enter a valid email address."
     }
-    if (id === "custom-phone" && value.trim() && !/^[+\d][\d\s\-().]{6,}$/.test(value)) {
-      return "Enter a valid phone number (e.g. +995 555 000 000)."
+    if (id === "custom-phone" && value.trim() && !/^[\d\s\-().]{4,}$/.test(value)) {
+      return "Enter a valid phone number."
     }
     return ""
   }
@@ -216,16 +311,20 @@ function UploadStep({
     // Mark all required fields as touched so errors show
     setTouched({ "custom-name": true, "custom-email": true, "custom-phone": true })
     if (!name.trim()) { setFormError("Please fill in all required fields."); return }
+    if (!validFullName(name)) {
+      setFormError("Please enter your full name using letters only.")
+      return
+    }
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setFormError("Please enter a valid email address.")
       return
     }
-    if (!phone.trim() || !/^[+\d][\d\s\-().]{6,}$/.test(phone)) {
+    if (!phone.trim() || !/^[\d\s\-().]{4,}$/.test(phone)) {
       setFormError("Please enter a valid phone number.")
       return
     }
     setFormError("")
-    onSubmit({ name, email, phone, note, imageFile })
+    onSubmit({ name, email, phone: `${phoneCountry.dialCode} ${phone.trim()}`, note, imageFile })
   }
 
   return (
@@ -274,8 +373,8 @@ function UploadStep({
           />
           {preview ? (
             <>
-              <div className="relative w-32 h-44 rounded-lg overflow-hidden shadow-md">
-                <Image src={preview} alt="Your uploaded design" fill className="object-cover" sizes="128px" />
+              <div className="relative w-full max-w-sm h-56 sm:h-64 rounded-lg overflow-hidden shadow-md bg-dp-bg-base border border-dp-border">
+                <Image src={preview} alt="Your uploaded design" fill className="object-contain" sizes="(max-width: 640px) 90vw, 384px" />
               </div>
               <p className="text-[12px] text-dp-success font-bold flex items-center gap-1">
                 <CheckCircle size={13} /> {fileName}
@@ -300,10 +399,8 @@ function UploadStep({
           {[
             { id: "custom-name",  label: "Full Name",  type: "text",  value: name,  set: setName,  placeholder: "Your name",               required: true },
             { id: "custom-email", label: "Email",      type: "email", value: email, set: setEmail, placeholder: "you@email.com",           required: true },
-            { id: "custom-phone", label: "Phone",      type: "tel",   value: phone, set: setPhone, placeholder: "+995 555 000 000",        required: true },
-            { id: "custom-note",  label: "Notes / requests", type: "text", value: note, set: setNote, placeholder: "Size, finish, special requests…", required: false },
           ].map(({ id, label, type, value, set, placeholder, required }) => {
-            const err = fieldError(id, value, type)
+            const err = fieldError(id, value)
             const hasError = !!err
             return (
               <div key={id} className="flex flex-col gap-1">
@@ -316,7 +413,10 @@ function UploadStep({
                   type={type}
                   required={required}
                   value={value}
-                  onChange={(e) => { set(e.target.value); if (formError) setFormError("") }}
+                  onChange={(e) => {
+                    set(id === "custom-name" ? sanitizeNameInput(e.target.value) : e.target.value)
+                    if (formError) setFormError("")
+                  }}
                   onBlur={() => setTouched((t) => ({ ...t, [id]: true }))}
                   placeholder={placeholder}
                   aria-invalid={hasError}
@@ -335,6 +435,54 @@ function UploadStep({
               </div>
             )
           })}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="custom-phone" className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary flex items-center gap-1">
+              Phone
+              <span className="text-red-500 font-black">*</span>
+            </label>
+            <div className="grid grid-cols-[6.25rem_minmax(0,1fr)] gap-2">
+              <PhoneCountryPicker
+                selected={phoneCountry}
+                onSelect={setPhoneCountry}
+                hasError={Boolean(fieldError("custom-phone", phone))}
+              />
+              <input
+                id="custom-phone"
+                type="tel"
+                required
+                value={phone}
+                onChange={(e) => { setPhone(e.target.value); if (formError) setFormError("") }}
+                onBlur={() => setTouched((t) => ({ ...t, "custom-phone": true }))}
+                placeholder="555 000 000"
+                aria-invalid={Boolean(fieldError("custom-phone", phone))}
+                aria-describedby={fieldError("custom-phone", phone) ? "custom-phone-error" : undefined}
+                className={`px-3 py-2.5 bg-dp-bg-elevated border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none transition-colors ${
+                  fieldError("custom-phone", phone)
+                    ? "border-red-500 focus:border-red-500 bg-red-500/5"
+                    : "border-dp-border focus:border-dp-accent-cta"
+                }`}
+              />
+            </div>
+            {fieldError("custom-phone", phone) && (
+              <p id="custom-phone-error" className="text-[11px] text-red-500 font-medium flex items-center gap-1">
+                <AlertCircle size={11} /> {fieldError("custom-phone", phone)}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="custom-note" className="text-[11px] font-bold uppercase tracking-widest text-dp-text-tertiary flex items-center gap-1">
+              Notes / requests
+            </label>
+            <input
+              id="custom-note"
+              type="text"
+              value={note}
+              onChange={(e) => { setNote(e.target.value); if (formError) setFormError("") }}
+              onBlur={() => setTouched((t) => ({ ...t, "custom-note": true }))}
+              placeholder="Size, finish, special requests..."
+              className="px-3 py-2.5 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] text-dp-text-primary placeholder:text-dp-text-tertiary focus:outline-none focus:border-dp-accent-cta transition-colors"
+            />
+          </div>
         </div>
 
         {/* How it works */}
@@ -370,7 +518,17 @@ function UploadStep({
 
 // ─── Step 3: Pending ────────────────────────────────────────
 
-function PendingStep({ email, vendorName }: { email: string; vendorName: string }) {
+function PendingStep({
+  email,
+  vendorName,
+  onNewOrder,
+}: {
+  email: string
+  vendorName: string
+  onNewOrder: () => void
+}) {
+  const lp = useLocalePrefix()
+
   return (
     <div className="flex flex-col items-center text-center gap-6 max-w-md mx-auto py-6">
       <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
@@ -389,16 +547,33 @@ function PendingStep({ email, vendorName }: { email: string; vendorName: string 
           <Mail size={16} className="text-dp-text-tertiary shrink-0" />
           <div>
             <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Next step</p>
-            <p className="text-[13px] font-semibold text-dp-text-primary">We will contact you</p>
+            <p className="text-[13px] font-semibold text-dp-text-primary">
+              We will send updates to {email || "your account email"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Phone size={16} className="text-dp-text-tertiary shrink-0" />
           <div>
             <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Order status</p>
-            <p className="text-[13px] font-semibold text-dp-text-primary">Please check your profile for updates</p>
+            <p className="text-[13px] font-semibold text-dp-text-primary">Track review, approval, payment, and shipping in your profile</p>
           </div>
         </div>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3 w-full">
+        <button
+          type="button"
+          onClick={onNewOrder}
+          className="flex-1 py-3 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
+        >
+          Add New Custom Order
+        </button>
+        <Link
+          href={`${lp}/account?tab=custom`}
+          className="flex-1 py-3 border border-dp-border hover:border-dp-border-hover text-dp-text-primary text-[12px] font-black uppercase tracking-widest rounded-sm transition-colors"
+        >
+          Your Custom Orders
+        </Link>
       </div>
       <p className="text-[12px] text-dp-text-tertiary">
         Questions? Contact us at{" "}
@@ -406,65 +581,6 @@ function PendingStep({ email, vendorName }: { email: string; vendorName: string 
           custom@kolekcia.com
         </a>
       </p>
-    </div>
-  )
-}
-
-// ─── Step 4: Payment ────────────────────────────────────────
-
-function PaymentStep() {
-  const [paid, setPaid] = useState(false)
-  const mockRef = "KOL-CUSTOM-" + Math.random().toString(36).slice(2, 8).toUpperCase()
-
-  return (
-    <div className="flex flex-col items-center text-center gap-6 w-full max-w-sm mx-auto py-6 px-4">
-      {paid ? (
-        <>
-          <div className="w-20 h-20 rounded-full bg-dp-success/20 flex items-center justify-center">
-            <CheckCircle size={40} className="text-dp-success" />
-          </div>
-          <div>
-            <h2 className="font-display text-2xl sm:text-3xl text-dp-text-primary mb-2">Payment Received!</h2>
-            <p className="text-[13px] text-dp-text-secondary">
-              Your custom order is now in production. You'll receive a tracking link by email.
-            </p>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-            <CreditCard size={36} className="text-blue-600 dark:text-blue-400" />
-          </div>
-          <div>
-            <h2 className="font-display text-2xl sm:text-3xl text-dp-text-primary mb-2">Complete Your Order</h2>
-            <p className="text-[13px] text-dp-text-secondary">
-              Your design was approved! Click below to complete payment securely.
-            </p>
-          </div>
-          <div className="bg-dp-bg-elevated border border-dp-border rounded-xl p-5 w-full text-left">
-            <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest mb-3">Order Summary</p>
-            <div className="flex justify-between text-[13px] text-dp-text-secondary mb-3">
-              <span>Shipping</span>
-              <span className="text-dp-success font-bold">Free</span>
-            </div>
-            <p className="text-[10px] text-dp-text-tertiary mt-2">Reference: {mockRef}</p>
-          </div>
-          <div className="border border-dp-border rounded-xl p-4 bg-dp-bg-elevated w-full flex flex-col items-center gap-2">
-            <p className="text-[11px] text-dp-text-tertiary uppercase tracking-widest">Scan to pay</p>
-            <div className="w-32 h-32 bg-dp-bg-base rounded-lg grid grid-cols-6 grid-rows-6 gap-0.5 p-2">
-              {Array.from({ length: 36 }).map((_, i) => (
-                <div key={i} className={`rounded-sm ${Math.random() > 0.5 ? "bg-dp-text-primary" : "bg-transparent"}`} />
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={() => setPaid(true)}
-            className="w-full py-3.5 bg-dp-accent-cta hover:bg-dp-accent-cta-hover text-white text-[13px] font-black uppercase tracking-widest rounded-sm transition-colors flex items-center justify-center gap-2"
-          >
-            <CreditCard size={16} /> Pay Now
-          </button>
-        </>
-      )}
     </div>
   )
 }
@@ -584,19 +700,17 @@ export default function CustomPage(): React.ReactElement {
 
         {step === "pending" && (
           <>
-            <PendingStep email={submittedEmail} vendorName={selectedVendor?.name ?? "our team"} />
-            <div className="flex justify-center mt-8">
-              <button
-                onClick={() => setStep("payment")}
-                className="flex items-center gap-1 text-[11px] text-dp-text-tertiary hover:text-dp-accent-cta transition-colors"
-              >
-                Preview payment step <ArrowRight size={11} />
-              </button>
-            </div>
+            <PendingStep
+              email={submittedEmail}
+              vendorName={selectedVendor?.name ?? "our team"}
+              onNewOrder={() => {
+                setSelectedVendor(null)
+                setSubmittedEmail("")
+                setStep("pick")
+              }}
+            />
           </>
         )}
-
-        {step === "payment" && <PaymentStep />}
       </div>
     </SiteShell>
   )

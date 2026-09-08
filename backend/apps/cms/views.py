@@ -80,7 +80,7 @@ class FandomBrandListView(generics.ListAPIView):
 class SiteSettingsView(APIView):
     permission_classes = [AllowAny]
 
-    PUBLIC_KEYS = {"site_name", "site_url", "support_email", "support_phone"}
+    PUBLIC_KEYS = {"site_name", "site_url", "support_email", "support_phone", "menu_default_image_url"}
 
     def get(self, request):
         settings = SiteSettings.objects.filter(key__in=self.PUBLIC_KEYS)

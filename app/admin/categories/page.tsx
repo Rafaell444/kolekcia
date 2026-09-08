@@ -8,9 +8,9 @@ import { parseList, type PaginatedResponse } from "@/lib/api"
 import AdminMediaUpload from "@/components/admin/AdminMediaUpload"
 import TranslationFields from "@/components/admin/TranslationFields"
 
-type Category = { id: number; name: string; name_ka?: string; slug: string; image_url: string; count: number }
+type Category = { id: number; name: string; name_ka?: string; slug: string; image_url: string; menu_image_url: string; count: number }
 
-const EMPTY = { name: "", name_ka: "", slug: "", image_url: "" }
+const EMPTY = { name: "", name_ka: "", slug: "", image_url: "", menu_image_url: "" }
 
 function slugify(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
@@ -23,6 +23,8 @@ export default function AdminCategoriesPage(): React.ReactElement {
   const [editing, setEditing] = useState<Category | null>(null)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [menuDefaultImageUrl, setMenuDefaultImageUrl] = useState("")
+  const [savingDefault, setSavingDefault] = useState(false)
 
   function load() {
     setLoading(true)
@@ -34,6 +36,12 @@ export default function AdminCategoriesPage(): React.ReactElement {
 
   useEffect(() => { load() }, [])
 
+  useEffect(() => {
+    adminFetch<Record<string, string>>("/admin/settings/")
+      .then((settings) => setMenuDefaultImageUrl(settings.menu_default_image_url ?? ""))
+      .catch(() => {})
+  }, [])
+
   function openCreate() {
     setEditing(null)
     setForm(EMPTY)
@@ -42,8 +50,23 @@ export default function AdminCategoriesPage(): React.ReactElement {
 
   function openEdit(c: Category) {
     setEditing(c)
-    setForm({ name: c.name, name_ka: c.name_ka ?? "", slug: c.slug, image_url: c.image_url ?? "" })
+    setForm({ name: c.name, name_ka: c.name_ka ?? "", slug: c.slug, image_url: c.image_url ?? "", menu_image_url: c.menu_image_url ?? "" })
     setShowModal(true)
+  }
+
+  async function saveMenuDefaultImage(url: string) {
+    setMenuDefaultImageUrl(url)
+    setSavingDefault(true)
+    try {
+      await adminFetch("/admin/settings/", {
+        method: "PATCH",
+        body: JSON.stringify({ menu_default_image_url: url }),
+      })
+    } catch {
+      alert("The default menu image was uploaded but could not be saved.")
+    } finally {
+      setSavingDefault(false)
+    }
   }
 
   async function save(e: React.FormEvent) {
@@ -55,6 +78,7 @@ export default function AdminCategoriesPage(): React.ReactElement {
         name_ka: form.name_ka.trim(),
         slug: form.slug.trim() || slugify(form.name),
         image_url: form.image_url,
+        menu_image_url: form.menu_image_url,
       }
       if (editing) {
         const updated = await adminFetch<Category>(`/admin/categories/${editing.id}/`, {
@@ -88,6 +112,21 @@ export default function AdminCategoriesPage(): React.ReactElement {
           <Plus size={14} /> Add Category
         </button>
       </div>
+
+      <div className="bg-dp-bg-surface border border-dp-border rounded-sm p-4 sm:p-5">
+        <div className="mb-3">
+          <h2 className="font-display text-xl text-dp-text-primary">Shop Menu Default Image</h2>
+          <p className="mt-1 text-[12px] text-dp-text-tertiary">Shown in the desktop shop menu before a customer hovers over a category.</p>
+        </div>
+        <AdminMediaUpload
+          label={savingDefault ? "Saving default image…" : "Default menu image"}
+          previewUrl={menuDefaultImageUrl}
+          folder="categories"
+          onUploaded={(url) => void saveMenuDefaultImage(url)}
+          previewClassName="w-full max-w-xl h-44"
+        />
+      </div>
+
       {loading ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-pulse">
           {[1,2,3,4].map((i) => <div key={i} className="h-36 bg-dp-bg-elevated rounded-sm" />)}
@@ -125,6 +164,7 @@ export default function AdminCategoriesPage(): React.ReactElement {
               <TranslationFields value={form} onChange={setForm} inputClassName="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px]" fields={[{ key: "name_ka", label: "Name · Georgian" }]} />
               <input required value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="slug" className="px-3 py-2 bg-dp-bg-elevated border border-dp-border rounded-sm text-[13px] font-mono" />
               <AdminMediaUpload label="Cover image" previewUrl={form.image_url} folder="categories" onUploaded={(url) => setForm((f) => ({ ...f, image_url: url }))} previewClassName="w-full h-28" />
+              <AdminMediaUpload label="Shop menu hover image" previewUrl={form.menu_image_url} folder="categories" onUploaded={(url) => setForm((f) => ({ ...f, menu_image_url: url }))} previewClassName="w-full h-32" />
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-dp-border text-[12px] font-bold uppercase tracking-widest rounded-sm">Cancel</button>
                 <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-dp-accent-cta text-white text-[12px] font-bold uppercase tracking-widest rounded-sm disabled:opacity-60">{saving ? "Saving…" : "Save"}</button>

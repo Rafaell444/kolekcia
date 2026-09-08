@@ -125,3 +125,27 @@ class ProductCreationTests(TestCase):
         self.assertEqual(variant_data["label_ka"], "საშუალო")
         self.assertEqual(variant_data["stock"], 12)
         self.assertTrue(variant_data["sku"])
+
+    def test_homepage_flags_are_saved_on_product_update(self):
+        product = Product.objects.create(title="Homepage product", base_price="25.00")
+        serializer = ProductDetailSerializer(
+            product,
+            data={"is_featured": True, "is_sale": True, "is_limited": True},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        product.refresh_from_db()
+
+        self.assertTrue(product.is_featured)
+        self.assertTrue(product.is_sale)
+        self.assertTrue(product.is_limited)
+
+    def test_featured_catalog_filter_only_returns_ticked_products(self):
+        featured = Product.objects.create(title="Trending", base_price="25.00", is_featured=True)
+        Product.objects.create(title="Regular", base_price="25.00", is_featured=False)
+
+        products = ProductFilter(data={"featured": "true"}, queryset=Product.objects.all()).qs
+
+        self.assertQuerySetEqual(products, [featured])

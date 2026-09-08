@@ -233,10 +233,14 @@ function PriceRangeSlider({
   )
 }
 
-function filtersForPage(lockedCategory: string): Filters {
+function filtersForPage(lockedCategory: string, collection = ""): Filters {
   return {
     ...DEFAULT_FILTERS,
     categories: lockedCategory ? [lockedCategory] : [],
+    isLimited: collection === "limited",
+    isSale: collection === "sale",
+    isNew: collection === "new",
+    isExclusive: collection === "exclusive",
   }
 }
 
@@ -503,22 +507,24 @@ const SORT_MAP: Record<string, string> = {
 
 const CATEGORY_VENDOR_SLUGS = new Set(["figures", "wallpanels"])
 
-function catalogHeading(category: string, search: string, allDesignsLabel: string): string {
+function catalogHeading(category: string, search: string, allDesignsLabel: string, collectionLabel = ""): string {
   if (search) return `Results for "${search}"`
   if (category === "figures") return "All Figure Designs"
   if (category === "wallpanels") return "All Wallpanel Designs"
+  if (collectionLabel) return collectionLabel
   return allDesignsLabel
 }
 
 // ─── Page ──────────────────────────────────────────────────
-function CatalogPageInner(): React.ReactElement {
+function CatalogPageInner({ vendorOverride = "", pathOverride = "" }: { vendorOverride?: string; pathOverride?: string }): React.ReactElement {
   const localePrefix = useLocalePrefix()
   const locale = localePrefix.slice(1)
   const searchParams = useSearchParams()
   const router = useRouter()
   const urlSearch = searchParams.get("search") ?? ""
   const urlCategory = searchParams.get("category") ?? ""
-  const urlVendor = searchParams.get("vendor") ?? ""
+  const urlVendor = vendorOverride || searchParams.get("vendor") || ""
+  const urlCollection = searchParams.get("filter") ?? ""
   const { currency, rates } = useLocale()
   const { t } = useTranslations()
 
@@ -534,7 +540,8 @@ function CatalogPageInner(): React.ReactElement {
     }
     params.delete("page")
     const query = params.toString()
-    router.push(`${localePrefix}/catalog${query ? `?${query}` : ""}`)
+    const pathname = pathOverride ? `${localePrefix}${pathOverride}` : `${localePrefix}/catalog`
+    router.push(`${pathname}${query ? `?${query}` : ""}`)
   }
 
   // Debounce: push URL 400ms after user stops typing
@@ -549,7 +556,7 @@ function CatalogPageInner(): React.ReactElement {
   const hideCategoryFilter = Boolean(lockedCategory)
   const isSculpiCatalog = lockedCategory === "figures" || urlCategory === "figures" || urlVendor === "sculpi" || urlVendor === "figure-studio"
 
-  const [filters, setFilters]   = useState<Filters>(() => filtersForPage(lockedCategory))
+  const [filters, setFilters]   = useState<Filters>(() => filtersForPage(lockedCategory, urlCollection))
   const [sort, setSort]         = useState("trending")
   const [view, setView]         = useState<"grid" | "list">("grid")
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -564,6 +571,18 @@ function CatalogPageInner(): React.ReactElement {
   const [fetchLoading, setFetchLoading] = useState(true)
   const abortRef = useRef<AbortController | null>(null)
   const [mounted, setMounted] = useState(false)
+
+  const collectionHeading = urlCollection === "trending"
+    ? t("home.trending")
+    : urlCollection === "sale"
+      ? t("home.onSale")
+      : urlCollection === "limited"
+        ? t("home.limitedEdition")
+        : urlVendor === "mangamoon"
+          ? "MangaMoon"
+          : urlVendor === "sculpi"
+            ? "Sculpi"
+            : ""
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -599,17 +618,17 @@ function CatalogPageInner(): React.ReactElement {
             ...prev,
             priceMin: realMin,
             priceMax: realMax,
-            isLimited: d.availability?.limited ? prev.isLimited : false,
-            isSale: d.availability?.sale ? prev.isSale : false,
-            isNew: d.availability?.new ? prev.isNew : false,
-            isExclusive: d.availability?.exclusive ? prev.isExclusive : false,
+            isLimited: urlCollection === "limited" || (d.availability?.limited ? prev.isLimited : false),
+            isSale: urlCollection === "sale" || (d.availability?.sale ? prev.isSale : false),
+            isNew: urlCollection === "new" || (d.availability?.new ? prev.isNew : false),
+            isExclusive: urlCollection === "exclusive" || (d.availability?.exclusive ? prev.isExclusive : false),
             isReadyToShip: d.availability?.ready_to_ship ? prev.isReadyToShip : false,
           }))
         }
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [effectiveCategoryForFilters, currency, urlVendor])
+  }, [effectiveCategoryForFilters, currency, urlVendor, urlCollection])
 
   useEffect(() => {
     let cancelled = false
@@ -636,13 +655,23 @@ function CatalogPageInner(): React.ReactElement {
     })
   }, [urlCategory, lockedCategory])
 
+  useEffect(() => {
+    setFilters((prev) => ({
+      ...prev,
+      isLimited: urlCollection === "limited",
+      isSale: urlCollection === "sale",
+      isNew: urlCollection === "new",
+      isExclusive: urlCollection === "exclusive",
+    }))
+  }, [urlCollection])
+
   const resetFilters = useCallback(() => {
     setFilters((prev) => ({
-      ...filtersForPage(lockedCategory),
+      ...filtersForPage(lockedCategory, urlCollection),
       priceMin: filterOptions ? Math.floor(filterOptions.price_range.min) : 0,
       priceMax: filterOptions ? Math.ceil(filterOptions.price_range.max) : prev.priceMax,
     }))
-  }, [lockedCategory, filterOptions])
+  }, [lockedCategory, filterOptions, urlCollection])
 
   const buildQueryString = useCallback(() => {
     const params = new URLSearchParams()
@@ -659,6 +688,7 @@ function CatalogPageInner(): React.ReactElement {
     if (filters.isSale) params.set("sale", "true")
     if (filters.isNew) params.set("new", "true")
     if (filters.isExclusive) params.set("exclusive", "true")
+    if (urlCollection === "trending") params.set("featured", "true")
     if (filters.isReadyToShip) params.set("ready_to_ship", "true")
     if (!isSculpiCatalog && filters.materials.length > 0) params.set("material", filters.materials.join(","))
     if (filters.sizes.length > 0) params.set("size", filters.sizes.join(","))
@@ -667,7 +697,7 @@ function CatalogPageInner(): React.ReactElement {
     params.set("sort", SORT_MAP[sort] ?? "featured")
     params.set("page", String(page))
     return params.toString()
-  }, [filters, sort, page, urlSearch, urlVendor, lockedCategory, filterOptions, currency, isSculpiCatalog])
+  }, [filters, sort, page, urlSearch, urlVendor, urlCollection, lockedCategory, filterOptions, currency, isSculpiCatalog])
 
   useEffect(() => {
     let cancelled = false
@@ -712,7 +742,7 @@ function CatalogPageInner(): React.ReactElement {
       <div className="border-b border-dp-border bg-dp-bg-surface">
         <div className={`dp-container ${CATEGORY_VENDOR_SLUGS.has(urlCategory) ? "py-4 sm:py-5" : "py-6"}`}>
           <h1 className={`font-display text-dp-text-primary ${CATEGORY_VENDOR_SLUGS.has(urlCategory) ? "text-2xl sm:text-3xl md:text-4xl" : "text-4xl md:text-5xl"}`}>
-            {catalogHeading(urlCategory, urlSearch, t("catalog.allProducts"))}
+            {catalogHeading(urlCategory, urlSearch, t("catalog.allProducts"), collectionHeading)}
           </h1>
           <p className="text-dp-text-secondary text-sm mt-1">
             {fetchLoading ? t("common.loading") : `${totalCount.toLocaleString()} ${t("common.results")}`}
@@ -778,7 +808,7 @@ function CatalogPageInner(): React.ReactElement {
           {/* ── Product grid ── */}
           <div className="flex-1 min-w-0">
             {/* Search bar */}
-            <div className="relative mb-4">
+            <div className="relative mb-4 hidden lg:block">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dp-text-tertiary pointer-events-none" />
               <input
                 type="text"
@@ -799,7 +829,7 @@ function CatalogPageInner(): React.ReactElement {
             <div className="hidden lg:flex items-center justify-between mb-5">
               <span className="text-[13px] text-dp-text-secondary">
                 {totalCount} results for{" "}
-                <strong className="text-dp-text-primary">{catalogHeading(urlCategory, urlSearch, t("catalog.allProducts"))}</strong>
+                <strong className="text-dp-text-primary">{catalogHeading(urlCategory, urlSearch, t("catalog.allProducts"), collectionHeading)}</strong>
               </span>
               <div className="flex items-center gap-3">
                 {/* Sort */}
@@ -847,10 +877,10 @@ function CatalogPageInner(): React.ReactElement {
                 <p className="font-display text-3xl text-dp-text-primary mb-2">No results</p>
                 <p className="text-dp-text-tertiary text-sm mb-4">Try adjusting your filters.</p>
                 <button
-                  onClick={resetFilters}
+                  onClick={() => urlCollection ? router.push(`${localePrefix}/catalog`) : resetFilters()}
                   className="px-5 py-2 border border-dp-border text-dp-text-secondary hover:text-dp-text-primary rounded-sm text-[12px] font-semibold uppercase tracking-widest transition-colors"
                 >
-                  Clear Filters
+                  {urlCollection ? t("common.seeAllProducts") : "Clear Filters"}
                 </button>
               </div>
             ) : view === "grid" ? (
@@ -970,10 +1000,10 @@ function CatalogPageInner(): React.ReactElement {
   )
 }
 
-export default function CatalogPage(): React.ReactElement {
+export default function CatalogPage({ vendorOverride = "", pathOverride = "" }: { vendorOverride?: string; pathOverride?: string }): React.ReactElement {
   return (
     <Suspense fallback={null}>
-      <CatalogPageInner />
+      <CatalogPageInner vendorOverride={vendorOverride} pathOverride={pathOverride} />
     </Suspense>
   )
 }

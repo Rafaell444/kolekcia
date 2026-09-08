@@ -30,9 +30,15 @@ const ru: MessageTree = {
     searchProducts: "Поиск товаров…",
     results: "результатов",
     shopNow: "В магазин",
+    seeAllProducts: "Смотреть все товары",
     close: "Закрыть",
   },
-  home: { trending: "Сейчас в тренде" },
+  home: {
+    trending: "Сейчас в тренде",
+    browseProducts: "Товары, которые вам понравятся",
+    onSale: "Распродажа",
+    limitedEdition: "Лимитированная серия",
+  },
   cart: {
     title: "Ваша корзина",
     empty: "Корзина пуста",

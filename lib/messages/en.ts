@@ -28,10 +28,14 @@ const en = {
     searchProducts: "Search products…",
     results: "results",
     shopNow: "Shop Now",
+    seeAllProducts: "See All Products",
     close: "Close",
   },
   home: {
     trending: "Trending Now",
+    browseProducts: "Browse Products You'll Love",
+    onSale: "On Sale",
+    limitedEdition: "Limited Edition",
   },
   cart: {
     title: "Your Cart",

@@ -24,7 +24,6 @@ const BRANDS = [
   { id: "b16", name: "DC",               bg: "#0074e8",text: "#fff", abbr: "DC" },
 ]
 
-const LOOP = [...BRANDS, ...BRANDS, ...BRANDS]
 const COPIES = 3
 
 function segmentWidth(el: HTMLDivElement) {
@@ -44,6 +43,8 @@ export default function BrandsCarousel() {
   const locale = params?.locale === "ka" || params?.locale === "ru" ? params.locale : "en"
   const [brands, setBrands] = React.useState(BRANDS)
   const trackRef = useRef<HTMLDivElement>(null)
+  const mobileTrackOneRef = useRef<HTMLDivElement>(null)
+  const mobileTrackTwoRef = useRef<HTMLDivElement>(null)
   const offsetRef = useRef(0)
   const draggingRef = useRef(false)
   const pointerIdRef = useRef<number | null>(null)
@@ -51,8 +52,11 @@ export default function BrandsCarousel() {
   const rafRef = useRef<number | null>(null)
 
   const paint = useCallback(() => {
-    const el = trackRef.current
-    if (el) applyOffset(el, offsetRef.current)
+    if (trackRef.current) applyOffset(trackRef.current, offsetRef.current)
+    if (mobileTrackOneRef.current) applyOffset(mobileTrackOneRef.current, offsetRef.current)
+    if (mobileTrackTwoRef.current) {
+      applyOffset(mobileTrackTwoRef.current, offsetRef.current + segmentWidth(mobileTrackTwoRef.current) / 2)
+    }
   }, [])
 
   const tick = useCallback(() => {
@@ -65,12 +69,12 @@ export default function BrandsCarousel() {
     apiFetch<Array<{ id: number; name: string; abbreviation: string; background: string; text_color: string }>>("/cms/fandoms/").then((data) => {
       if (Array.isArray(data) && data.length) setBrands(data.map((b) => ({ id: String(b.id), name: b.name, bg: b.background, text: b.text_color, abbr: b.abbreviation })))
     }).catch(() => {})
-    const el = trackRef.current
-    if (!el) return
+    const tracks = [trackRef.current, mobileTrackOneRef.current, mobileTrackTwoRef.current].filter(Boolean) as HTMLDivElement[]
+    if (tracks.length === 0) return
 
     paint()
     const ro = new ResizeObserver(paint)
-    ro.observe(el)
+    tracks.forEach((track) => ro.observe(track))
 
     const loop = () => {
       tick()
@@ -85,8 +89,7 @@ export default function BrandsCarousel() {
   }, [tick, paint])
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    const el = trackRef.current
-    if (!el) return
+    const el = e.currentTarget
     e.preventDefault()
     draggingRef.current = true
     pointerIdRef.current = e.pointerId
@@ -105,12 +108,35 @@ export default function BrandsCarousel() {
     if (!draggingRef.current) return
     draggingRef.current = false
     pointerIdRef.current = null
-    trackRef.current?.releasePointerCapture(e.pointerId)
+    e.currentTarget.releasePointerCapture(e.pointerId)
+  }
+
+  const mobileRows = [
+    brands.filter((_, index) => index % 2 === 0),
+    brands.filter((_, index) => index % 2 === 1),
+  ]
+
+  function brandCards(items: typeof brands) {
+    return [...items, ...items, ...items].map((brand, i) => (
+      <div
+        key={`${brand.id}-${i}`}
+        className="flex h-[72px] w-[110px] shrink-0 items-center justify-center rounded-lg"
+        style={{ background: brand.bg }}
+        title={brand.name}
+      >
+        <span
+          className="pointer-events-none px-2 text-center text-[11px] font-black leading-tight tracking-tight"
+          style={{ color: brand.text }}
+        >
+          {brand.abbr}
+        </span>
+      </div>
+    ))
   }
 
   return (
-    <section className="py-10 border-y border-dp-border overflow-hidden" aria-label="Official licensed fandoms">
-      <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-dp-text-tertiary mb-6">
+    <section className="overflow-hidden border-y border-dp-border bg-background py-10" aria-label="Official licensed fandoms">
+      <p className="mx-auto mb-6 max-w-[24rem] px-5 text-center text-[11px] font-bold uppercase tracking-[0.18em] text-dp-text-tertiary">
         {{
           en: "Official Metal Posters from 200+ Fandoms",
           ka: "ოფიციალური მეტალის პოსტერები 200-ზე მეტი ფანდომიდან",
@@ -123,7 +149,7 @@ export default function BrandsCarousel() {
 
         <div
           ref={trackRef}
-          className="flex gap-3 overflow-x-auto scrollbar-none cursor-grab active:cursor-grabbing select-none touch-none"
+          className="hidden gap-3 overflow-x-auto scrollbar-none cursor-grab active:cursor-grabbing select-none touch-none sm:flex"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -131,19 +157,22 @@ export default function BrandsCarousel() {
           onPointerCancel={endDrag}
           aria-hidden
         >
-          {[...brands, ...brands, ...brands].map((brand, i) => (
+          {brandCards(brands)}
+        </div>
+
+        <div className="flex flex-col gap-5 sm:hidden" aria-hidden>
+          {mobileRows.map((row, index) => (
             <div
-              key={`${brand.id}-${i}`}
-              className="shrink-0 w-[110px] h-[72px] rounded-lg flex items-center justify-center"
-              style={{ background: brand.bg }}
-              title={brand.name}
+              key={index}
+              ref={index === 0 ? mobileTrackOneRef : mobileTrackTwoRef}
+              className="flex cursor-grab gap-5 overflow-hidden select-none touch-pan-y active:cursor-grabbing"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
             >
-              <span
-                className="text-[11px] font-black tracking-tight text-center leading-tight px-2 pointer-events-none"
-                style={{ color: brand.text }}
-              >
-                {brand.abbr}
-              </span>
+              {brandCards(row)}
             </div>
           ))}
         </div>
