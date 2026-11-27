@@ -382,6 +382,22 @@ export default function ProductDetail({ product, categoryContext }: { product: A
     handleThumbnailClick(nextIndex)
   }
 
+  // Keyboard ← / → steps through the gallery (skipped while typing or seeking a video)
+  const galleryStepRef = useRef(handleGalleryStep)
+  useEffect(() => { galleryStepRef.current = handleGalleryStep })
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      const target = e.target as HTMLElement | null
+      if (target?.closest("input, textarea, select, video, [contenteditable=''], [contenteditable='true'], [role='slider'], [role='dialog']")) return
+      e.preventDefault()
+      galleryStepRef.current(e.key === "ArrowLeft" ? -1 : 1)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+
   // When variant changes, jump to its first assigned image (or back to 0)
   useEffect(() => {
     if (!selectedSizeVariantId) { setActiveImage(0); return }
